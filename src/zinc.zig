@@ -6,12 +6,13 @@ const Uri = std.Uri;
 const Allocator = mem.Allocator;
 const Server = @This();
 const proto = @import("protocol");
+const testing = std.testing;
 
-// export zinc as package
-export const zinc = struct {
-    pub const Version = "0.1.0";
-    pub const Description = "High-performance web framework written in Zig.";
-    pub const License = "MIT";
-    pub const Repository = "github.com/dravenk/zinc";
-    pub const Author = "dravenk";
-};
+export fn ping() *const [4:0]u8 {
+    std.debug.print("{s}", .{"ping"});
+    return "ping";
+}
+
+test "basic ping functionality" {
+    try testing.expect(std.mem.eql(ping(), "ping"));
+}
