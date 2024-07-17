@@ -5,13 +5,13 @@ pub fn build(b: *std.Build) void {
     const optimize = b.standardOptimizeOption(.{});
 
     const module = b.addModule("zinc", .{
-        .root_source_file = .{ .path = "src/zinc.zig" },
+        .root_source_file = b.path("src/zinc.zig"),
         .target = target,
         .optimize = optimize,
     });
 
     const unit_tests = b.addTest(.{
-        .root_source_file = .{ .path = "src/zinc_test.zig" },
+        .root_source_file = b.path("src/zinc_test.zig"),
         .target = target,
         .optimize = optimize,
     });
