@@ -8,7 +8,8 @@ const proto = http.protocol;
 const Server = http.Server;
 
 const Context = @import("context.zig").Context;
-
+const Router = @import("router.zig").Router;
+const Route = @import("router.zig").Route;
 
 pub const Engine = struct {
     net_server: std.net.Server,
@@ -32,7 +33,6 @@ pub const Engine = struct {
             .threads = undefined,
         };
         // std.Thread.spawn(.{}, run_server, .{self.net_server}) catch @panic("thread spawn");
-
         // return self;
     }
 
@@ -143,7 +143,12 @@ pub const Engine = struct {
         _ = self;
         return "pong";
     }
-};
 
-// HandlerFunc defines the handler used by zinc middleware as return value.
-const HandlerFunc = fn (Context) void;
+    pub fn router(self: @This()) *const Router {
+        _ = self;
+        const r =  &Router{
+             .routes = &[_]Route{} 
+        };
+        return r;
+    }
+};
