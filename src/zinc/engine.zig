@@ -8,14 +8,20 @@ const proto = http.protocol;
 const Server = http.Server;
 
 const Context = @import("context.zig").Context;
-const Router = @import("router.zig").Router;
-const Route = @import("router.zig").Route;
+const Router = @import("router.zig");
+const Route = @import("route.zig");
+const Request = @import("request.zig").Request;
+const Response = @import("response.zig").Response;
 
 pub const Engine = struct {
     net_server: std.net.Server,
     
-    threads: []std.Thread,
+    threads: []std.Thread = &[_]std.Thread{},
     mutex: std.Thread.Mutex = .{},
+
+    // should i add routes as part of the engine?
+    routes: []Route = &[_]Route{},
+
     // stopping: std.Thread.ResetEvent = .{},
     // stopped: std.Thread.ResetEvent = .{},
     pub fn get_port(self: Engine) u16 {
@@ -50,7 +56,8 @@ pub const Engine = struct {
                     error.HttpConnectionClosing => continue :accept,
                     else => |e| return e,
                 };
-                handleRequest(&request) catch |err| {
+                const ctx =  Context.init(std.testing.allocator, request, http_server.response);
+                handleRequest(ctx,&request ) catch |err| {
                     std.debug.print("handleRequest failed with '{s}'\n", .{@errorName(err)});
                     return err;
                 };
@@ -58,15 +65,18 @@ pub const Engine = struct {
         }
     }
 
-    pub fn handleRequest(request: *http.Server.Request) !void {
-        const body = try (try request.reader()).readAllAlloc(std.testing.allocator, 8192);
+    // pub fn handleRequest(request: *http.Server.Request) !void {
+    pub fn handleRequest(ctx:Context, req: Request, resp: Response) !void {
+        _ = ctx;
+        _ = resp;
+        const body = try (try req.reader()).readAllAlloc(std.testing.allocator, 8192);
         defer std.testing.allocator.free(body);
         var send_buffer: [100]u8 = undefined;
-        var response = request.respondStreaming(.{
+        var response = req.respondStreaming(.{
             .send_buffer = &send_buffer,
-            .content_length = switch (request.head.transfer_encoding) {
+            .content_length = switch (req.head.transfer_encoding) {
                 .chunked => null,
-                .none => request.head.content_length,
+                .none => req.head.content_length,
             },
         });
 
@@ -89,23 +99,34 @@ pub const Engine = struct {
         var listener = self.net_server;
         
         while (listener.accept()) |conn| {
-            var recv_buf: [4096]u8 = undefined;
-            var recv_total: usize = 0;
-            while (conn.stream.read(recv_buf[recv_total..])) |recv_len| {
-                if (recv_len == 0) break;
-                recv_total += recv_len;
-                if (mem.containsAtLeast(u8, recv_buf[0..recv_total], 1, "\r\n\r\n")) {
-                    break;
-                }
-            } else |read_err| {
-                return read_err;
-            }
-            const recv_data = recv_buf[0..recv_total];
-            if (recv_data.len == 0) {
-                std.debug.print("Got connection but no header!\n", .{});
-                continue;
-            }
-            _ = try conn.stream.writer().write(hello());
+            // std.debug.print("Got connection {any}\n", .{conn.address.un});
+
+
+            // var recv_buf: [4096]u8 = undefined;
+            // var recv_total: usize = 0;
+
+            // conn.stream.read(recv_buf[recv_total..]);
+
+             _ = try conn.stream.writer().write(hello());
+
+            // while (conn.stream.read(recv_buf[recv_total..])) |recv_len| {
+            //     if (recv_len == 0) break;
+            //     recv_total += recv_len;
+            //     if (mem.containsAtLeast(u8, recv_buf[0..recv_total], 1, "\r\n\r\n")) {
+            //         break;
+            //     }
+            // } else |read_err| {
+            //     return read_err;
+            // }
+
+            // const recv_data = recv_buf[0..recv_total];
+            // std.debug.print("recv_data: {any}", .{recv_data});
+            // if (recv_data.len == 0) {
+            //     std.debug.print("Got connection but no header!\n", .{});
+            //     continue;
+            // }
+            // _ = try conn.stream.writer().write(hello());
+            
         } else |err| {
             std.debug.print("error in accept: {}\n", .{err});
         }
@@ -144,11 +165,18 @@ pub const Engine = struct {
         return "pong";
     }
 
-    pub fn router(self: @This()) *const Router {
+    // pub fn router(self: @This()) Router {
+    //     _ = self;
+    //     return Router.new();
+    // }
+
+    pub fn addRouter(self: @This(), router: Router) void {
         _ = self;
-        const r =  &Router{
-             .routes = &[_]Route{} 
-        };
-        return r;
+        _ = router;
+    }
+    pub fn addRoute(self: @This(), route: Route) void {
+        // _ = self;
+        // _ = route;
+        self.routes = self.routes ++ &[_]Route{route};
     }
 };
