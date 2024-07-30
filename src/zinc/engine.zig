@@ -92,7 +92,14 @@ pub fn run(self: Engine) !void {
     var listener = self.net_server;
     
     while (listener.accept()) |conn| {
-         _ = try conn.stream.writer().write(hello());
+        var res = Response.Response{
+            .version = "HTTP/1.1",
+            .status = http.Status.ok,
+            .content_type = "text/html",
+            .body = "Hello World!",
+        };
+        const response = try res.stringify();
+        _ = try conn.stream.writer().write(response);
     } else |err| {
         std.debug.print("error in accept: {}\n", .{err});
     }
@@ -101,21 +108,7 @@ pub fn run(self: Engine) !void {
 pub fn get(uri: Uri) !void {
     _ = uri;
 }
-pub fn hello() []const u8 {
-    const body = "Hello World!";
-    const protocal = "HTTP/1.1 200 HELLO WORLD\r\n";
-    const content_type = "Content-Type: text/html; charset=utf8\r\n";
-    const line = "\r\n";
-    const body_len = std.fmt.comptimePrint("{}", .{body.len});
-    const content_length = "Content-Length: " ++ body_len ++ "\r\n";
-    const result =
-        protocal ++
-        content_type ++
-        content_length ++
-        line ++
-        body;
-    return result;
-}
+
 pub fn ping(self: @This()) *const [4:0]u8 {
     _ = self;
     return "ping";
