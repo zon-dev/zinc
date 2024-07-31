@@ -93,9 +93,6 @@ pub fn run(self: Engine) !void {
     
     while (listener.accept()) |conn| {
         var res = Response.Response{
-            .version = "HTTP/1.1",
-            .status = http.Status.ok,
-            .content_type = "text/html",
             .body = "Hello World!",
         };
         const response = try res.stringify();

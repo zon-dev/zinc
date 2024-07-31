@@ -12,24 +12,33 @@ const Route = @import("route.zig");
 pub const Router = @This();
 const Self = @This();
 
-// routes: std.ArrayList(Route) = std.ArrayList(Route).init(std.heap.page_allocator),
-routes: std.ArrayList(Route) = std.ArrayList(Route).init(std.heap.page_allocator),
+// fn arena_allocator() std.heap.Allocator {
+//     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+//     const gpa_allocator = gpa.allocator();
+//     const arena = std.heap.ArenaAllocator.init(gpa_allocator);
+
+//     defer {
+//         const deinit_status = gpa.deinit();
+//         if (deinit_status == .leak) @panic("Memory leak!");
+//         defer arena.deinit();
+//     }
+
+//     const allocator = arena.allocator();
+//     return allocator;
+// }
+
+routes: std.ArrayList(Route),
 
 pub fn init() Router {
     return Router{
+        // Todo, use arena allocator
         .routes = std.ArrayList(Route).init(std.heap.page_allocator),
     };
 }
 
-/// Return a copy of the routes.
+/// Return routes.
 pub fn getRoutes(self: *Self) std.ArrayList(Route) {
-    var rs = std.ArrayList(Route).init(std.heap.page_allocator);
-    for (self.routes.items) |route| {
-        rs.append(route) catch |err| {
-            print("error: {s}\n", .{@errorName(err)});
-        };
-    }
-   return rs;
+    return self.routes;
 }
 
 pub fn add(self:*Self, http_method: std.http.Method, comptime path: []const u8, comptime handler: anytype )  anyerror!void {
