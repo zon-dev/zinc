@@ -14,8 +14,14 @@ pub fn main() !void {
 
     var router = &engine.router;
     try router.get("/", hello_world);
+    try router.get("/ping", pong);
 
     _ = try engine.run();
+}
+
+
+fn pong(ctx: *z.Context, _: *z.Request, _: *z.Response) anyerror!void {
+    try ctx.Text(.{}, "pong!");
 }
 
 fn hello_world(ctx: *z.Context, _: *z.Request, _: *z.Response) anyerror!void {

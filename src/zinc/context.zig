@@ -22,9 +22,14 @@ pub fn init(
     };
 }
 
-pub fn Text(self: *Self, content: []const u8) anyerror!void {
-    const response = self.response;
-    try response.sendText(content);
+pub fn Text(self: *Self, conf: Config.Context, content: []const u8) anyerror!void {
+    try self.response.send(content, .{
+        .status = conf.status,
+        .extra_headers = &[_]std.http.Header{
+            .{ .name = "Content-Type", .value = "text/plain" },
+        },
+        .keep_alive = false,
+    });
 }
 
 pub fn JSON(self: *Self, conf: Config.Context, value: anytype) anyerror!void {
