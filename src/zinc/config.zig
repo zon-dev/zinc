@@ -4,7 +4,6 @@ const http_version = std.http.Version;
 
 pub const Config = @This();
 
-
 /// HTTP server configuration.
 pub const HttpConfig = struct {
     port: usize,
@@ -27,7 +26,7 @@ pub const HttpConfig = struct {
 
     // The server read timeout.
     read_timeout: ?u8 = null,
-    
+
     // log: bool = false,
 
     // The server TLS configuration.

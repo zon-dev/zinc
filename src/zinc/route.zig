@@ -11,9 +11,9 @@ http_method: std.http.Method,
 
 path: []const u8,
 
-handler: *const fn (Context, Request, Response) anyerror!void,
+handler: *const fn (*Context, *Request, *Response) anyerror!void,
 
-pub fn new(http_method: std.http.Method, comptime path: []const u8, comptime handler: anytype )  Route {
+pub fn new(http_method: std.http.Method, comptime path: []const u8, comptime handler: anytype) Route {
     return Route{
         .http_method = http_method,
         .path = path,
@@ -21,32 +21,32 @@ pub fn new(http_method: std.http.Method, comptime path: []const u8, comptime han
     };
 }
 
-pub fn get(comptime path: []const u8, comptime handler: anytype )  Route {
+pub fn get(comptime path: []const u8, comptime handler: anytype) Route {
     return new(std.http.Method.GET, path, handler);
 }
 
-pub fn post(comptime path: []const u8, comptime handler: anytype )  Route {
+pub fn post(comptime path: []const u8, comptime handler: anytype) Route {
     return new(std.http.Method.POST, path, handler);
 }
-pub fn put(comptime path: []const u8, comptime handler: anytype )  Route {
+pub fn put(comptime path: []const u8, comptime handler: anytype) Route {
     return new(std.http.Method.PUT, path, handler);
 }
-pub fn delete(comptime path: []const u8, comptime handler: anytype )  Route {
+pub fn delete(comptime path: []const u8, comptime handler: anytype) Route {
     return new(std.http.Method.DELETE, path, handler);
 }
-pub fn patch(comptime path: []const u8, comptime handler: anytype )  Route {
+pub fn patch(comptime path: []const u8, comptime handler: anytype) Route {
     return new(std.http.Method.PATCH, path, handler);
 }
-pub fn options(comptime path: []const u8, comptime handler: anytype )  Route {
+pub fn options(comptime path: []const u8, comptime handler: anytype) Route {
     return new(std.http.Method.OPTIONS, path, handler);
 }
-pub fn head(comptime path: []const u8, comptime handler: anytype )  Route {
+pub fn head(comptime path: []const u8, comptime handler: anytype) Route {
     return new(std.http.Method.HEAD, path, handler);
 }
-pub fn connect(comptime path: []const u8, comptime handler: anytype )  Route {
+pub fn connect(comptime path: []const u8, comptime handler: anytype) Route {
     return new(std.http.Method.CONNECT, path, handler);
 }
-pub fn trace(comptime path: []const u8, comptime handler: anytype )  Route {
+pub fn trace(comptime path: []const u8, comptime handler: anytype) Route {
     return new(std.http.Method.TRACE, path, handler);
 }
 
