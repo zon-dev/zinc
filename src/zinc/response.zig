@@ -22,7 +22,7 @@ pub fn init(req: *http_request) Response {
     };
 }
 
-pub fn send(self: *Self, content: []const u8) Response.WriteError!void {
+pub fn send(self: *Self, content: []const u8) http_response.WriteError!void {
     return try self.request.respond(content, .{ .keep_alive = false });
 }
 
