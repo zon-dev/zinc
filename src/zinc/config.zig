@@ -4,6 +4,13 @@ const http_version = std.http.Version;
 
 pub const Config = @This();
 
+pub const Engine = struct {
+    // The server address.
+    addr: []const u8 = "0.0.0.0",
+    // The server port.
+    port: u16 = 8080,
+};
+
 /// HTTP server configuration.
 pub const HttpConfig = struct {
     port: usize,
