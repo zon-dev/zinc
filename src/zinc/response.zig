@@ -22,19 +22,14 @@ pub fn init(req: *http_request) Response {
     };
 }
 
-pub fn send(self: *Self, content: []const u8) http_response.WriteError!void {
-    return try self.request.respond(content, .{ .keep_alive = false });
+pub fn send(self: *Self, content: []const u8, options: RespondOptions) http_response.WriteError!void {
+    return try self.request.respond(content, options);
 }
 
-pub fn sendBody(_: *Self, body: []const u8) anyerror!void {
-    std.debug.print("body: {s}\n", .{body});
-}
-
-pub fn json(self: *Self, value: anytype, options: std.json.StringifyOptions) !void {
-    // try std.json.stringify(value, options, Writer.init(self));
-    _ = value;
-    _ = options;
-    self.content_type = "application/json";
+pub fn sendBody(self: *Self, content: []const u8) !void {
+    try self.send(content, .{
+        .keep_alive = false,
+    });
 }
 
 pub fn stringify(self: *Self) ![]const u8 {

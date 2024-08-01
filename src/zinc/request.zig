@@ -14,7 +14,7 @@ pub fn init(req: *http_request) Request {
     };
 }
 
-pub fn getMethod(self: *Request) http.Method {
+pub fn method(self: *Request) http.Method {
     return self.request.head.method;
 }
 

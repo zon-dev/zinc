@@ -71,9 +71,9 @@ pub fn run(self: *Self) !void {
             // std.debug.print("request: {s}\n", .{request.head.target});
             for (self.router.getRoutes().items) |route| {
                 if (mem.eql(u8, request.head.target, route.path)) {
-                    var res = Response.init(&request);
                     var req = Request.init(&request);
-                    var ctx = Context.init();
+                    var res = Response.init(&request);
+                    var ctx = Context.init(&req, &res);
                     try route.handler(&ctx, &req, &res);
                     continue;
                 }
