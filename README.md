@@ -13,8 +13,11 @@ pub fn main() !void {
     var zinc = try z.Engine.init(.{ .port = 8080 });
 
     var router = zinc.getRouter();
-    try router.get("/", hello_world);
+    try router.get("/", helloWorld);
     try router.get("/ping", pong);
+
+    var catchers = zinc.getCatchers();
+    try catchers.put(.not_found, notFound);
 
     try zinc.run();
 }
@@ -24,7 +27,13 @@ fn pong(ctx: *z.Context, _: *z.Request, _: *z.Response) anyerror!void {
     try ctx.Text(.{}, "pong!");
 }
 
-fn hello_world(ctx: *z.Context, _: *z.Request, _: *z.Response) anyerror!void {
+fn helloWorld(ctx: *z.Context, _: *z.Request, _: *z.Response) anyerror!void {
     try ctx.JSON(.{}, .{ .message = "Hello, World!" });
+}
+
+fn notFound(ctx: *z.Context, _: *z.Request, _: *z.Response) anyerror!void {
+    try ctx.HTML(.{
+        .status = .not_found,
+    },"<h1>404 Not Found</h1>" );
 }
 ```
