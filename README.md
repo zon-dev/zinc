@@ -16,7 +16,7 @@ pub fn main() !void {
     try router.get("/", hello_world);
     try router.get("/ping", pong);
 
-    _ = try zinc.run();
+    try zinc.run();
 }
 
 
