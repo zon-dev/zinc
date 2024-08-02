@@ -2,7 +2,6 @@ const std = @import("std");
 const print = std.debug.print;
 
 const HandlerFn = @import("handler.zig").HandlerFn;
-const HandleAction = @import("handler.zig").HandleAction;
 const Context = @import("context.zig").Context;
 const Request = @import("request.zig").Request;
 const Response = @import("response.zig").Response;
@@ -38,6 +37,10 @@ pub fn init() Router {
 /// Return routes.
 pub fn getRoutes(self: *Self) std.ArrayList(Route) {
     return self.routes;
+}
+
+pub fn setNotFound(self: *Self, comptime handler: anytype) anyerror!void {
+    try self.routes.append(Route.get("*", handler));
 }
 
 pub fn add(self: *Self, http_method: std.http.Method, comptime path: []const u8, comptime handler: anytype) anyerror!void {

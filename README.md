@@ -10,13 +10,13 @@ Zinc is a high-performance web framework written in Zig(Ziglang).
 const z = @import("zinc");
 
 pub fn main() !void {
-    var engine = try z.Engine.new(.{ .port = 8080 });
+    var zinc = try z.Engine.init(.{ .port = 8080 });
 
-    var router = &engine.router;
+    var router = zinc.getRouter();
     try router.get("/", hello_world);
     try router.get("/ping", pong);
 
-    _ = try engine.run();
+    _ = try zinc.run();
 }
 
 

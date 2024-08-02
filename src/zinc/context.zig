@@ -22,6 +22,16 @@ pub fn init(
     };
 }
 
+pub fn HTML(self: *Self, conf: Config.Context, content: []const u8) anyerror!void {
+    try self.response.send(content, .{
+        .status = conf.status,
+        .extra_headers = &[_]std.http.Header{
+            .{ .name = "Content-Type", .value = "text/html" },
+        },
+        .keep_alive = false,
+    });
+}
+
 pub fn Text(self: *Self, conf: Config.Context, content: []const u8) anyerror!void {
     try self.response.send(content, .{
         .status = conf.status,

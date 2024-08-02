@@ -10,6 +10,8 @@ const Router = @import("router.zig");
 const Route = @import("route.zig");
 const Request = @import("request.zig").Request;
 const Response = @import("response.zig").Response;
+const HandlerFn = @import("handler.zig").HandlerFn;
+
 const config = @import("config.zig").Config;
 
 pub const Engine = @This();
@@ -21,6 +23,8 @@ mutex: std.Thread.Mutex = .{},
 
 router: Router = Router.init(),
 
+catchers: std.AutoHashMap(http.Status, HandlerFn) = std.AutoHashMap(http.Status, HandlerFn).init(std.heap.page_allocator),
+
 pub fn getPort(self: *Self) u16 {
     return self.net_server.listen_address.getPort();
 }
@@ -28,7 +32,7 @@ pub fn getAddress(self: *Self) net.Address {
     return self.net_server.listen_address;
 }
 
-pub fn new(comptime conf: config.Engine) !Engine {
+pub fn init(comptime conf: config.Engine) !Engine {
     const listen_addr = conf.addr;
     const listen_port = conf.port;
 
@@ -43,7 +47,7 @@ pub fn new(comptime conf: config.Engine) !Engine {
 
 pub fn default() !Engine {
     // // std.Thread.spawn(.{}, run_server, .{self.net_server}) catch @panic("thread spawn");
-    return new(.{ .port = 0 });
+    return init(.{ .port = 0 });
 }
 
 pub fn deinit(self: *Self) void {
@@ -68,19 +72,24 @@ pub fn run(self: *Self) !void {
                 else => |e| return e,
             };
 
-            // std.debug.print("request: {s}\n", .{request.head.target});
+            var req = Request.init(&request);
+            var res = Response.init(&request);
+            var ctx = Context.init(&req, &res);
+
             for (self.router.getRoutes().items) |route| {
                 if (mem.eql(u8, request.head.target, route.path)) {
-                    var req = Request.init(&request);
-                    var res = Response.init(&request);
-                    var ctx = Context.init(&req, &res);
                     try route.handler(&ctx, &req, &res);
                     continue;
                 }
             }
 
-            // 404 not found
-            try request.respond("", .{ .status = .not_found, .keep_alive = false });
+            // 404 not found!
+            if (self.getCatchers().get(.not_found)) |notFoundHande| {
+                try notFoundHande(&ctx, &req, &res);
+            } else {
+                // Default handle 404.
+                try request.respond("404 - Not Found", .{ .status = .not_found, .keep_alive = false });
+            }
         }
     }
 }
@@ -96,6 +105,14 @@ pub fn pong(self: *Self) *const [4:0]u8 {
 pub fn addRouter(self: *Self, r: Router) void {
     self.router = r;
 }
-pub fn getRouter(self: *Self) Router {
-    return self.router;
+pub fn getRouter(self: *Self) *Router {
+    return &self.router;
+}
+
+pub fn getCatchers(self: *Self) *std.AutoHashMap(http.Status, HandlerFn) {
+    return &self.catchers;
+}
+
+pub fn getCatcher(self: *Self, status: http.Status) HandlerFn {
+    return &self.catchers.get(status).?;
 }

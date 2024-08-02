@@ -9,6 +9,24 @@ allocator: std.mem.Allocator,
 pub const Context = struct {
     status: http.Status = .ok,
 };
+
+pub const Catcher = struct {};
+
+pub const CORS = struct {
+    // The allowed origins.
+    origins: []const u8 = "*",
+    // The allowed methods.
+    methods: []const u8 = "GET, POST, PUT, DELETE, PATCH, OPTIONS",
+    // The allowed headers.
+    headers: []const u8 = "Content-Type, Authorization",
+    // The exposed headers.
+    exposed_headers: []const u8 = "Content-Type, Authorization",
+    // The allowed credentials.
+    credentials: bool = true,
+    // The max age.
+    max_age: u32 = 86400,
+};
+
 pub const Engine = struct {
     // The server address.
     addr: []const u8 = "0.0.0.0",
@@ -16,6 +34,8 @@ pub const Engine = struct {
     port: u16 = 8080,
 
     allocator: std.mem.Allocator = std.heap.page_allocator,
+
+    cors: CORS = CORS{},
 };
 
 /// HTTP server configuration.
