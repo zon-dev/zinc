@@ -40,42 +40,42 @@ pub fn getRoutes(self: *Self) std.ArrayList(Route) {
 }
 
 pub fn setNotFound(self: *Self, comptime handler: anytype) anyerror!void {
-    try self.routes.append(Route.get("*", handler));
+    try self.addRoute(Route.get("*", handler));
 }
 
 pub fn add(self: *Self, http_method: std.http.Method, comptime path: []const u8, comptime handler: anytype) anyerror!void {
-    try self.routes.append(Route{
+    try self.addRoute(Route{
         .http_method = http_method,
         .path = path,
         .handler = handler,
     });
 }
 pub fn get(self: *Self, comptime path: []const u8, comptime handler: anytype) anyerror!void {
-    try self.routes.append(Route.get(path, handler));
+    try self.addRoute(Route.get(path, handler));
 }
 pub fn post(self: *Self, comptime path: []const u8, comptime handler: anytype) anyerror!void {
-    try self.routes.append(Route.post(path, handler));
+    try self.addRoute(Route.post(path, handler));
 }
 pub fn put(self: *Self, comptime path: []const u8, comptime handler: anytype) anyerror!void {
-    try self.routes.append(Route.put(path, handler));
+    try self.addRoute(Route.put(path, handler));
 }
 pub fn delete(self: *Self, comptime path: []const u8, comptime handler: anytype) anyerror!void {
-    try self.routes.append(Route.delete(path, handler));
+    try self.addRoute(Route.delete(path, handler));
 }
 pub fn patch(self: *Self, comptime path: []const u8, comptime handler: anytype) anyerror!void {
-    try self.routes.append(Route.patch(path, handler));
+    try self.addRoute(Route.patch(path, handler));
 }
 pub fn options(self: *Self, comptime path: []const u8, comptime handler: anytype) anyerror!void {
-    try self.routes.append(Route.options(path, handler));
+    try self.addRoute(Route.options(path, handler));
 }
 pub fn head(self: *Self, comptime path: []const u8, comptime handler: anytype) anyerror!void {
-    try self.routes.append(Route.head(path, handler));
+    try self.addRoute(Route.head(path, handler));
 }
 pub fn connect(self: *Self, comptime path: []const u8, comptime handler: anytype) anyerror!void {
-    try self.routes.append(Route.connect(path, handler));
+    try self.addRoute(Route.connect(path, handler));
 }
 pub fn trace(self: *Self, comptime path: []const u8, comptime handler: anytype) anyerror!void {
-    try self.routes.append(Route.trace(path, handler));
+    try self.addRoute(Route.trace(path, handler));
 }
 
 pub fn addRoute(self: *Self, route: Route) anyerror!void {

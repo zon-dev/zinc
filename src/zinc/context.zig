@@ -12,6 +12,8 @@ const Self = @This();
 request: *Request,
 response: *Response,
 
+// params: std.StringHashMap(anyopaque) = std.StringHashMap(anyopaque).init(std.heap.page_allocator),
+
 pub fn init(
     req: *Request,
     res: *Response,

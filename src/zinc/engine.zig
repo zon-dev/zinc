@@ -11,7 +11,7 @@ const Route = @import("route.zig");
 const Request = @import("request.zig").Request;
 const Response = @import("response.zig").Response;
 const HandlerFn = @import("handler.zig").HandlerFn;
-
+const Handler = @import("handler.zig").Handler;
 const config = @import("config.zig").Config;
 
 pub const Engine = @This();
@@ -77,7 +77,9 @@ pub fn run(self: *Self) !void {
             var ctx = Context.init(&req, &res);
 
             for (self.router.getRoutes().items) |route| {
-                if (mem.eql(u8, request.head.target, route.path)) {
+                if (mem.eql(u8, request.head.target, route.path)
+                    and request.head.method == route.http_method
+                ) {
                     try route.handler(&ctx, &req, &res);
                     continue;
                 }
@@ -115,4 +117,11 @@ pub fn getCatchers(self: *Self) *std.AutoHashMap(http.Status, HandlerFn) {
 
 pub fn getCatcher(self: *Self, status: http.Status) HandlerFn {
     return &self.catchers.get(status).?;
+}
+
+
+/// use middleware to match any route
+pub fn use(self: *Self, comptime args: config.Middleware) anyerror!void {
+    _ = self;
+    _ = args;
 }
