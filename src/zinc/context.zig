@@ -1,11 +1,12 @@
 const std = @import("std");
 
 const RespondOptions = std.http.Server.Request.RespondOptions;
+const Header = std.http.Header;
 
 const Request = @import("request.zig").Request;
 const Response = @import("response.zig").Response;
 const Config = @import("config.zig").Config;
-const Header = @import("header.zig").Header;
+const Headers = @import("headers.zig").Headers;
 
 pub const Context = @This();
 const Self = @This();
@@ -13,7 +14,7 @@ const Self = @This();
 request: *Request,
 response: *Response,
 
-headers: []const Header = &.{},
+headers: Headers = Headers.init(),
 
 // params: std.StringHashMap(anyopaque) = std.StringHashMap(anyopaque).init(std.heap.page_allocator),
 
@@ -25,23 +26,13 @@ pub fn init(self: Self) Context {
 }
 
 pub fn HTML(self: *Self, conf: Config.Context, content: []const u8) anyerror!void {
-    try self.response.send(content, .{
-        .status = conf.status,
-        .extra_headers = &[_]std.http.Header{
-            .{ .name = "Content-Type", .value = "text/html" },
-        },
-        .keep_alive = false,
-    });
+    try self.headers.add("Content-Type", "text/html");
+    try self.closedResponse(conf, content);
 }
 
 pub fn Text(self: *Self, conf: Config.Context, content: []const u8) anyerror!void {
-    try self.response.send(content, .{
-        .status = conf.status,
-        .extra_headers = &[_]std.http.Header{
-            .{ .name = "Content-Type", .value = "text/plain" },
-        },
-        .keep_alive = false,
-    });
+    try self.headers.add("Content-Type", "text/plain");
+    try self.closedResponse(conf, content);
 }
 
 pub fn JSON(self: *Self, conf: Config.Context, value: anytype) anyerror!void {
@@ -50,15 +41,27 @@ pub fn JSON(self: *Self, conf: Config.Context, value: anytype) anyerror!void {
     var string = std.ArrayList(u8).init(fba.allocator());
     try std.json.stringify(value, .{}, string.writer());
 
-    try self.response.send(string.items, .{
+    try self.headers.add("Content-Type", "application/json");
+
+    try self.closedResponse(conf, string.items);
+}
+
+fn closedResponse(self: *Self, conf: Config.Context, content: []const u8) anyerror !void { 
+    try self.response.send(content, .{
         .status = conf.status,
-        .extra_headers = &[_]std.http.Header{
-            .{ .name = "Content-Type", .value = "application/json" },
-        },
+        .extra_headers = self.headers.items(),
         .keep_alive = false,
     });
 }
 
-pub fn getHeaders(self: *Self) *[]const Header {
+pub fn addHeader(self: *Self, name: []const u8, value: []const u8) anyerror!void {
+    try self.headers.add(name, value);
+}
+
+pub fn getHeaders(self: *Self) *Headers {
     return &self.headers;
+}
+
+pub fn next(self: *Self) !void {
+    _ = self;    
 }
