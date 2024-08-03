@@ -16,13 +16,13 @@ pub const Context = struct {
 
 pub const Catcher = struct {};
 
-pub const Middleware = struct{
-    methods: []const http.Method = &[_]http.Method{ 
-        http.Method.GET, 
-        http.Method.POST, 
-        http.Method.PUT, 
-        http.Method.DELETE, 
-        http.Method.PATCH, 
+pub const Middleware = struct {
+    methods: []const http.Method = &[_]http.Method{
+        http.Method.GET,
+        http.Method.POST,
+        http.Method.PUT,
+        http.Method.DELETE,
+        http.Method.PATCH,
         http.Method.OPTIONS,
     },
     prefix: []const u8 = "/",

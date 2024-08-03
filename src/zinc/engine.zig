@@ -4,6 +4,7 @@ const mem = std.mem;
 const net = std.net;
 const proto = http.protocol;
 const Server = http.Server;
+const Allocator = std.mem.Allocator;
 
 const Context = @import("context.zig").Context;
 const Router = @import("router.zig");
@@ -16,6 +17,8 @@ const config = @import("config.zig").Config;
 
 pub const Engine = @This();
 const Self = @This();
+
+allocator: Allocator = std.heap.page_allocator,
 
 net_server: std.net.Server,
 threads: []std.Thread = &[_]std.Thread{},
@@ -40,6 +43,8 @@ pub fn init(comptime conf: config.Engine) !Engine {
     var listener = try address.listen(.{ .reuse_address = true });
     errdefer listener.deinit();
     return Engine{
+        .allocator = conf.allocator,
+        .catchers = std.AutoHashMap(http.Status, HandlerFn).init(conf.allocator),
         .net_server = listener,
         .threads = undefined,
     };
@@ -66,22 +71,24 @@ pub fn run(self: *Self) !void {
 
         var http_server = http.Server.init(conn, &read_buffer);
 
-        while (http_server.state == .ready) {
+        ready: while (http_server.state == .ready) {
             var request = http_server.receiveHead() catch |err| switch (err) {
                 error.HttpConnectionClosing => continue :accept,
                 else => |e| return e,
             };
 
-            var req = Request.init(&request);
-            var res = Response.init(&request);
-            var ctx = Context.init(&req, &res);
+            var req = Request.init(.{ .request = &request });
+            var res = Response.init(.{ .request = &request });
+            var ctx = Context.init(.{ .request = &req, .response = &res });
 
             for (self.router.getRoutes().items) |route| {
-                if (mem.eql(u8, request.head.target, route.path)
-                    and request.head.method == route.http_method
-                ) {
-                    try route.handler(&ctx, &req, &res);
-                    continue;
+                if (mem.eql(u8, request.head.target, route.path)) {
+                    for (route.methods) |method| {
+                        if (method == request.head.method) {
+                            try route.handler(&ctx, &req, &res);
+                            continue :ready;
+                        }
+                    }
                 }
             }
 
@@ -89,7 +96,6 @@ pub fn run(self: *Self) !void {
             if (self.getCatchers().get(.not_found)) |notFoundHande| {
                 try notFoundHande(&ctx, &req, &res);
             } else {
-                // Default handle 404.
                 try request.respond("404 - Not Found", .{ .status = .not_found, .keep_alive = false });
             }
         }
@@ -118,7 +124,6 @@ pub fn getCatchers(self: *Self) *std.AutoHashMap(http.Status, HandlerFn) {
 pub fn getCatcher(self: *Self, status: http.Status) HandlerFn {
     return &self.catchers.get(status).?;
 }
-
 
 /// use middleware to match any route
 pub fn use(self: *Self, comptime args: config.Middleware) anyerror!void {

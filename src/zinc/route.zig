@@ -7,49 +7,52 @@ const Response = @import("response.zig").Response;
 
 pub const Route = @This();
 
-http_method: std.http.Method,
+methods: []const std.http.Method = &.{},
 
 path: []const u8,
 
-// handler: *const fn (*Context, *Request, *Response) anyerror!void,
 handler: HandlerFn,
 
-pub fn init(http_method: std.http.Method, comptime path: []const u8, comptime handler: anytype) Route {
+pub fn init(methods: []const std.http.Method, comptime path: []const u8, comptime handler: anytype) Route {
     return Route{
-        .http_method = http_method,
+        .methods = methods,
         .path = path,
         .handler = handler,
     };
 }
 
 pub fn get(comptime path: []const u8, comptime handler: anytype) Route {
-    return init(std.http.Method.GET, path, handler);
+    return init(&.{.GET}, path, handler);
 }
 
 pub fn post(comptime path: []const u8, comptime handler: anytype) Route {
-    return init(std.http.Method.POST, path, handler);
+    return init(&.{.POST}, path, handler);
 }
 pub fn put(comptime path: []const u8, comptime handler: anytype) Route {
-    return init(std.http.Method.PUT, path, handler);
+    return init(&.{.PUT}, path, handler);
 }
 pub fn delete(comptime path: []const u8, comptime handler: anytype) Route {
-    return init(std.http.Method.DELETE, path, handler);
+    return init(&.{.DELETE}, path, handler);
 }
 pub fn patch(comptime path: []const u8, comptime handler: anytype) Route {
-    return init(std.http.Method.PATCH, path, handler);
+    return init(&.{.PATCH}, path, handler);
 }
 pub fn options(comptime path: []const u8, comptime handler: anytype) Route {
-    return init(std.http.Method.OPTIONS, path, handler);
+    return init(&.{.OPTIONS}, path, handler);
 }
 pub fn head(comptime path: []const u8, comptime handler: anytype) Route {
-    return init(std.http.Method.HEAD, path, handler);
+    return init(&.{.HEAD}, path, handler);
 }
 pub fn connect(comptime path: []const u8, comptime handler: anytype) Route {
-    return init(std.http.Method.CONNECT, path, handler);
+    return init(&.{.CONNECT}, path, handler);
 }
 pub fn trace(comptime path: []const u8, comptime handler: anytype) Route {
-    return init(std.http.Method.TRACE, path, handler);
+    return init(&.{.TRACE}, path, handler);
 }
+
+// pub fn add(self: *std.ArrayList(Route), comptime route: Route) anyerror!void {
+//     return self.append(route);
+// }
 
 pub fn getPath(self: *Route) []const u8 {
     return self.path;

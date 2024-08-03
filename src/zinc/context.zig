@@ -5,6 +5,7 @@ const RespondOptions = std.http.Server.Request.RespondOptions;
 const Request = @import("request.zig").Request;
 const Response = @import("response.zig").Response;
 const Config = @import("config.zig").Config;
+const Header = @import("header.zig").Header;
 
 pub const Context = @This();
 const Self = @This();
@@ -12,15 +13,14 @@ const Self = @This();
 request: *Request,
 response: *Response,
 
+headers: []const Header = &.{},
+
 // params: std.StringHashMap(anyopaque) = std.StringHashMap(anyopaque).init(std.heap.page_allocator),
 
-pub fn init(
-    req: *Request,
-    res: *Response,
-) Context {
+pub fn init(self: Self) Context {
     return Context{
-        .request = req,
-        .response = res,
+        .request = self.request,
+        .response = self.response,
     };
 }
 
@@ -57,4 +57,8 @@ pub fn JSON(self: *Self, conf: Config.Context, value: anytype) anyerror!void {
         },
         .keep_alive = false,
     });
+}
+
+pub fn getHeaders(self: *Self) *[]const Header {
+    return &self.headers;
 }

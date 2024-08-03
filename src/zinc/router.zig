@@ -43,13 +43,14 @@ pub fn setNotFound(self: *Self, comptime handler: anytype) anyerror!void {
     try self.addRoute(Route.get("*", handler));
 }
 
-pub fn add(self: *Self, http_method: std.http.Method, comptime path: []const u8, comptime handler: anytype) anyerror!void {
+pub fn add(self: *Self, comptime methods: []const std.http.Method, comptime path: []const u8, comptime handler: anytype) anyerror!void {
     try self.addRoute(Route{
-        .http_method = http_method,
+        .methods = methods,
         .path = path,
         .handler = handler,
     });
 }
+
 pub fn get(self: *Self, comptime path: []const u8, comptime handler: anytype) anyerror!void {
     try self.addRoute(Route.get(path, handler));
 }

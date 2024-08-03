@@ -5,6 +5,7 @@ const http_request = std.http.Server.Request;
 const http_response = std.http.Server.Response;
 
 const RespondOptions = http_request.RespondOptions;
+const Config = @import("config.zig").Config;
 
 pub const Response = @This();
 const Self = @This();
@@ -16,9 +17,13 @@ status: http.Status = http.Status.ok,
 header: std.StringArrayHashMap([]u8) = std.StringArrayHashMap([]u8).init(std.heap.page_allocator),
 body: []const u8 = "",
 
-pub fn init(req: *http_request) Response {
+pub fn init(self: Self) Response {
     return Response{
-        .request = req,
+        .request = self.request,
+        .version = self.version,
+        .status = self.status,
+        .header = self.header,
+        .body = self.body,
     };
 }
 

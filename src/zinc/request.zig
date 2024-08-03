@@ -7,10 +7,11 @@ const RespondOptions = http_request.RespondOptions;
 request: *http_request,
 
 pub const Request = @This();
+const Self = @This();
 
-pub fn init(req: *http_request) Request {
+pub fn init(self: Self) Request {
     return Request{
-        .request = req,
+        .request = self.request,
     };
 }
 
