@@ -13,14 +13,14 @@ pub fn init() Headers {
 }
 
 pub fn add(self: *Headers, comptime name: []const u8, comptime value: []const u8) anyerror!void {
-    const header = .{.name = name, .value = value};
+    const header = .{ .name = name, .value = value };
     try self.headers.append(header);
 }
 
 pub fn get(self: *Headers, comptime name: []const u8) ?Header {
     const headers = self.headers.items;
     for (headers) |header| {
-        if (std.mem.eql(u8, header.name, name)) {
+        if (std.ascii.eqlIgnoreCase(header.name, name)) {
             return header;
         }
     }
@@ -32,26 +32,24 @@ pub fn getHeaders(self: *Headers) []Header {
 }
 
 pub fn set(self: *Headers, comptime name: []const u8, comptime value: []const u8) anyerror!void {
-    const header = try self.get(name);
-    if (header != null) {
-        header.value = value;
-    } else {
-        try self.add(name, value);
+    if (self.get(name) != null) {
+        try self.remove(name);
     }
+    try self.add(name, value);
 }
 
 pub fn remove(self: *Headers, comptime name: []const u8) anyerror!void {
     const headers = self.headers.items;
-    for (headers) |header| {
-        if (std.mem.eql(u8, header.name, name)) {
-            self.headers.remove(header);
+    for (headers, 0..) |header, index| {
+        if (std.ascii.eqlIgnoreCase(header.name, name)) {
+            _ = self.headers.orderedRemove(index);
             return;
         }
     }
 }
 
 pub fn clear(self: *Headers) void {
-    self.headers.clear();
+    self.headers.clearAndFree();
 }
 
 pub fn deinit(self: *Headers) void {

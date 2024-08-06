@@ -102,14 +102,6 @@ pub fn run(self: *Self) !void {
     }
 }
 
-pub fn ping(self: *Self) *const [4:0]u8 {
-    _ = self;
-    return "ping";
-}
-pub fn pong(self: *Self) *const [4:0]u8 {
-    _ = self;
-    return "pong";
-}
 pub fn addRouter(self: *Self, r: Router) void {
     self.router = r;
 }

@@ -40,13 +40,12 @@ pub fn JSON(self: *Self, conf: Config.Context, value: anytype) anyerror!void {
     var fba = std.heap.FixedBufferAllocator.init(&buf);
     var string = std.ArrayList(u8).init(fba.allocator());
     try std.json.stringify(value, .{}, string.writer());
-
     try self.headers.add("Content-Type", "application/json");
 
     try self.closedResponse(conf, string.items);
 }
 
-fn closedResponse(self: *Self, conf: Config.Context, content: []const u8) anyerror !void { 
+fn closedResponse(self: *Self, conf: Config.Context, content: []const u8) anyerror!void {
     try self.response.send(content, .{
         .status = conf.status,
         .extra_headers = self.headers.items(),
@@ -63,5 +62,5 @@ pub fn getHeaders(self: *Self) *Headers {
 }
 
 pub fn next(self: *Self) !void {
-    _ = self;    
+    _ = self;
 }
