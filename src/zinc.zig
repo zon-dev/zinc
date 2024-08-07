@@ -13,3 +13,7 @@ pub const HandlerFn = @import("zinc/handler.zig").HandlerFn;
 pub fn init(comptime conf: Config.Engine) !Engine {
     return Engine.init(conf);
 }
+
+pub fn default() !Engine {
+    return Engine.default();
+}
