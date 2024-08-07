@@ -34,23 +34,18 @@ pub fn init() Router {
     };
 }
 
-pub fn handleContext(self: *Self, ctx: Context)void{
-    const request = ctx.request;
-    const response = ctx.response;
-    const path = request.path;
-    const method = request.method;
+pub fn handleContext(self: *Self, ctx: Context) void {
     const routes = self.routes.items;
 
     for (routes) |route| {
-        if (route.match(method, path)) {
-            route.handler(ctx,ctx.request,ctx.response);
+        if (route.match(ctx.request.method, ctx.request.path)) {
+            try route.HandlerFn(ctx, ctx.request, ctx.response);
             return;
         }
     }
-
-    response.status = std.http.Status.not_found;
-    response.sendBody("404 Not Found");
+    // ctx.Text(.not_found, "404 Not Found");
 }
+
 /// Return routes.
 pub fn getRoutes(self: *Self) std.ArrayList(Route) {
     return self.routes;
@@ -98,4 +93,16 @@ pub fn trace(self: *Self, comptime path: []const u8, comptime handler: anytype) 
 
 pub fn addRoute(self: *Self, route: Route) anyerror!void {
     try self.routes.append(route);
+}
+
+pub fn matchRoute(self: *Self, method: std.http.Method, path: []const u8) ?*Route {
+    const routes = self.routes.items;
+
+    for (routes) |*route| {
+        if (route.match(method, path)) {
+            return route;
+        }
+    }
+
+    return null;
 }

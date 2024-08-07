@@ -23,9 +23,12 @@ pub fn init(methods: []const std.http.Method, comptime path: []const u8, comptim
 
 pub fn match(self: *Route, method: std.http.Method, path: []const u8) bool {
     if (self.methods.len == 0) {
-        return self.path == path;
+        if (std.ascii.eqlIgnoreCase(self.path, path)) {
+            return true;
+        }
     }
-    if (!std.ascii.eqlIgnoreCase(self.path , path)) {
+
+    if (!std.ascii.eqlIgnoreCase(self.path, path)) {
         return false;
     }
 
@@ -74,11 +77,10 @@ pub fn getPath(self: *Route) []const u8 {
     return self.path;
 }
 
-pub fn getHandler(self: *Route) *const fn (Context, Request, Response) anyerror!void {
+pub fn getHandler(self: *Route) HandlerFn {
     return &self.handler;
 }
 
-pub fn execute(self: *Route, context: *Context, request: *Request, response: *Response) anyerror!void {
-    const handler = &self.handler;
-    return handler(context, request, response);
+pub fn execute(self: *Route, ctx: *Context, req: *Request, res: *Response) anyerror!void {
+    return &self.handler(ctx, req, res);
 }

@@ -26,7 +26,7 @@ pub const Middleware = struct {
         http.Method.OPTIONS,
     },
     prefix: []const u8 = "/",
-    handler_fn: Handler.HandlerFn = undefined,
+    handler_fn: *const fn () Handler.HandlerFn = undefined,
 };
 
 pub const CORS = struct {

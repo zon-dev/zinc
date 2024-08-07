@@ -81,23 +81,23 @@ pub fn run(self: *Self) !void {
             var res = Response.init(.{ .request = &request });
             var ctx = Context.init(.{ .request = &req, .response = &res });
 
-            for (self.router.getRoutes().items) |route| {
-                if (mem.eql(u8, request.head.target, route.path)) {
-                    for (route.methods) |method| {
-                        if (method == request.head.method) {
-                            try route.handler(&ctx, &req, &res);
-                            continue :ready;
-                        }
-                    }
+            if (self.router.matchRoute(request.head.method, request.head.target)) |route| {
+                try route.handler(&ctx, &req, &res);
+                continue :ready;
+            } else {
+                // 404 not found!
+                if (self.getCatchers().get(.not_found)) |notFoundHande| {
+                    try notFoundHande(&ctx, &req, &res);
                 }
             }
 
-            // 404 not found!
-            if (self.getCatchers().get(.not_found)) |notFoundHande| {
-                try notFoundHande(&ctx, &req, &res);
-            } else {
-                try request.respond("404 - Not Found", .{ .status = .not_found, .keep_alive = false });
-            }
+            try request.respond("404 - Not Found", .{ .status = .not_found, .keep_alive = false });
+        }
+
+        // closing
+        while (http_server.state == .closing) {
+            // std.debug.print("closing\n", .{});
+            continue :accept;
         }
     }
 }

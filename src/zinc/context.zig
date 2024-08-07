@@ -65,13 +65,7 @@ pub fn next(self: *Self) !void {
     _ = self;
 }
 
-pub fn redirect(self: *Self,http_status: std.http.Status ,url: []const u8) anyerror!void {
+pub fn redirect(self: *Self, http_status: std.http.Status, url: []const u8) anyerror!void {
     try self.headers.add("Location", url);
-    self.response.status = http_status;
-    try self.request.request.respond("", .{
-        .status = self.response.status,
-        .reason = self.response.status.phrase(),
-        .extra_headers = self.headers.items(),
-        .keep_alive = false
-    });
+    try self.request.request.respond("", .{ .status = http_status, .reason = http_status.phrase(), .extra_headers = self.headers.items(), .keep_alive = false });
 }
