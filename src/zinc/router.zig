@@ -34,6 +34,23 @@ pub fn init() Router {
     };
 }
 
+pub fn handleContext(self: *Self, ctx: Context)void{
+    const request = ctx.request;
+    const response = ctx.response;
+    const path = request.path;
+    const method = request.method;
+    const routes = self.routes.items;
+
+    for (routes) |route| {
+        if (route.match(method, path)) {
+            route.handler(ctx,ctx.request,ctx.response);
+            return;
+        }
+    }
+
+    response.status = std.http.Status.not_found;
+    response.sendBody("404 Not Found");
+}
 /// Return routes.
 pub fn getRoutes(self: *Self) std.ArrayList(Route) {
     return self.routes;

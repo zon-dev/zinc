@@ -21,6 +21,22 @@ pub fn init(methods: []const std.http.Method, comptime path: []const u8, comptim
     };
 }
 
+pub fn match(self: *Route, method: std.http.Method, path: []const u8) bool {
+    if (self.methods.len == 0) {
+        return self.path == path;
+    }
+    if (!std.ascii.eqlIgnoreCase(self.path , path)) {
+        return false;
+    }
+
+    for (self.methods) |m| {
+        if (m == method) {
+            return true;
+        }
+    }
+    return false;
+}
+
 pub fn get(comptime path: []const u8, comptime handler: anytype) Route {
     return init(&.{.GET}, path, handler);
 }

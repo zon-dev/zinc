@@ -5,4 +5,6 @@ pub const Response = @import("zinc/response.zig").Response;
 pub const Route = @import("zinc/route.zig").Route;
 pub const Router = @import("zinc/router.zig").Router;
 pub const Headers = @import("zinc/headers.zig").Headers;
-// pub const Handler = @import("zinc/handler.zig").Handler;
+pub const Config = @import("zinc/config.zig").Config;
+pub const Handler = @import("zinc/handler.zig").Handler;
+pub const HandlerFn = @import("zinc/handler.zig").HandlerFn;

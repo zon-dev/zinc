@@ -12,7 +12,7 @@ pub fn init() Headers {
     };
 }
 
-pub fn add(self: *Headers, comptime name: []const u8, comptime value: []const u8) anyerror!void {
+pub fn add(self: *Headers, name: []const u8, value: []const u8) anyerror!void {
     const header = .{ .name = name, .value = value };
     try self.headers.append(header);
 }

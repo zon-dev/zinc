@@ -19,6 +19,7 @@ pub fn main() !void {
 
     var catchers = zinc.getCatchers();
     try catchers.put(.not_found, notFound);
+    try catchers.put(.forbidden, forbidden)
 
     try zinc.run();
 }
@@ -31,10 +32,18 @@ fn helloWorld(ctx: *z.Context, _: *z.Request, _: *z.Response) anyerror!void {
     try ctx.JSON(.{}, .{ .message = "Hello, World!" });
 }
 
+// Default 404 (not found) page
 fn notFound(ctx: *z.Context, _: *z.Request, _: *z.Response) anyerror!void {
     try ctx.HTML(.{
         .status = .not_found,
     }, "<h1>404 Not Found</h1>");
+}
+
+// Default 403 (access denied) page
+fn forbidden(ctx: *z.Context, _: *z.Request, _: *z.Response) anyerror!void {
+    try ctx.HTML(.{
+        .status = .forbidden,
+    }, "<h1>403 Access Denied</h1>");
 }
 
 ```
