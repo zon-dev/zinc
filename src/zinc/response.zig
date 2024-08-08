@@ -10,7 +10,8 @@ const Config = @import("config.zig").Config;
 pub const Response = @This();
 const Self = @This();
 
-request: *http_request,
+request: *http_request = undefined,
+response: *http_response = undefined,
 
 version: []const u8 = "HTTP/1.1",
 status: http.Status = http.Status.ok,
@@ -20,6 +21,7 @@ body: []const u8 = "",
 pub fn init(self: Self) Response {
     return Response{
         .request = self.request,
+        .response = self.response,
         .version = self.version,
         .status = self.status,
         .header = self.header,
