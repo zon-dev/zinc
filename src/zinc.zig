@@ -8,7 +8,7 @@ pub const Headers = @import("zinc/headers.zig").Headers;
 pub const Config = @import("zinc/config.zig").Config;
 pub const Handler = @import("zinc/handler.zig").Handler;
 pub const HandlerFn = @import("zinc/handler.zig").HandlerFn;
-
+pub const Middleware = @import("zinc/middleware.zig").Middleware;
 
 pub fn init(comptime conf: Config.Engine) !Engine {
     return Engine.init(conf);

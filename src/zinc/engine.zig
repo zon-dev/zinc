@@ -6,14 +6,16 @@ const proto = http.protocol;
 const Server = http.Server;
 const Allocator = std.mem.Allocator;
 
-const Context = @import("context.zig").Context;
 const Router = @import("router.zig");
 const Route = @import("route.zig");
-const Request = @import("request.zig").Request;
-const Response = @import("response.zig").Response;
+
+const Context = @import("context.zig");
+const Request = @import("request.zig");
+const Response = @import("response.zig");
 const HandlerFn = @import("handler.zig").HandlerFn;
-const Handler = @import("handler.zig").Handler;
-const config = @import("config.zig").Config;
+const Handler = @import("handler.zig");
+const config = @import("config.zig");
+const Middleware = @import("middleware.zig");
 
 pub const Engine = @This();
 const Self = @This();
@@ -24,7 +26,7 @@ net_server: std.net.Server,
 threads: []std.Thread = &[_]std.Thread{},
 mutex: std.Thread.Mutex = .{},
 
-router: Router = Router.init(),
+router: Router = Router.init(.{}),
 
 catchers: std.AutoHashMap(http.Status, HandlerFn) = std.AutoHashMap(http.Status, HandlerFn).init(std.heap.page_allocator),
 
@@ -52,7 +54,10 @@ pub fn init(comptime conf: config.Engine) !Engine {
 
 pub fn default() !Engine {
     // // std.Thread.spawn(.{}, run_server, .{self.net_server}) catch @panic("thread spawn");
-    return init(.{ .addr = "127.0.0.1", .port = 0, });
+    return init(.{
+        .addr = "127.0.0.1",
+        .port = 0,
+    });
 }
 
 pub fn deinit(self: *Self) void {
@@ -73,7 +78,7 @@ pub fn run(self: *Self) !void {
 
         ready: while (http_server.state == .ready) {
             var request = http_server.receiveHead() catch |err| switch (err) {
-                error.HttpConnectionClosing => continue :accept,
+                error.HttpConnectionClosing => continue :ready,
                 else => |e| return e,
             };
 
@@ -82,7 +87,7 @@ pub fn run(self: *Self) !void {
             var ctx = Context.init(.{ .request = &req, .response = &res });
 
             if (self.router.matchRoute(request.head.method, request.head.target)) |route| {
-                try route.handler(&ctx, &req, &res);
+                try route.handle(&ctx, &req, &res);
                 continue :ready;
             } else {
                 // 404 not found!
@@ -118,7 +123,7 @@ pub fn getCatcher(self: *Self, status: http.Status) HandlerFn {
 }
 
 /// use middleware to match any route
-pub fn use(self: *Self, comptime args: config.Middleware) anyerror!void {
+pub fn use(self: *Self, args: Middleware) anyerror!void {
     _ = self;
     _ = args;
 }

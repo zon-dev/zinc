@@ -3,6 +3,7 @@ const Request = @import("request.zig").Request;
 const Response = @import("response.zig").Response;
 
 pub const Handler = @This();
+const Self = @This();
 
 pub const HandlerFn = *const fn (*Context, *Request, *Response) anyerror!void;
 handlerFn: HandlerFn,

@@ -10,40 +10,25 @@ const Route = @import("route.zig");
 pub const Router = @This();
 const Self = @This();
 
-// fn arena_allocator() std.heap.Allocator {
-//     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-//     const gpa_allocator = gpa.allocator();
-//     const arena = std.heap.ArenaAllocator.init(gpa_allocator);
+allocator: std.mem.Allocator = std.heap.page_allocator,
+routes: std.ArrayList(Route) = std.ArrayList(Route).init(std.heap.page_allocator),
 
-//     defer {
-//         const deinit_status = gpa.deinit();
-//         if (deinit_status == .leak) @panic("Memory leak!");
-//         defer arena.deinit();
-//     }
-
-//     const allocator = arena.allocator();
-//     return allocator;
-// }
-
-routes: std.ArrayList(Route),
-
-pub fn init() Router {
-    return Router{
-        // Todo, use arena allocator
-        .routes = std.ArrayList(Route).init(std.heap.page_allocator),
+pub fn init(self: Self) Router {
+    return .{
+        .allocator = self.allocator,
+        .routes = self.routes,
     };
 }
 
 pub fn handleContext(self: *Self, ctx: Context) void {
     const routes = self.routes.items;
 
-    for (routes) |route| {
+    for (routes) |*route| {
         if (route.match(ctx.request.method, ctx.request.path)) {
             try route.HandlerFn(ctx, ctx.request, ctx.response);
             return;
         }
     }
-    // ctx.Text(.not_found, "404 Not Found");
 }
 
 /// Return routes.

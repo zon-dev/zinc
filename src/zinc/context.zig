@@ -16,6 +16,9 @@ response: *Response,
 
 headers: Headers = Headers.init(),
 
+// Params   Params
+// handlers HandlersChain
+
 // params: std.StringHashMap(anyopaque) = std.StringHashMap(anyopaque).init(std.heap.page_allocator),
 
 pub fn init(self: Self) Context {

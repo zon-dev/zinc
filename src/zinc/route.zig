@@ -1,9 +1,9 @@
 const std = @import("std");
 const HandlerFn = @import("handler.zig").HandlerFn;
 // const HandleAction = @import("handler.zig").HandleAction;
-const Context = @import("context.zig").Context;
-const Request = @import("request.zig").Request;
-const Response = @import("response.zig").Response;
+const Context = @import("context.zig");
+const Request = @import("request.zig");
+const Response = @import("response.zig");
 
 pub const Route = @This();
 
@@ -81,6 +81,10 @@ pub fn getHandler(self: *Route) HandlerFn {
     return &self.handler;
 }
 
-pub fn execute(self: *Route, ctx: *Context, req: *Request, res: *Response) anyerror!void {
-    return &self.handler(ctx, req, res);
+// pub fn execute(self: *Route, ctx: *Context, req: *Request, res: *Response) anyerror!void {
+//     return &self.handler(ctx, req, res);
+// }
+
+pub fn handle(self: *Route, ctx: *Context, req: *Request, res: *Response) anyerror!void {
+    return try self.handler(ctx, req, res);
 }
