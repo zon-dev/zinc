@@ -1,7 +1,7 @@
 const std = @import("std");
 const testing = std.testing;
-const z = @import("zinc.zig");
-const Headers = z.Headers;
+const zinc = @import("../zinc.zig");
+const Headers = zinc.Headers;
 
 test Headers {
     var headers = Headers.init();

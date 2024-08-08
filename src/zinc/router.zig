@@ -80,14 +80,12 @@ pub fn addRoute(self: *Self, route: Route) anyerror!void {
     try self.routes.append(route);
 }
 
-pub fn matchRoute(self: *Self, method: std.http.Method, path: []const u8) ?*Route {
+pub fn matchRoute(self: *Self, method: std.http.Method, path: []const u8) anyerror!*Route {
     const routes = self.routes.items;
 
     for (routes) |*route| {
-        if (route.match(method, path)) {
-            return route;
-        }
+        return route.match(method, path);
     }
 
-    return null;
+    return Route.RouteError.NotFound;
 }

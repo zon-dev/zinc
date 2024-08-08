@@ -2,7 +2,7 @@ const std = @import("std");
 const http = std.http;
 const http_version = std.http.Version;
 
-const Handler = @import("handler.zig").Handler;
+const Handler = @import("handler.zig");
 
 pub const Config = @This();
 

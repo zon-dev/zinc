@@ -5,9 +5,10 @@ allocator: std.mem.Allocator = std.heap.page_allocator,
 headers: std.ArrayList(Header),
 
 pub const Headers = @This();
+const Self = @This();
 
 pub fn init() Headers {
-    return Headers{
+    return .{
         .headers = std.ArrayList(Header).init(std.heap.page_allocator),
     };
 }

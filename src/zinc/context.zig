@@ -3,10 +3,10 @@ const std = @import("std");
 const RespondOptions = std.http.Server.Request.RespondOptions;
 const Header = std.http.Header;
 
-const Request = @import("request.zig").Request;
-const Response = @import("response.zig").Response;
-const Config = @import("config.zig").Config;
-const Headers = @import("headers.zig").Headers;
+const Request = @import("request.zig");
+const Response = @import("response.zig");
+const Config = @import("config.zig");
+const Headers = @import("headers.zig");
 
 pub const Context = @This();
 const Self = @This();

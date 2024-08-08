@@ -19,7 +19,7 @@ header: std.StringArrayHashMap([]u8) = std.StringArrayHashMap([]u8).init(std.hea
 body: []const u8 = "",
 
 pub fn init(self: Self) Response {
-    return Response{
+    return .{
         .request = self.request,
         .response = self.response,
         .version = self.version,

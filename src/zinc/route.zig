@@ -5,73 +5,107 @@ const Context = @import("context.zig");
 const Request = @import("request.zig");
 const Response = @import("response.zig");
 
+const logger = @import("logger.zig").init(.{});
+
 pub const Route = @This();
+const Self = @This();
 
-methods: []const std.http.Method = &.{},
+methods: []const std.http.Method = &.{
+    .GET,
+    .POST,
+    .PUT,
+    .DELETE,
+    .PATCH,
+    .OPTIONS,
+    .HEAD,
+    .CONNECT,
+    .TRACE,
+},
 
-path: []const u8,
+path: []const u8 = "*",
 
-handler: HandlerFn,
+handler: HandlerFn = undefined,
 
-pub fn init(methods: []const std.http.Method, comptime path: []const u8, comptime handler: anytype) Route {
-    return Route{
-        .methods = methods,
-        .path = path,
-        .handler = handler,
+pub fn init(self: Self) Route {
+    return .{
+        .methods = self.methods,
+        .path = self.path,
+        .handler = self.handler,
     };
 }
 
-pub fn match(self: *Route, method: std.http.Method, path: []const u8) bool {
-    if (self.methods.len == 0) {
-        if (std.ascii.eqlIgnoreCase(self.path, path)) {
-            return true;
+pub const RouteError = error{
+    // 404 Not Found
+    NotFound,
+    // 405 Method Not Allowed
+    MethodNotAllowed,
+};
+
+pub fn match(self: *Route, method: std.http.Method, path: []const u8) anyerror!*Route {
+    if (std.ascii.eqlIgnoreCase(self.path, path)) {
+        for (self.methods) |m| {
+            if (m == method) {
+                return self;
+            }
         }
+        return RouteError.MethodNotAllowed;
     }
 
-    if (!std.ascii.eqlIgnoreCase(self.path, path)) {
-        return false;
-    }
+    return RouteError.NotFound;
+}
 
-    for (self.methods) |m| {
-        if (m == method) {
-            return true;
-        }
+test "route matching and redirection" {
+    const TestCase = struct {
+        route: Route,
+        reqMethod: std.http.Method,
+        reqPath: []const u8,
+        expected: anyerror,
+    };
+
+    const foo_route = init(.{ .methods = &.{.GET}, .path = "/foo", .handler = undefined });
+    const testCases = [_]TestCase{
+        .{ .route = foo_route, .reqMethod = .POST, .reqPath = "/foo", .expected = RouteError.MethodNotAllowed },
+        .{ .route = foo_route, .reqMethod = .POST, .reqPath = "foo", .expected = RouteError.NotFound },
+        .{ .route = foo_route, .reqMethod = .GET, .reqPath = "/bar", .expected = RouteError.NotFound },
+        .{ .route = foo_route, .reqMethod = .POST, .reqPath = "/bar", .expected = RouteError.NotFound },
+    };
+
+    for (testCases) |tc| {
+        var route = tc.route;
+        _ = route.match(tc.reqMethod, tc.reqPath) catch |err| {
+            try std.testing.expect(err == tc.expected);
+        };
     }
-    return false;
 }
 
 pub fn get(comptime path: []const u8, comptime handler: anytype) Route {
-    return init(&.{.GET}, path, handler);
+    return init(.{ .methods = &.{.GET}, .path = path, .handler = handler });
 }
 
 pub fn post(comptime path: []const u8, comptime handler: anytype) Route {
-    return init(&.{.POST}, path, handler);
+    return init(.{ .methods = &.{.POST}, .path = path, .handler = handler });
 }
 pub fn put(comptime path: []const u8, comptime handler: anytype) Route {
-    return init(&.{.PUT}, path, handler);
+    return init(.{ .methods = &.{.PUT}, .path = path, .handler = handler });
 }
 pub fn delete(comptime path: []const u8, comptime handler: anytype) Route {
-    return init(&.{.DELETE}, path, handler);
+    return init(.{ .methods = &.{.DELETE}, .path = path, .handler = handler });
 }
 pub fn patch(comptime path: []const u8, comptime handler: anytype) Route {
-    return init(&.{.PATCH}, path, handler);
+    return init(.{ .methods = &.{.PATCH}, .path = path, .handler = handler });
 }
 pub fn options(comptime path: []const u8, comptime handler: anytype) Route {
-    return init(&.{.OPTIONS}, path, handler);
+    return init(.{ .methods = &.{.OPTIONS}, .path = path, .handler = handler });
 }
 pub fn head(comptime path: []const u8, comptime handler: anytype) Route {
-    return init(&.{.HEAD}, path, handler);
+    return init(.{ .methods = &.{.HEAD}, .path = path, .handler = handler });
 }
 pub fn connect(comptime path: []const u8, comptime handler: anytype) Route {
-    return init(&.{.CONNECT}, path, handler);
+    return init(.{ .methods = &.{.CONNECT}, .path = path, .handler = handler });
 }
 pub fn trace(comptime path: []const u8, comptime handler: anytype) Route {
-    return init(&.{.TRACE}, path, handler);
+    return init(.{ .methods = &.{.TRACE}, .path = path, .handler = handler });
 }
-
-// pub fn add(self: *std.ArrayList(Route), comptime route: Route) anyerror!void {
-//     return self.append(route);
-// }
 
 pub fn getPath(self: *Route) []const u8 {
     return self.path;
@@ -80,10 +114,6 @@ pub fn getPath(self: *Route) []const u8 {
 pub fn getHandler(self: *Route) HandlerFn {
     return &self.handler;
 }
-
-// pub fn execute(self: *Route, ctx: *Context, req: *Request, res: *Response) anyerror!void {
-//     return &self.handler(ctx, req, res);
-// }
 
 pub fn handle(self: *Route, ctx: *Context, req: *Request, res: *Response) anyerror!void {
     return try self.handler(ctx, req, res);

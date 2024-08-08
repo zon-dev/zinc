@@ -21,7 +21,7 @@ prefix: []const u8 = "/",
 handlers: []const Handler.HandlerFn = undefined,
 
 pub fn init(self: Self) Middleware {
-    return Middleware{
+    return .{
         .methods = self.methods,
         .prefix = self.prefix,
         .handlers = self.handlers,

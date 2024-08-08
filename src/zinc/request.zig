@@ -10,7 +10,7 @@ pub const Request = @This();
 const Self = @This();
 
 pub fn init(self: Self) Request {
-    return Request{
+    return .{
         .request = self.request,
     };
 }

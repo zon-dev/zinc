@@ -12,13 +12,15 @@ const Route = @import("route.zig");
 const Context = @import("context.zig");
 const Request = @import("request.zig");
 const Response = @import("response.zig");
-const HandlerFn = @import("handler.zig").HandlerFn;
 const Handler = @import("handler.zig");
+const HandlerFn = @import("handler.zig").HandlerFn;
 const config = @import("config.zig");
 const Middleware = @import("middleware.zig");
 
 pub const Engine = @This();
 const Self = @This();
+
+var logger = @import("logger.zig").init(.{});
 
 allocator: Allocator = std.heap.page_allocator,
 
@@ -85,18 +87,30 @@ pub fn run(self: *Self) !void {
             var req = Request.init(.{ .request = &request });
             var res = Response.init(.{ .request = &request });
             var ctx = Context.init(.{ .request = &req, .response = &res });
-
-            if (self.router.matchRoute(request.head.method, request.head.target)) |route| {
-                try route.handle(&ctx, &req, &res);
-                continue :ready;
-            } else {
-                // 404 not found!
-                if (self.getCatchers().get(.not_found)) |notFoundHande| {
-                    try notFoundHande(&ctx, &req, &res);
+            const match_route = self.router.matchRoute(request.head.method, request.head.target) catch |err| {
+                switch (err) {
+                    Route.RouteError.NotFound => {
+                        logger.info("404 - Not Found \r\n", .{});
+                        if (self.getCatchers().get(.not_found)) |notFoundHande| {
+                            try notFoundHande(&ctx, &req, &res);
+                            continue :ready;
+                        }
+                        try request.respond("404 - Not Found", .{ .status = .not_found, .keep_alive = false });
+                        continue :accept;
+                    },
+                    Route.RouteError.MethodNotAllowed => {
+                        logger.info("405 - Method Not Allowed \r\n", .{});
+                        if (self.getCatchers().get(.method_not_allowed)) |methodNotAllowedHande| {
+                            try methodNotAllowedHande(&ctx, &req, &res);
+                            continue :ready;
+                        }
+                        try request.respond("405 - Method Not Allowed", .{ .status = .method_not_allowed, .keep_alive = false });
+                        continue :accept;
+                    },
+                    else => |e| return e,
                 }
-            }
-
-            try request.respond("404 - Not Found", .{ .status = .not_found, .keep_alive = false });
+            };
+            try match_route.handle(&ctx, &req, &res);
         }
 
         // closing
