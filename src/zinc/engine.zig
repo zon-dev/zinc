@@ -52,7 +52,7 @@ pub fn init(comptime conf: config.Engine) !Engine {
 
 pub fn default() !Engine {
     // // std.Thread.spawn(.{}, run_server, .{self.net_server}) catch @panic("thread spawn");
-    return init(.{ .port = 0 });
+    return init(.{ .addr = "127.0.0.1", .port = 0, });
 }
 
 pub fn deinit(self: *Self) void {
