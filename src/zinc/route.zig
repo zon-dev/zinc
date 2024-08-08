@@ -42,12 +42,11 @@ pub const RouteError = error{
 };
 
 pub fn match(self: *Route, method: std.http.Method, path: []const u8) anyerror!*Route {
-    if (std.ascii.eqlIgnoreCase(self.path, path)) {
-        for (self.methods) |m| {
-            if (m == method) {
-                return self;
-            }
+    if (self.isPathMatch(path)) {
+        if (self.isMethodAllowed(method)) {
+            return self;
         }
+        // found route but method not allowed
         return RouteError.MethodNotAllowed;
     }
 
@@ -117,4 +116,30 @@ pub fn getHandler(self: *Route) HandlerFn {
 
 pub fn handle(self: *Route, ctx: *Context, req: *Request, res: *Response) anyerror!void {
     return try self.handler(ctx, req, res);
+}
+
+pub fn isMethodAllowed(self: *Route, method: std.http.Method) bool {
+    for (self.methods) |m| {
+        if (m == method) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+pub fn isPathMatch(self: *Route, path: []const u8) bool {
+    if (std.ascii.eqlIgnoreCase(self.path, "*")) {
+        return true;
+    }
+
+    return std.ascii.eqlIgnoreCase(self.path, path);
+}
+
+pub fn isMatch(self: *Route, method: std.http.Method, path: []const u8) bool {
+    if (self.isPathMatch(path) and self.isMethodAllowed(method)) {
+        return true;
+    }
+
+    return false;
 }

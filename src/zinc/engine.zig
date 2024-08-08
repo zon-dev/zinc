@@ -83,26 +83,26 @@ pub fn run(self: *Self) !void {
                 error.HttpConnectionClosing => continue :ready,
                 else => |e| return e,
             };
+            const method = request.head.method;
+            const target = request.head.target;
 
             var req = Request.init(.{ .request = &request });
             var res = Response.init(.{ .request = &request });
             var ctx = Context.init(.{ .request = &req, .response = &res });
-            const match_route = self.router.matchRoute(request.head.method, request.head.target) catch |err| {
+            const match_route = self.router.matchRoute(method, target) catch |err| {
                 switch (err) {
                     Route.RouteError.NotFound => {
-                        logger.info("404 - Not Found \r\n", .{});
                         if (self.getCatchers().get(.not_found)) |notFoundHande| {
                             try notFoundHande(&ctx, &req, &res);
-                            continue :ready;
+                            continue :accept;
                         }
                         try request.respond("404 - Not Found", .{ .status = .not_found, .keep_alive = false });
                         continue :accept;
                     },
                     Route.RouteError.MethodNotAllowed => {
-                        logger.info("405 - Method Not Allowed \r\n", .{});
                         if (self.getCatchers().get(.method_not_allowed)) |methodNotAllowedHande| {
                             try methodNotAllowedHande(&ctx, &req, &res);
-                            continue :ready;
+                            continue :accept;
                         }
                         try request.respond("405 - Method Not Allowed", .{ .status = .method_not_allowed, .keep_alive = false });
                         continue :accept;

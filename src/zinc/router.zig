@@ -12,12 +12,17 @@ const Self = @This();
 
 allocator: std.mem.Allocator = std.heap.page_allocator,
 routes: std.ArrayList(Route) = std.ArrayList(Route).init(std.heap.page_allocator),
+// catchers: std.AutoHashMap(std.http.Status, HandlerFn) = std.AutoHashMap(std.http.Status, HandlerFn).init(std.heap.page_allocator),
 
 pub fn init(self: Self) Router {
     return .{
         .allocator = self.allocator,
         .routes = self.routes,
     };
+}
+
+pub fn deinit(self: *Self) void {
+    self.routes.deinit();
 }
 
 pub fn handleContext(self: *Self, ctx: Context) void {
@@ -84,7 +89,12 @@ pub fn matchRoute(self: *Self, method: std.http.Method, path: []const u8) anyerr
     const routes = self.routes.items;
 
     for (routes) |*route| {
-        return route.match(method, path);
+        if (route.isPathMatch(path)) {
+            if (route.isMethodAllowed(method)) {
+                return route;
+            }
+            return Route.RouteError.MethodNotAllowed;
+        }
     }
 
     return Route.RouteError.NotFound;
