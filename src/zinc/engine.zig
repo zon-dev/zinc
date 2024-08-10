@@ -139,5 +139,15 @@ pub fn getCatcher(self: *Self, status: http.Status) ?HandlerFn {
 
 /// use middleware to match any route
 pub fn use(self: *Self, middleware: Middleware) anyerror!void {
-    self.router.use(middleware);
+    try self.router.use(middleware);
+}
+
+// static dir
+pub fn static(self: *Self, path: []const u8, dir: []const u8) anyerror!void {
+    try self.router.static(path, dir);
+}
+
+// static file
+pub fn StaticFile(self: *Self, path: []const u8, file: []const u8) anyerror!void {
+    try self.router.staticFile(path, file);
 }

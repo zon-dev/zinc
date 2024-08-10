@@ -80,32 +80,32 @@ test "route matching error" {
     }
 }
 
-pub fn get(comptime path: []const u8, comptime handler: anytype) Route {
+pub fn get(path: []const u8, handler: anytype) Route {
     return init(.{ .methods = &.{.GET}, .path = path, .handler = handler });
 }
 
-pub fn post(comptime path: []const u8, comptime handler: anytype) Route {
+pub fn post(path: []const u8, handler: anytype) Route {
     return init(.{ .methods = &.{.POST}, .path = path, .handler = handler });
 }
-pub fn put(comptime path: []const u8, comptime handler: anytype) Route {
+pub fn put(path: []const u8, handler: anytype) Route {
     return init(.{ .methods = &.{.PUT}, .path = path, .handler = handler });
 }
-pub fn delete(comptime path: []const u8, comptime handler: anytype) Route {
+pub fn delete(path: []const u8, handler: anytype) Route {
     return init(.{ .methods = &.{.DELETE}, .path = path, .handler = handler });
 }
-pub fn patch(comptime path: []const u8, comptime handler: anytype) Route {
+pub fn patch(path: []const u8, handler: anytype) Route {
     return init(.{ .methods = &.{.PATCH}, .path = path, .handler = handler });
 }
-pub fn options(comptime path: []const u8, comptime handler: anytype) Route {
+pub fn options(path: []const u8, handler: anytype) Route {
     return init(.{ .methods = &.{.OPTIONS}, .path = path, .handler = handler });
 }
-pub fn head(comptime path: []const u8, comptime handler: anytype) Route {
+pub fn head(path: []const u8, handler: anytype) Route {
     return init(.{ .methods = &.{.HEAD}, .path = path, .handler = handler });
 }
-pub fn connect(comptime path: []const u8, comptime handler: anytype) Route {
+pub fn connect(path: []const u8, handler: anytype) Route {
     return init(.{ .methods = &.{.CONNECT}, .path = path, .handler = handler });
 }
-pub fn trace(comptime path: []const u8, comptime handler: anytype) Route {
+pub fn trace(path: []const u8, handler: anytype) Route {
     return init(.{ .methods = &.{.TRACE}, .path = path, .handler = handler });
 }
 
@@ -147,7 +147,7 @@ pub fn isMatch(self: *Route, method: std.http.Method, path: []const u8) bool {
     return false;
 }
 
-pub fn use(self: *Route, middleware: Middleware) void {
+pub fn use(self: *Route, middleware: Middleware) anyerror!void {
     _ = middleware;
     _ = self;
 }

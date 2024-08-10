@@ -9,6 +9,8 @@ const Handler = @import("handler.zig");
 const HandlerFn = Handler.HandlerFn;
 const Middleware = @import("middleware.zig");
 
+const RouterGroup = @import("routergroup.zig");
+
 pub const Router = @This();
 const Self = @This();
 
@@ -43,15 +45,15 @@ pub fn getRoutes(self: *Self) std.ArrayList(Route) {
     return self.routes;
 }
 
-fn setNotFound(self: *Self, comptime handler: anytype) anyerror!void {
+fn setNotFound(self: *Self, handler: anytype) anyerror!void {
     try self.addRoute(Route.get("*", handler));
 }
 
-fn setMethodNotAllowed(self: *Self, comptime handler: anytype) anyerror!void {
+fn setMethodNotAllowed(self: *Self, handler: anytype) anyerror!void {
     try self.addRoute(Route.get("*", handler));
 }
 
-pub fn add(self: *Self, comptime methods: []const std.http.Method, comptime path: []const u8, comptime handler: anytype) anyerror!void {
+pub fn add(self: *Self, methods: []const std.http.Method, path: []const u8, handler: anytype) anyerror!void {
     try self.addRoute(Route{
         .methods = methods,
         .path = path,
@@ -59,31 +61,31 @@ pub fn add(self: *Self, comptime methods: []const std.http.Method, comptime path
     });
 }
 
-pub fn get(self: *Self, comptime path: []const u8, comptime handler: anytype) anyerror!void {
+pub fn get(self: *Self, path: []const u8, handler: anytype) anyerror!void {
     try self.addRoute(Route.get(path, handler));
 }
-pub fn post(self: *Self, comptime path: []const u8, comptime handler: anytype) anyerror!void {
+pub fn post(self: *Self, path: []const u8, handler: anytype) anyerror!void {
     try self.addRoute(Route.post(path, handler));
 }
-pub fn put(self: *Self, comptime path: []const u8, comptime handler: anytype) anyerror!void {
+pub fn put(self: *Self, path: []const u8, handler: anytype) anyerror!void {
     try self.addRoute(Route.put(path, handler));
 }
-pub fn delete(self: *Self, comptime path: []const u8, comptime handler: anytype) anyerror!void {
+pub fn delete(self: *Self, path: []const u8, handler: anytype) anyerror!void {
     try self.addRoute(Route.delete(path, handler));
 }
-pub fn patch(self: *Self, comptime path: []const u8, comptime handler: anytype) anyerror!void {
+pub fn patch(self: *Self, path: []const u8, handler: anytype) anyerror!void {
     try self.addRoute(Route.patch(path, handler));
 }
-pub fn options(self: *Self, comptime path: []const u8, comptime handler: anytype) anyerror!void {
+pub fn options(self: *Self, path: []const u8, handler: anytype) anyerror!void {
     try self.addRoute(Route.options(path, handler));
 }
-pub fn head(self: *Self, comptime path: []const u8, comptime handler: anytype) anyerror!void {
+pub fn head(self: *Self, path: []const u8, handler: anytype) anyerror!void {
     try self.addRoute(Route.head(path, handler));
 }
-pub fn connect(self: *Self, comptime path: []const u8, comptime handler: anytype) anyerror!void {
+pub fn connect(self: *Self, path: []const u8, handler: anytype) anyerror!void {
     try self.addRoute(Route.connect(path, handler));
 }
-pub fn trace(self: *Self, comptime path: []const u8, comptime handler: anytype) anyerror!void {
+pub fn trace(self: *Self, path: []const u8, handler: anytype) anyerror!void {
     try self.addRoute(Route.trace(path, handler));
 }
 
@@ -112,4 +114,50 @@ pub fn use(self: *Self, middleware: Middleware) anyerror!void {
     for (routes) |*route| {
         try route.use(middleware);
     }
+}
+
+pub fn static(self: *Self, target: []const u8, dir: []const u8) anyerror!void {
+    _ = self;
+    _ = target;
+    _ = dir;
+
+    // var directory = try std.fs.Dir.openDir(dir,.{});
+    // Route.get(target, handler);
+}
+
+pub fn staticFile(self: *Self, target: []const u8, filepath: []const u8) anyerror!void {
+    _ = self;
+    _ = target;
+    _ = filepath;
+}
+
+fn staticFileHandler(self: *Self, relativePath: []const u8, handler: HandlerFn) anyerror!void {
+    for (relativePath) |c| {
+        if (c == '*' or c == ':') {
+            return std.debug.panic("URL parameters can not be used when serving a static file: {s}", .{relativePath});
+        }
+    }
+
+    try self.get(relativePath, handler);
+    try self.head(relativePath, handler);
+}
+
+pub fn group(self: *Self, prefix: []const u8, handler: anytype) anyerror!RouterGroup {
+    self.add(&.{}, prefix, handler) catch |err| {
+        std.debug.panic("Failed to add route: {any}", .{err});
+        return err;
+    };
+
+    var g = RouterGroup{
+        .router = self,
+        .prefix = prefix,
+        .root = true,
+    };
+
+    g.add(&.{}, prefix, handler) catch |err| {
+        std.debug.panic("Failed to add route: {any}", .{err});
+        return err;
+    };
+
+    return g;
 }

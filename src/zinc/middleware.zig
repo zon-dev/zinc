@@ -1,6 +1,3 @@
-pub const Middleware = @This();
-const Self = @This();
-
 const std = @import("std");
 const http = std.http;
 const Method = http.Method;
@@ -8,7 +5,9 @@ const Method = http.Method;
 const Handler = @import("handler.zig");
 const HandlerFn = Handler.HandlerFn;
 const HandlerChain = Handler.Chain;
-const Handlers = Handler.Handlers;
+
+pub const Middleware = @This();
+const Self = @This();
 
 methods: []const Method = &[_]Method{
     .GET,
@@ -19,7 +18,7 @@ methods: []const Method = &[_]Method{
     .OPTIONS,
 },
 
-handlers: std.ArrayList(Handler.Chain) = Handlers,
+handlers: std.ArrayList(Handler.Chain) = std.ArrayList(Handler.Chain).init(std.heap.page_allocator),
 
 prefix: []const u8 = "/",
 
@@ -31,12 +30,20 @@ pub fn init(self: Self) Middleware {
     };
 }
 
-pub fn addHandler(self: *Self, method: Method, handler: Handler.HandlerFn) void {
-    const index = self.methods.index(method);
-    if (index == self.methods.len) {
-        return;
+pub fn add(self: *Self, methods: []const std.http.Method, handler: Handler.HandlerFn) anyerror!void {
+    if (methods.len == 0) {
+        try self.use(handler);
     }
-    self.handlers[index] = handler;
+}
+
+pub fn addHandler(self: *Self, method: Method, handler: Handler.HandlerFn) anyerror!void {
+    var index: usize = undefined;
+    for (self.methods, 0..) |m, i| {
+        if (m == method) {
+            index = i;
+        }
+    }
+    try self.handlers.append(.{ .handler = handler });
 }
 
 pub fn getHandler(self: *Self, method: Method) !Handler.HandlerFn {
@@ -56,9 +63,9 @@ pub fn handle(self: *Self, ctx: *Handler.Context, req: *Handler.Request, res: *H
     return handler(ctx, req, res);
 }
 
-pub fn use(self: *Self, handler: Handler.HandlerFn) void {
+pub fn use(self: *Self, handler: Handler.HandlerFn) anyerror!void {
     const methods = self.methods;
     for (methods) |method| {
-        self.addHandler(method, handler);
+        try self.addHandler(method, handler);
     }
 }

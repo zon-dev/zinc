@@ -1,8 +1,8 @@
 const std = @import("std");
 
-const Context = @import("context.zig").Context;
-const Request = @import("request.zig").Request;
-const Response = @import("response.zig").Response;
+const Context = @import("context.zig");
+const Request = @import("request.zig");
+const Response = @import("response.zig");
 
 const allocator = std.heap.page_allocator;
 
@@ -19,8 +19,8 @@ pub const HandlerFn = *const fn (*Context, *Request, *Response) anyerror!void;
 // }
 
 pub const Chain = struct {
-    handler: HandlerFn,
-    next: *Chain,
+    handler: HandlerFn = undefined,
+    next: *Chain = undefined,
 };
 
 pub const HandlersChain: std.ArrayList(Chain) = std.ArrayList(Chain).init(allocator);
@@ -58,4 +58,15 @@ pub fn HandleAction(comptime t: type) type {
         return *const fn (*Context, *Request, *Response) anyerror!void;
     }
     return *const fn (t, *Context, *Request, *Response) anyerror!void;
+}
+
+pub fn staticFileHandler(path: []const u8) anyerror!void {
+    const dir = try std.fs.openDirAbsolute(path, .{});
+
+    const file = try dir.openFile(path);
+    try Context.File(file);
+}
+
+pub fn staticFile(path: []const u8) HandlerFn {
+    return staticFileHandler(path);
 }

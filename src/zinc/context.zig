@@ -57,6 +57,17 @@ pub fn JSON(self: *Self, conf: Config.Context, value: anytype) anyerror!void {
 
     try self.closedResponse(conf, string.items);
 }
+pub fn send(self: *Self, content: []const u8, options: RespondOptions) anyerror!void {
+    try self.response.send(content, options);
+}
+
+pub fn File(self: *Self, file: std.fs.File) anyerror!void {
+    const bf: []u8 = undefined;
+    _ = try file.read(bf);
+    try self.closedResponse(.{
+        .status = std.http.Status.ok,
+    }, bf);
+}
 
 fn closedResponse(self: *Self, conf: Config.Context, content: []const u8) anyerror!void {
     try self.response.send(content, .{
