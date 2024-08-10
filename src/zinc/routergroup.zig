@@ -29,6 +29,10 @@ fn relativePath(self: RouterGroup, path: []const u8) []const u8 {
 }
 
 pub fn add(self: *RouterGroup, methods: []const std.http.Method, target: []const u8, handler: anytype) anyerror!void {
+    if (self.root) {
+        try self.router.add(methods, target, handler);
+        return;
+    }
     try self.router.add(methods, try std.fmt.allocPrint(self.allocator, "{s}{s}", .{ self.prefix, target }), handler);
 }
 

@@ -148,15 +148,10 @@ pub fn group(self: *Self, prefix: []const u8, handler: anytype) anyerror!RouterG
         return err;
     };
 
-    var g = RouterGroup{
+    const g = RouterGroup{
         .router = self,
         .prefix = prefix,
         .root = true,
-    };
-
-    g.add(&.{}, prefix, handler) catch |err| {
-        std.debug.panic("Failed to add route: {any}", .{err});
-        return err;
     };
 
     return g;
