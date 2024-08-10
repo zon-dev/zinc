@@ -1,11 +1,13 @@
 const std = @import("std");
 const print = std.debug.print;
 
-const HandlerFn = @import("handler.zig").HandlerFn;
-const Context = @import("context.zig").Context;
-const Request = @import("request.zig").Request;
-const Response = @import("response.zig").Response;
+const Context = @import("context.zig");
+const Request = @import("request.zig");
+const Response = @import("response.zig");
 const Route = @import("route.zig");
+const Handler = @import("handler.zig");
+const HandlerFn = Handler.HandlerFn;
+const Middleware = @import("middleware.zig");
 
 pub const Router = @This();
 const Self = @This();
@@ -41,7 +43,11 @@ pub fn getRoutes(self: *Self) std.ArrayList(Route) {
     return self.routes;
 }
 
-pub fn setNotFound(self: *Self, comptime handler: anytype) anyerror!void {
+fn setNotFound(self: *Self, comptime handler: anytype) anyerror!void {
+    try self.addRoute(Route.get("*", handler));
+}
+
+fn setMethodNotAllowed(self: *Self, comptime handler: anytype) anyerror!void {
     try self.addRoute(Route.get("*", handler));
 }
 
@@ -98,4 +104,12 @@ pub fn matchRoute(self: *Self, method: std.http.Method, path: []const u8) anyerr
     }
 
     return Route.RouteError.NotFound;
+}
+
+pub fn use(self: *Self, middleware: Middleware) anyerror!void {
+    const routes = self.routes.items;
+
+    for (routes) |*route| {
+        try route.use(middleware);
+    }
 }

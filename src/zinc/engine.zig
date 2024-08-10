@@ -8,14 +8,14 @@ const Allocator = std.mem.Allocator;
 
 const Router = @import("router.zig");
 const Route = @import("route.zig");
-
 const Context = @import("context.zig");
 const Request = @import("request.zig");
 const Response = @import("response.zig");
-const Handler = @import("handler.zig");
-const HandlerFn = @import("handler.zig").HandlerFn;
 const config = @import("config.zig");
 const Middleware = @import("middleware.zig");
+const Handler = @import("handler.zig");
+const HandlerFn = Handler.HandlerFn;
+const Catchers = @import("catchers.zig");
 
 pub const Engine = @This();
 const Self = @This();
@@ -30,7 +30,9 @@ mutex: std.Thread.Mutex = .{},
 
 router: Router = Router.init(.{}),
 
-catchers: std.AutoHashMap(http.Status, HandlerFn) = std.AutoHashMap(http.Status, HandlerFn).init(std.heap.page_allocator),
+// catchers: std.AutoHashMap(http.Status, HandlerFn) = std.AutoHashMap(http.Status, HandlerFn).init(std.heap.page_allocator),
+
+catchers: Catchers = Catchers.init(std.heap.page_allocator),
 
 pub fn getPort(self: *Self) u16 {
     return self.net_server.listen_address.getPort();
@@ -48,7 +50,7 @@ pub fn init(comptime conf: config.Engine) !Engine {
     errdefer listener.deinit();
     return Engine{
         .allocator = conf.allocator,
-        .catchers = std.AutoHashMap(http.Status, HandlerFn).init(conf.allocator),
+        .catchers = Catchers.init(conf.allocator),
         .net_server = listener,
         .threads = undefined,
     };
@@ -92,7 +94,7 @@ pub fn run(self: *Self) !void {
             const match_route = self.router.matchRoute(method, target) catch |err| {
                 switch (err) {
                     Route.RouteError.NotFound => {
-                        if (self.getCatchers().get(.not_found)) |notFoundHande| {
+                        if (self.getCatcher(.not_found)) |notFoundHande| {
                             try notFoundHande(&ctx, &req, &res);
                             continue :accept;
                         }
@@ -100,7 +102,7 @@ pub fn run(self: *Self) !void {
                         continue :accept;
                     },
                     Route.RouteError.MethodNotAllowed => {
-                        if (self.getCatchers().get(.method_not_allowed)) |methodNotAllowedHande| {
+                        if (self.getCatcher(.method_not_allowed)) |methodNotAllowedHande| {
                             try methodNotAllowedHande(&ctx, &req, &res);
                             continue :accept;
                         }
@@ -128,16 +130,14 @@ pub fn getRouter(self: *Self) *Router {
     return &self.router;
 }
 
-pub fn getCatchers(self: *Self) *std.AutoHashMap(http.Status, HandlerFn) {
+pub fn getCatchers(self: *Self) *Catchers {
     return &self.catchers;
 }
-
-pub fn getCatcher(self: *Self, status: http.Status) HandlerFn {
-    return &self.catchers.get(status).?;
+pub fn getCatcher(self: *Self, status: http.Status) ?HandlerFn {
+    return self.catchers.get(status);
 }
 
 /// use middleware to match any route
-pub fn use(self: *Self, args: Middleware) anyerror!void {
-    _ = self;
-    _ = args;
+pub fn use(self: *Self, middleware: Middleware) anyerror!void {
+    self.router.use(middleware);
 }

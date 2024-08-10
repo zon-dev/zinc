@@ -1,11 +1,14 @@
 const std = @import("std");
-const HandlerFn = @import("handler.zig").HandlerFn;
-// const HandleAction = @import("handler.zig").HandleAction;
+
+const logger = @import("logger.zig").init(.{});
+
 const Context = @import("context.zig");
 const Request = @import("request.zig");
 const Response = @import("response.zig");
-
-const logger = @import("logger.zig").init(.{});
+const Handler = @import("handler.zig");
+const Middleware = @import("middleware.zig");
+const HandlerFn = Handler.HandlerFn;
+const HandlerChain = Handler.Chain;
 
 pub const Route = @This();
 const Self = @This();
@@ -24,7 +27,7 @@ methods: []const std.http.Method = &.{
 
 path: []const u8 = "*",
 
-handler: HandlerFn = undefined,
+handler: Handler.HandlerFn = undefined,
 
 pub fn init(self: Self) Route {
     return .{
@@ -53,7 +56,7 @@ pub fn match(self: *Route, method: std.http.Method, path: []const u8) anyerror!*
     return RouteError.NotFound;
 }
 
-test "route matching and redirection" {
+test "route matching error" {
     const TestCase = struct {
         route: Route,
         reqMethod: std.http.Method,
@@ -110,7 +113,7 @@ pub fn getPath(self: *Route) []const u8 {
     return self.path;
 }
 
-pub fn getHandler(self: *Route) HandlerFn {
+pub fn getHandler(self: *Route) Handler.HandlerFn {
     return &self.handler;
 }
 
@@ -142,4 +145,9 @@ pub fn isMatch(self: *Route, method: std.http.Method, path: []const u8) bool {
     }
 
     return false;
+}
+
+pub fn use(self: *Route, middleware: Middleware) void {
+    _ = middleware;
+    _ = self;
 }

@@ -6,6 +6,9 @@ const http = std.http;
 const Method = http.Method;
 
 const Handler = @import("handler.zig");
+const HandlerFn = Handler.HandlerFn;
+const HandlerChain = Handler.Chain;
+const Handlers = Handler.Handlers;
 
 methods: []const Method = &[_]Method{
     .GET,
@@ -16,9 +19,9 @@ methods: []const Method = &[_]Method{
     .OPTIONS,
 },
 
-prefix: []const u8 = "/",
+handlers: std.ArrayList(Handler.Chain) = Handlers,
 
-handlers: []const Handler.HandlerFn = undefined,
+prefix: []const u8 = "/",
 
 pub fn init(self: Self) Middleware {
     return .{

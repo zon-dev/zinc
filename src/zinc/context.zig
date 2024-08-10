@@ -7,24 +7,34 @@ const Request = @import("request.zig");
 const Response = @import("response.zig");
 const Config = @import("config.zig");
 const Headers = @import("headers.zig");
+const Param = @import("param.zig");
 
 pub const Context = @This();
 const Self = @This();
 
-request: *Request,
-response: *Response,
-
+allocator: std.mem.Allocator = std.heap.page_allocator,
+request: *Request = undefined,
+response: *Response = undefined,
 headers: Headers = Headers.init(),
 
-// Params   Params
-// handlers HandlersChain
+params: std.StringHashMap(Param) = std.StringHashMap(Param).init(std.heap.page_allocator),
 
-// params: std.StringHashMap(anyopaque) = std.StringHashMap(anyopaque).init(std.heap.page_allocator),
+pub fn deinit(self: *Self) void {
+    self.headers.deinit();
+    self.params.deinit();
+}
 
 pub fn init(self: Self) Context {
+    if (self.request == undefined and self.response == undefined) {
+        @panic("Request and Response are required");
+    }
+
     return Context{
         .request = self.request,
         .response = self.response,
+        .headers = self.headers,
+        .allocator = self.allocator,
+        .params = self.params,
     };
 }
 
