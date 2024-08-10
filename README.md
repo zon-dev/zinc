@@ -18,7 +18,7 @@ pub fn main() !void {
     try router.add(&.{ .GET, .POST }, "/ping", pong);
 
     var catchers = zinc.getCatchers();
-    try catchers.put(.not_found, notFound);
+    try catchers.setNotFound(notFound);
 
     try zinc.run();
 }
