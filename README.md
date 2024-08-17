@@ -5,7 +5,7 @@
 Zinc is a high-performance web framework written in Zig.
 
 A basic example:
-```
+```zig
 const zinc = @import("zinc");
 
 pub fn main() !void {
