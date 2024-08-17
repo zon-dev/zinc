@@ -103,6 +103,14 @@ pub fn matchRoute(self: *Self, method: std.http.Method, path: []const u8) anyerr
             }
             return Route.RouteError.MethodNotAllowed;
         }
+
+        // match static file
+        if (route.isStaticRoute(path)) {
+            if (route.isMethodAllowed(method)) {
+                return route;
+            }
+            return Route.RouteError.MethodNotAllowed;
+        }
     }
 
     return Route.RouteError.NotFound;
@@ -116,13 +124,26 @@ pub fn use(self: *Self, middleware: Middleware) anyerror!void {
     }
 }
 
-pub fn static(self: *Self, target: []const u8, dir: []const u8) anyerror!void {
-    _ = self;
-    _ = target;
-    _ = dir;
+pub fn group(self: *Self, prefix: []const u8, handler: anytype) anyerror!RouterGroup {
+    self.add(&.{}, prefix, handler) catch |err| {
+        std.debug.panic("Failed to add route: {any}", .{err});
+        return err;
+    };
 
-    // var directory = try std.fs.Dir.openDir(dir,.{});
-    // Route.get(target, handler);
+    const g = RouterGroup{
+        .router = self,
+        .prefix = prefix,
+        .root = true,
+    };
+
+    return g;
+}
+
+pub fn static(self: *Self, relativePath: []const u8, filepath: []const u8) anyerror!void {
+    _ = self;
+    if (std.mem.eql(relativePath, "") or std.mem.eql(filepath, "")) {
+        return std.debug.panic("Invalid static file path: {s} {s}", .{ relativePath, filepath });
+    }
 }
 
 pub fn staticFile(self: *Self, target: []const u8, filepath: []const u8) anyerror!void {
@@ -140,19 +161,4 @@ fn staticFileHandler(self: *Self, relativePath: []const u8, handler: HandlerFn) 
 
     try self.get(relativePath, handler);
     try self.head(relativePath, handler);
-}
-
-pub fn group(self: *Self, prefix: []const u8, handler: anytype) anyerror!RouterGroup {
-    self.add(&.{}, prefix, handler) catch |err| {
-        std.debug.panic("Failed to add route: {any}", .{err});
-        return err;
-    };
-
-    const g = RouterGroup{
-        .router = self,
-        .prefix = prefix,
-        .root = true,
-    };
-
-    return g;
 }

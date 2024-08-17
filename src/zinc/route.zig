@@ -139,6 +139,24 @@ pub fn isPathMatch(self: *Route, path: []const u8) bool {
     return std.ascii.eqlIgnoreCase(self.path, path);
 }
 
+pub fn isStaticRoute(self: *Route, path: []const u8) bool {
+    if (std.ascii.eqlIgnoreCase(self.path, "*")) {
+        return true;
+    }
+
+    // not server root
+    if (std.mem.eql(u8, "/", path) or std.mem.eql(u8, self.path, "") or std.mem.eql(u8, self.path, "/")) {
+        return false;
+    }
+
+    var paths = std.mem.splitSequence(u8, path, "/");
+    var ps = std.mem.splitSequence(u8, self.path, "/");
+    if (std.ascii.eqlIgnoreCase(paths.next().?, ps.next().?)) {
+        return true;
+    }
+    return std.ascii.eqlIgnoreCase(self.path, path);
+}
+
 pub fn isMatch(self: *Route, method: std.http.Method, path: []const u8) bool {
     if (self.isPathMatch(path) and self.isMethodAllowed(method)) {
         return true;

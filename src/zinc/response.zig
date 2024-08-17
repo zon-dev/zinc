@@ -35,6 +35,7 @@ pub fn send(self: *Self, content: []const u8, options: RespondOptions) http_resp
 
 pub fn sendBody(self: *Self, content: []const u8) !void {
     try self.send(content, .{
+        .status = self.status,
         .keep_alive = false,
     });
 }

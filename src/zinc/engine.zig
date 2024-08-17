@@ -143,11 +143,11 @@ pub fn use(self: *Self, middleware: Middleware) anyerror!void {
 }
 
 // static dir
-pub fn static(self: *Self, path: []const u8, dir: []const u8) anyerror!void {
-    try self.router.static(path, dir);
+pub fn static(self: *Self, path: []const u8, dir_name: []const u8) anyerror!void {
+    try self.router.static(path, dir_name);
 }
 
 // static file
-pub fn StaticFile(self: *Self, path: []const u8, file: []const u8) anyerror!void {
-    try self.router.staticFile(path, file);
+pub fn StaticFile(self: *Self, path: []const u8, file_name: []const u8) anyerror!void {
+    try self.router.staticFile(path, file_name);
 }

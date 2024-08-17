@@ -38,17 +38,17 @@ pub fn init(self: Self) Context {
     };
 }
 
-pub fn HTML(self: *Self, conf: Config.Context, content: []const u8) anyerror!void {
+pub fn html(self: *Self, conf: Config.Context, content: []const u8) anyerror!void {
     try self.headers.add("Content-Type", "text/html");
     try self.closedResponse(conf, content);
 }
 
-pub fn Text(self: *Self, conf: Config.Context, content: []const u8) anyerror!void {
+pub fn text(self: *Self, conf: Config.Context, content: []const u8) anyerror!void {
     try self.headers.add("Content-Type", "text/plain");
     try self.closedResponse(conf, content);
 }
 
-pub fn JSON(self: *Self, conf: Config.Context, value: anytype) anyerror!void {
+pub fn json(self: *Self, conf: Config.Context, value: anytype) anyerror!void {
     var buf: [100]u8 = undefined;
     var fba = std.heap.FixedBufferAllocator.init(&buf);
     var string = std.ArrayList(u8).init(fba.allocator());
@@ -57,16 +57,64 @@ pub fn JSON(self: *Self, conf: Config.Context, value: anytype) anyerror!void {
 
     try self.closedResponse(conf, string.items);
 }
+
 pub fn send(self: *Self, content: []const u8, options: RespondOptions) anyerror!void {
     try self.response.send(content, options);
 }
 
-pub fn File(self: *Self, file: std.fs.File) anyerror!void {
-    const bf: []u8 = undefined;
-    _ = try file.read(bf);
-    try self.closedResponse(.{
-        .status = std.http.Status.ok,
-    }, bf);
+pub fn file(self: *Self, conf: Config.Context, file_path: []const u8) anyerror!void {
+    var f = try std.fs.cwd().openFile(file_path, .{});
+    defer f.close();
+
+    // Read the file into a buffer.
+    const stat = try f.stat();
+    const buffer = try f.readToEndAlloc(self.allocator, stat.size);
+    defer self.allocator.free(buffer);
+
+    try self.closedResponse(conf, buffer);
+}
+
+pub fn dir(self: *Self, conf: Config.Context, dir_name: []const u8) anyerror!void {
+    const target = self.request.request.head.target;
+
+    // const target_dir = std.fs.path.dirname(target).?;
+    const target_file = std.fs.path.basename(target);
+
+    var targets = std.mem.splitSequence(u8, target, "/");
+
+    // Todo, ????
+    _ = targets.first();
+
+    var dirs = std.mem.splitSequence(u8, dir_name, targets.next().?);
+
+    var sub_path: []u8 = undefined;
+    if (dirs.buffer.len > 0) {
+        sub_path = try std.fmt.allocPrint(self.allocator, "{s}/{s}", .{ dirs.first(), target });
+    } else {
+        sub_path = try std.fmt.allocPrint(self.allocator, "{s}/{s}", .{ dir_name, target_file });
+    }
+
+    var f = try std.fs.cwd().openFile(sub_path, .{});
+    defer f.close();
+
+    // Read the file into a buffer.
+    const stat = try f.stat();
+    const buffer = try f.readToEndAlloc(self.allocator, stat.size);
+    defer self.allocator.free(buffer);
+
+    try self.closedResponse(conf, buffer);
+}
+
+pub fn getParam(self: *Self, key: []const u8) ?Param {
+    return self.params.get(key);
+}
+
+pub fn setStatus(self: *Self, status: std.http.Status) !void {
+    self.response.status = status;
+}
+
+pub fn sendBody(self: *Self, body: []const u8) anyerror!void {
+    try self.response.sendBody(body);
 }
 
 fn closedResponse(self: *Self, conf: Config.Context, content: []const u8) anyerror!void {

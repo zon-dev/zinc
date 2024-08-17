@@ -59,14 +59,3 @@ pub fn HandleAction(comptime t: type) type {
     }
     return *const fn (t, *Context, *Request, *Response) anyerror!void;
 }
-
-pub fn staticFileHandler(path: []const u8) anyerror!void {
-    const dir = try std.fs.openDirAbsolute(path, .{});
-
-    const file = try dir.openFile(path);
-    try Context.File(file);
-}
-
-pub fn staticFile(path: []const u8) HandlerFn {
-    return staticFileHandler(path);
-}
