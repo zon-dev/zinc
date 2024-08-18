@@ -35,12 +35,7 @@ test "router" {
             continue;
         };
 
-        const expected_route = tc.expected catch |e | {
-            std.debug.print(" \r\n test2 case {d} passed, path: {s} , err {any} ", .{ i, tc.reqPath,e });
-            continue;
-        };
-
-        try testing.expectEqual(route_expected.*, expected_route);
-        std.debug.print(" \r\n test3 case {d} passed, path: {s} ", .{ i, tc.reqPath });
+        try testing.expectEqual(route_expected.*, (try tc.expected));
+        std.debug.print(" \r\n test2 case {d} passed, path: {s} ", .{ i, tc.reqPath });
     }
 }
