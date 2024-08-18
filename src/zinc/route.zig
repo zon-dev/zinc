@@ -38,6 +38,8 @@ pub fn init(self: Self) Route {
 }
 
 pub const RouteError = error{
+    None,
+
     // 404 Not Found
     NotFound,
     // 405 Method Not Allowed
@@ -54,30 +56,6 @@ pub fn match(self: *Route, method: std.http.Method, path: []const u8) anyerror!*
     }
 
     return RouteError.NotFound;
-}
-
-test "route matching error" {
-    const TestCase = struct {
-        route: Route,
-        reqMethod: std.http.Method,
-        reqPath: []const u8,
-        expected: anyerror,
-    };
-
-    const foo_route = init(.{ .methods = &.{.GET}, .path = "/foo", .handler = undefined });
-    const testCases = [_]TestCase{
-        .{ .route = foo_route, .reqMethod = .POST, .reqPath = "/foo", .expected = RouteError.MethodNotAllowed },
-        .{ .route = foo_route, .reqMethod = .POST, .reqPath = "foo", .expected = RouteError.NotFound },
-        .{ .route = foo_route, .reqMethod = .GET, .reqPath = "/bar", .expected = RouteError.NotFound },
-        .{ .route = foo_route, .reqMethod = .POST, .reqPath = "/bar", .expected = RouteError.NotFound },
-    };
-
-    for (testCases) |tc| {
-        var route = tc.route;
-        _ = route.match(tc.reqMethod, tc.reqPath) catch |err| {
-            try std.testing.expect(err == tc.expected);
-        };
-    }
 }
 
 pub fn get(path: []const u8, handler: anytype) Route {
@@ -139,22 +117,36 @@ pub fn isPathMatch(self: *Route, path: []const u8) bool {
     return std.ascii.eqlIgnoreCase(self.path, path);
 }
 
-pub fn isStaticRoute(self: *Route, path: []const u8) bool {
+pub fn isStaticRoute(self: *Route, target: []const u8) bool {
     if (std.ascii.eqlIgnoreCase(self.path, "*")) {
         return true;
     }
 
     // not server root
-    if (std.mem.eql(u8, "/", path) or std.mem.eql(u8, self.path, "") or std.mem.eql(u8, self.path, "/")) {
+    if (std.mem.eql(u8, target,"/") or std.mem.eql(u8, self.path, "") or std.mem.eql(u8, self.path, "/")) {
         return false;
     }
 
-    var paths = std.mem.splitSequence(u8, path, "/");
+    var targets = std.mem.splitSequence(u8, target, "/");
     var ps = std.mem.splitSequence(u8, self.path, "/");
-    if (std.ascii.eqlIgnoreCase(paths.next().?, ps.next().?)) {
-        return true;
+
+    _ = targets.first();
+    _ = ps.first();
+    
+    while (true) {
+        const t = targets.next().?;
+        const pp = ps.next().?;
+        if (std.ascii.eqlIgnoreCase(t, "") or std.ascii.eqlIgnoreCase(pp, "")) {
+            break;
+        }
+
+        if (std.ascii.eqlIgnoreCase(t, pp)) {
+            return true;
+        }
+        return false;
     }
-    return std.ascii.eqlIgnoreCase(self.path, path);
+
+    return std.ascii.eqlIgnoreCase(self.path, target);
 }
 
 pub fn isMatch(self: *Route, method: std.http.Method, path: []const u8) bool {

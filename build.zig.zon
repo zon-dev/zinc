@@ -3,12 +3,10 @@
     .version = "0.0.1-alpha3",
     .dependencies = .{},
     .paths = .{
-        "",
-        // "LICENSE",
-        // "README.md",
-        // "build.zig",
-        // "build.zig.zon",
-        // "src/zinc.zig",
-        // "test.zig",
+        "src",
+        "LICENSE",
+        "README.md",
+        "build.zig",
+        "build.zig.zon",
     },
 }
