@@ -10,7 +10,8 @@ pub const Handler = @This();
 const Self = @This();
 handlerFn: HandlerFn,
 
-pub const HandlerFn = *const fn (*Context, *Request, *Response) anyerror!void;
+// pub const HandlerFn = *const fn (*Context, *Request, *Response) anyerror!void;
+pub const HandlerFn = *const fn (*Context) anyerror!void;
 
 // // HandlersChain defines a HandlerFn slice.
 // pub const HandlersChain: std.ArrayList(HandlerFn) = std.ArrayList(HandlerFn).init(allocator);
@@ -46,16 +47,9 @@ pub fn link(self: *HandlersChain, handler: HandlerFn) *Chain {
     return &chain;
 }
 
-pub fn Action(comptime G: type) type {
-    if (G == void) {
-        return *const fn (*Request, *Response) anyerror!void;
-    }
-    return *const fn (G, *Request, *Response) anyerror!void;
-}
-
 pub fn HandleAction(comptime t: type) type {
     if (t == void) {
-        return *const fn (*Context, *Request, *Response) anyerror!void;
+        return *const fn (*Context) anyerror!void;
     }
-    return *const fn (t, *Context, *Request, *Response) anyerror!void;
+    return *const fn (t, *Context) anyerror!void;
 }

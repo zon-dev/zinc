@@ -1,4 +1,9 @@
 const std = @import("std");
+const heap = std.heap;
+const page_allocator = heap.page_allocator;
+const Allocator = std.mem.Allocator;
+const ArrayList = std.ArrayList;
+
 const print = std.debug.print;
 const zinc = @import("../zinc.zig");
 
@@ -14,10 +19,10 @@ const Router = @import("router.zig");
 pub const RouterGroup = @This();
 const Self = @This();
 
-allocator: std.mem.Allocator = std.heap.page_allocator,
+allocator: Allocator = page_allocator,
 prefix: []const u8 = "",
 root: bool = false,
-Handlers: std.ArrayList(Handler.Chain) = std.ArrayList(Handler.Chain).init(std.heap.page_allocator),
+Handlers: ArrayList(Handler.Chain) = ArrayList(Handler.Chain).init(page_allocator),
 router: *Router = undefined,
 
 fn relativePath(self: RouterGroup, path: []const u8) []const u8 {

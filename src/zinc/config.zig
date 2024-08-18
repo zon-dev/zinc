@@ -1,29 +1,35 @@
 const std = @import("std");
 const http = std.http;
 const http_version = std.http.Version;
+const heap = std.heap;
+const page_allocator = heap.page_allocator;
+const Allocator = std.mem.Allocator;
+const StringHashMap = std.StringHashMap;
+const ArrayList = std.ArrayList;
+const Method = http.Method;
 
 const Handler = @import("handler.zig");
 
 pub const Config = @This();
 
-allocator: std.mem.Allocator,
+allocator: Allocator = page_allocator,
 
 pub const Context = struct {
     status: http.Status = .ok,
-    query: std.StringHashMap([]const u8) = std.StringHashMap([]const u8).init(std.heap.page_allocator),
-    params: std.ArrayList([]const u8) = std.ArrayList([]const u8).init(std.heap.page_allocator),
+    query: StringHashMap([]const u8) = StringHashMap([]const u8).init(page_allocator),
+    params: ArrayList([]const u8) = ArrayList([]const u8).init(page_allocator),
 };
 
 pub const Catcher = struct {};
 
 pub const Middleware = struct {
-    methods: []const http.Method = &[_]http.Method{
-        http.Method.GET,
-        http.Method.POST,
-        http.Method.PUT,
-        http.Method.DELETE,
-        http.Method.PATCH,
-        http.Method.OPTIONS,
+    methods: []const Method = &[_]Method{
+        .GET,
+        .POST,
+        .PUT,
+        .DELETE,
+        .PATCH,
+        .OPTIONS,
     },
     prefix: []const u8 = "/",
     handler_fn: *const fn () Handler.HandlerFn = undefined,
@@ -50,7 +56,9 @@ pub const Engine = struct {
     // The server port.
     port: u16 = 8080,
 
-    allocator: std.mem.Allocator = std.heap.page_allocator,
+    allocator: Allocator = page_allocator,
+
+    read_buffer_len: usize = 1024,
 };
 
 /// HTTP server configuration.

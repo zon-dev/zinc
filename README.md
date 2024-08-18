@@ -17,7 +17,7 @@ pub fn main() !void {
     try z.run();
 }
 
-fn helloWorld(ctx: *zinc.Context, _: *zinc.Request, _: *zinc.Response) anyerror!void {
+fn helloWorld(ctx: *zinc.Context) anyerror!void {
     try ctx.text(.{}, "Hello world!");
 }
 ```

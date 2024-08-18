@@ -13,11 +13,15 @@ pub const Context = @This();
 const Self = @This();
 
 allocator: std.mem.Allocator = std.heap.page_allocator,
+
 request: *Request = undefined,
 response: *Response = undefined,
-headers: Headers = Headers.init(),
+
+headers: Headers = Headers.init(.{}),
 
 params: std.StringHashMap(Param) = std.StringHashMap(Param).init(std.heap.page_allocator),
+
+query: ?std.Uri.Component = null,
 
 pub fn deinit(self: *Self) void {
     self.headers.deinit();
@@ -38,31 +42,41 @@ pub fn init(self: Self) Context {
     };
 }
 
-pub fn html(self: *Self, conf: Config.Context, content: []const u8) anyerror!void {
+pub fn html(self: *Self, content: []const u8, conf: Config.Context) anyerror!void {
     try self.headers.add("Content-Type", "text/html");
-    try self.closedResponse(conf, content);
+    try self.closedResponse(
+        content,
+        conf,
+    );
 }
 
-pub fn text(self: *Self, conf: Config.Context, content: []const u8) anyerror!void {
+pub fn text(self: *Self, content: []const u8, conf: Config.Context) anyerror!void {
     try self.headers.add("Content-Type", "text/plain");
-    try self.closedResponse(conf, content);
+    try self.closedResponse(
+        content,
+        conf,
+    );
 }
 
-pub fn json(self: *Self, conf: Config.Context, value: anytype) anyerror!void {
+pub fn json(self: *Self, value: anytype, conf: Config.Context) anyerror!void {
     var buf: [100]u8 = undefined;
     var fba = std.heap.FixedBufferAllocator.init(&buf);
     var string = std.ArrayList(u8).init(fba.allocator());
     try std.json.stringify(value, .{}, string.writer());
     try self.headers.add("Content-Type", "application/json");
 
-    try self.closedResponse(conf, string.items);
+    try self.closedResponse(string.items, conf);
 }
 
 pub fn send(self: *Self, content: []const u8, options: RespondOptions) anyerror!void {
     try self.response.send(content, options);
 }
 
-pub fn file(self: *Self, conf: Config.Context, file_path: []const u8) anyerror!void {
+pub fn file(
+    self: *Self,
+    file_path: []const u8,
+    conf: Config.Context,
+) anyerror!void {
     var f = try std.fs.cwd().openFile(file_path, .{});
     defer f.close();
 
@@ -71,10 +85,10 @@ pub fn file(self: *Self, conf: Config.Context, file_path: []const u8) anyerror!v
     const buffer = try f.readToEndAlloc(self.allocator, stat.size);
     defer self.allocator.free(buffer);
 
-    try self.closedResponse(conf, buffer);
+    try self.closedResponse(buffer, conf);
 }
 
-pub fn dir(self: *Self, conf: Config.Context, dir_name: []const u8) anyerror!void {
+pub fn dir(self: *Self, dir_name: []const u8, conf: Config.Context) anyerror!void {
     const target = self.request.request.head.target;
 
     // const target_dir = std.fs.path.dirname(target).?;
@@ -102,7 +116,7 @@ pub fn dir(self: *Self, conf: Config.Context, dir_name: []const u8) anyerror!voi
     const buffer = try f.readToEndAlloc(self.allocator, stat.size);
     defer self.allocator.free(buffer);
 
-    try self.closedResponse(conf, buffer);
+    try self.closedResponse(buffer, conf);
 }
 
 pub fn getParam(self: *Self, key: []const u8) ?Param {
@@ -117,7 +131,7 @@ pub fn sendBody(self: *Self, body: []const u8) anyerror!void {
     try self.response.sendBody(body);
 }
 
-fn closedResponse(self: *Self, conf: Config.Context, content: []const u8) anyerror!void {
+fn closedResponse(self: *Self, content: []const u8, conf: Config.Context) anyerror!void {
     try self.response.send(content, .{
         .status = conf.status,
         .extra_headers = self.headers.items(),
@@ -141,3 +155,9 @@ pub fn redirect(self: *Self, http_status: std.http.Status, url: []const u8) anye
     try self.headers.add("Location", url);
     try self.request.request.respond("", .{ .status = http_status, .reason = http_status.phrase(), .extra_headers = self.headers.items(), .keep_alive = false });
 }
+
+pub fn queryMap() !void {}
+
+pub fn postFormMap() !void {}
+
+pub fn postForm() !void {}

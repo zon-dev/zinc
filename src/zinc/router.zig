@@ -1,4 +1,7 @@
 const std = @import("std");
+const Allocator = std.mem.Allocator;
+const heap = std.heap;
+const page_allocator = heap.page_allocator;
 const print = std.debug.print;
 
 const Context = @import("context.zig");
@@ -14,8 +17,8 @@ const RouterGroup = @import("routergroup.zig");
 pub const Router = @This();
 const Self = @This();
 
-allocator: std.mem.Allocator = std.heap.page_allocator,
-routes: std.ArrayList(Route) = std.ArrayList(Route).init(std.heap.page_allocator),
+allocator: Allocator = page_allocator,
+routes: std.ArrayList(Route) = std.ArrayList(Route).init(page_allocator),
 // catchers: std.AutoHashMap(std.http.Status, HandlerFn) = std.AutoHashMap(std.http.Status, HandlerFn).init(std.heap.page_allocator),
 
 pub fn init(self: Self) Router {

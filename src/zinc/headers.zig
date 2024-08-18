@@ -1,15 +1,18 @@
 const std = @import("std");
 const Header = std.http.Header;
+const Allocator = std.mem.Allocator;
+const heap = std.heap;
 
-allocator: std.mem.Allocator = std.heap.page_allocator,
-headers: std.ArrayList(Header),
+allocator: Allocator = heap.page_allocator,
+headers: std.ArrayList(Header) = std.ArrayList(Header).init(heap.page_allocator),
 
 pub const Headers = @This();
 const Self = @This();
 
-pub fn init() Headers {
+pub fn init(self: Self) Headers {
     return .{
-        .headers = std.ArrayList(Header).init(std.heap.page_allocator),
+        .headers = self.headers,
+        .allocator = self.allocator,
     };
 }
 

@@ -5,6 +5,7 @@ const net = std.net;
 const proto = http.protocol;
 const Server = http.Server;
 const Allocator = std.mem.Allocator;
+const page_allocator = std.heap.page_allocator;
 
 const Router = @import("router.zig");
 const Route = @import("route.zig");
@@ -22,13 +23,16 @@ const Self = @This();
 
 var logger = @import("logger.zig").init(.{});
 
-allocator: Allocator = std.heap.page_allocator,
+allocator: Allocator = page_allocator,
 
 net_server: std.net.Server,
 threads: []std.Thread = &[_]std.Thread{},
 mutex: std.Thread.Mutex = .{},
 
 router: Router = Router.init(.{}),
+
+// To lower memory usage and improve performance but mybe crash when request body is too large
+read_buffer_len: usize = 1024,
 
 // catchers: std.AutoHashMap(http.Status, HandlerFn) = std.AutoHashMap(http.Status, HandlerFn).init(std.heap.page_allocator),
 
@@ -53,6 +57,7 @@ pub fn init(comptime conf: config.Engine) !Engine {
         .catchers = Catchers.init(conf.allocator),
         .net_server = listener,
         .threads = undefined,
+        .read_buffer_len = conf.read_buffer_len,
     };
 }
 
@@ -72,17 +77,26 @@ pub fn deinit(self: *Self) void {
 
 pub fn run(self: *Self) !void {
     var net_server = self.net_server;
-    var read_buffer: [1024]u8 = undefined;
+    // var read_buffer: [1024]u8 = undefined;
+    var read_buffer: []u8 = undefined;
+    read_buffer = try self.allocator.alloc(u8, self.read_buffer_len);
 
     accept: while (true) {
         const conn = try net_server.accept();
         defer conn.stream.close();
 
-        var http_server = http.Server.init(conn, &read_buffer);
-
+        var http_server = http.Server.init(conn, read_buffer);
         ready: while (http_server.state == .ready) {
             var request = http_server.receiveHead() catch |err| switch (err) {
-                error.HttpConnectionClosing => continue :ready,
+                error.HttpConnectionClosing => {
+                    std.debug.print("HttpConnectionClosing\n", .{});
+                    break :ready;
+                },
+                error.HttpHeadersOversize => {
+                    std.debug.print("HttpHeadersOversize\n", .{});
+                    _ = try conn.stream.write("HTTP/1.1 431 Request Header Fields Too Large\r\nContent-Type: text/html\r\n\r\n<h1>Request Header Fields Too Large</h1>");
+                    break :ready;
+                },
                 else => |e| return e,
             };
             const method = request.head.method;
@@ -95,7 +109,7 @@ pub fn run(self: *Self) !void {
                 switch (err) {
                     Route.RouteError.NotFound => {
                         if (self.getCatcher(.not_found)) |notFoundHande| {
-                            try notFoundHande(&ctx, &req, &res);
+                            try notFoundHande(&ctx);
                             continue :accept;
                         }
                         try request.respond("404 - Not Found", .{ .status = .not_found, .keep_alive = false });
@@ -103,7 +117,7 @@ pub fn run(self: *Self) !void {
                     },
                     Route.RouteError.MethodNotAllowed => {
                         if (self.getCatcher(.method_not_allowed)) |methodNotAllowedHande| {
-                            try methodNotAllowedHande(&ctx, &req, &res);
+                            try methodNotAllowedHande(&ctx);
                             continue :accept;
                         }
                         try request.respond("405 - Method Not Allowed", .{ .status = .method_not_allowed, .keep_alive = false });
@@ -112,14 +126,13 @@ pub fn run(self: *Self) !void {
                     else => |e| return e,
                 }
             };
-            try match_route.handle(&ctx, &req, &res);
+            try match_route.handle(&ctx);
         }
-
         // closing
-        while (http_server.state == .closing) {
-            // std.debug.print("closing\n", .{});
-            continue :accept;
-        }
+        // while (http_server.state == .closing) {
+        //     std.debug.print("closing\n", .{});
+        //     continue :accept;
+        // }
     }
 }
 

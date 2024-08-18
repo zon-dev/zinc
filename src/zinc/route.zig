@@ -95,8 +95,9 @@ pub fn getHandler(self: *Route) Handler.HandlerFn {
     return &self.handler;
 }
 
-pub fn handle(self: *Route, ctx: *Context, req: *Request, res: *Response) anyerror!void {
-    return try self.handler(ctx, req, res);
+pub fn handle(self: *Route, ctx: *Context) anyerror!void {
+    // return try self.handler(ctx, req, res);
+    return try self.handler(ctx);
 }
 
 pub fn isMethodAllowed(self: *Route, method: std.http.Method) bool {
@@ -123,7 +124,7 @@ pub fn isStaticRoute(self: *Route, target: []const u8) bool {
     }
 
     // not server root
-    if (std.mem.eql(u8, target,"/") or std.mem.eql(u8, self.path, "") or std.mem.eql(u8, self.path, "/")) {
+    if (std.mem.eql(u8, target, "/") or std.mem.eql(u8, self.path, "") or std.mem.eql(u8, self.path, "/")) {
         return false;
     }
 
@@ -132,7 +133,7 @@ pub fn isStaticRoute(self: *Route, target: []const u8) bool {
 
     _ = targets.first();
     _ = ps.first();
-    
+
     while (true) {
         const t = targets.next().?;
         const pp = ps.next().?;
