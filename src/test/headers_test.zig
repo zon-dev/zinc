@@ -4,7 +4,7 @@ const zinc = @import("../zinc.zig");
 const Headers = zinc.Headers;
 
 test Headers {
-    var headers = Headers.init();
+    var headers = Headers.init(.{});
     try headers.add("Content-Type", "text/html");
     try headers.add("Content-Length", "100");
     try testing.expect(headers.len() == 2);

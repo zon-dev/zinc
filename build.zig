@@ -4,11 +4,25 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
+    // const zinc = b.addStaticLibrary(.{
+    //     .name = "zinc",
+    //     .root_source_file = b.path("src/zinc.zig"),
+    //     .target = target,
+    //     .optimize = optimize,
+    // });
+
     const module = b.addModule("zinc", .{
         .root_source_file = b.path("src/zinc.zig"),
         .target = target,
         .optimize = optimize,
     });
+
+    const url = b.dependency("url", .{
+        .target = target,
+        .optimize = optimize,
+    });
+
+    module.addImport("url", url.module("url"));
 
     const unit_tests = b.addTest(.{
         .root_source_file = b.path("src/zinc_test.zig"),

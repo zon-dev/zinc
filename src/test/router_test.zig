@@ -20,6 +20,8 @@ test "router" {
         .{ .reqMethod = .GET, .reqPath = "/static", .expected = static_route },
         .{ .reqMethod = .GET, .reqPath = "/static/foo", .expected = static_route },
         .{ .reqMethod = .GET, .reqPath = "/static/foo/bar", .expected = static_route },
+        .{ .reqMethod = .GET, .reqPath = "/static?code=123", .expected = static_route },
+        // .{ .reqMethod = .GET, .reqPath = "/static?code=123&state=xyz#foo", .expected = static_route },
 
         .{ .reqMethod = .POST, .reqPath = "/static", .expected = RouteError.MethodNotAllowed },
 
@@ -29,13 +31,14 @@ test "router" {
     };
 
     for (testCases, 0..) |tc, i| {
+        std.debug.print(" \r\n test case {d} passed, path: {s} ", .{ i, tc.reqPath });
         const route_expected = router.matchRoute(tc.reqMethod, tc.reqPath) catch |err| {
             try testing.expect(err == (tc.expected catch |e| e));
-            std.debug.print(" \r\n test1 case {d} passed, path: {s} ", .{ i, tc.reqPath });
+            // std.debug.print(" \r\n test1 case {d} passed, path: {s} ", .{ i, tc.reqPath });
             continue;
         };
 
         try testing.expectEqual(route_expected.*, (try tc.expected));
-        std.debug.print(" \r\n test2 case {d} passed, path: {s} ", .{ i, tc.reqPath });
+        // std.debug.print(" \r\n test2 case {d} passed, path: {s} ", .{ i, tc.reqPath });
     }
 }

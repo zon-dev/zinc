@@ -1,7 +1,12 @@
 .{
     .name = "zinc",
     .version = "0.0.1-alpha3",
-    .dependencies = .{},
+    .dependencies = .{
+        .url = .{
+            .url = "https://github.com/zon-dev/url/archive/refs/tags/v0.1.0-alpha2.tar.gz",
+            .hash = "12204f141e6398c841f2d8c1e75c092b5fdd0c4c72cf61f4590f25fe4ab47e6db4d0",
+        },
+    },
     .paths = .{
         "src",
         "LICENSE",

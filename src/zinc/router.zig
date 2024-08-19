@@ -3,7 +3,7 @@ const Allocator = std.mem.Allocator;
 const heap = std.heap;
 const page_allocator = heap.page_allocator;
 const print = std.debug.print;
-
+const URL = @import("url");
 const Context = @import("context.zig");
 const Request = @import("request.zig");
 const Response = @import("response.zig");
@@ -97,6 +97,8 @@ pub fn addRoute(self: *Self, route: Route) anyerror!void {
 }
 
 pub fn matchRoute(self: *Self, method: std.http.Method, path: []const u8) anyerror!*Route {
+
+    // const path = URL.parse(target);
     const routes = self.routes.items;
 
     for (routes) |*route| {

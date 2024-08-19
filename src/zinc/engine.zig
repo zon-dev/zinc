@@ -7,6 +7,7 @@ const Server = http.Server;
 const Allocator = std.mem.Allocator;
 const page_allocator = std.heap.page_allocator;
 
+const URL = @import("url");
 const Router = @import("router.zig");
 const Route = @import("route.zig");
 const Context = @import("context.zig");
@@ -17,7 +18,6 @@ const Middleware = @import("middleware.zig");
 const Handler = @import("handler.zig");
 const HandlerFn = Handler.HandlerFn;
 const Catchers = @import("catchers.zig");
-
 pub const Engine = @This();
 const Self = @This();
 
@@ -100,12 +100,14 @@ pub fn run(self: *Self) !void {
                 else => |e| return e,
             };
             const method = request.head.method;
-            const target = request.head.target;
+            
+            var url = URL.init(.{});
+            const target = url.parseUrl(request.head.target) catch return;
 
             var req = Request.init(.{ .request = &request });
             var res = Response.init(.{ .request = &request });
             var ctx = Context.init(.{ .request = &req, .response = &res });
-            const match_route = self.router.matchRoute(method, target) catch |err| {
+            const match_route = self.router.matchRoute(method, target.path) catch |err| {
                 switch (err) {
                     Route.RouteError.NotFound => {
                         if (self.getCatcher(.not_found)) |notFoundHande| {
