@@ -18,7 +18,7 @@ pub fn main() !void {
 }
 
 fn helloWorld(ctx: *zinc.Context) anyerror!void {
-    try ctx.text(.{}, "Hello world!");
+    try ctx.text("Hello world!", .{});
 }
 ```
 

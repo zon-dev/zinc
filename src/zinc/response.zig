@@ -39,30 +39,3 @@ pub fn sendBody(self: *Self, content: []const u8) !void {
         .keep_alive = false,
     });
 }
-
-pub fn stringify(self: *Self) ![]const u8 {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    const gpa_allocator = gpa.allocator();
-    defer {
-        const deinit_status = gpa.deinit();
-        if (deinit_status == .leak) @panic("Memory leak!"); // check for memory leak
-    }
-    var arena = std.heap.ArenaAllocator.init(gpa_allocator);
-    defer arena.deinit();
-    const allocator = arena.allocator();
-
-    // const protocal =  "HTTP/1.1 200";
-    const protocal = try std.fmt.allocPrint(allocator, "{s} {d}", .{ self.version, @intFromEnum(self.status) });
-    // const content_type = "Content-Type: text/html; charset=utf-8";
-    const body = self.body;
-    const content_length = try std.fmt.allocPrint(allocator, "Content-Length: {any}\r\n", .{body.len});
-    var res = std.ArrayList(u8).init(std.heap.page_allocator);
-    try res.appendSlice(protocal);
-    try res.appendSlice("\r\n");
-    // try res.appendSlice(content_type);
-    // try res.appendSlice("\r\n");
-    try res.appendSlice(content_length);
-    try res.appendSlice("\r\n");
-    try res.appendSlice(body);
-    return try res.toOwnedSlice();
-}

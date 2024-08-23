@@ -34,6 +34,9 @@ router: Router = Router.init(.{}),
 // To lower memory usage and improve performance but mybe crash when request body is too large
 read_buffer_len: usize = 1024,
 
+header_buffer_len: usize = 1024,
+body_buffer_len: usize = 10*1024,
+
 // catchers: std.AutoHashMap(http.Status, HandlerFn) = std.AutoHashMap(http.Status, HandlerFn).init(std.heap.page_allocator),
 
 catchers: Catchers = Catchers.init(std.heap.page_allocator),
@@ -78,14 +81,16 @@ pub fn deinit(self: *Self) void {
 pub fn run(self: *Self) !void {
     var net_server = self.net_server;
     // var read_buffer: [1024]u8 = undefined;
-    var read_buffer: []u8 = undefined;
+    var read_buffer:[]u8 = undefined;
     read_buffer = try self.allocator.alloc(u8, self.read_buffer_len);
+     defer self.allocator.free(read_buffer);
 
     accept: while (true) {
         const conn = try net_server.accept();
         defer conn.stream.close();
 
         var http_server = http.Server.init(conn, read_buffer);
+
         ready: while (http_server.state == .ready) {
             var request = http_server.receiveHead() catch |err| switch (err) {
                 error.HttpConnectionClosing => {
@@ -99,7 +104,16 @@ pub fn run(self: *Self) !void {
                 },
                 else => |e| return e,
             };
+    
+            // var header_buffer:[]u8 = undefined;
+            // header_buffer =  try self.allocator.alloc(u8, self.header_buffer_len);
+            //  defer self.allocator.free(header_buffer);
+
             const method = request.head.method;
+            
+            if (method == .HEAD) {
+                return request.respond("", .{ .status = .ok, .keep_alive = false });
+            }
             
             var url = URL.init(.{});
             const target = url.parseUrl(request.head.target) catch return;

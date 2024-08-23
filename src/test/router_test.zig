@@ -31,7 +31,7 @@ test "router" {
     };
 
     for (testCases, 0..) |tc, i| {
-        std.debug.print(" \r\n test case {d} passed, path: {s} ", .{ i, tc.reqPath });
+        std.debug.print(" \r\n test case {d}, path: {s} ", .{ i, tc.reqPath });
         const route_expected = router.matchRoute(tc.reqMethod, tc.reqPath) catch |err| {
             try testing.expect(err == (tc.expected catch |e| e));
             // std.debug.print(" \r\n test1 case {d} passed, path: {s} ", .{ i, tc.reqPath });

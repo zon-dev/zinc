@@ -114,7 +114,6 @@ pub fn isPathMatch(self: *Route, path: []const u8) bool {
     if (std.ascii.eqlIgnoreCase(self.path, "*")) {
         return true;
     }
-
     return std.ascii.eqlIgnoreCase(self.path, path);
 }
 
