@@ -115,8 +115,8 @@ pub fn run(self: *Self) !void {
                 return request.respond("", .{ .status = .ok, .keep_alive = false });
             }
 
-            var req = Request.init(.{ .request = &request });
-            var res = Response.init(.{ .request = &request });
+            var req = Request.init(.{ .server_request = &request });
+            var res = Response.init(.{ .server_request = &request });
             var ctx = Context.init(.{ .request = &req, .response = &res });
             const match_route = self.router.matchRoute(method, request.head.target) catch |err| {
                 switch (err) {

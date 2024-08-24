@@ -1,5 +1,5 @@
 const std = @import("std");
-
+const URL = @import("url");
 const RespondOptions = std.http.Server.Request.RespondOptions;
 const Header = std.http.Header;
 
@@ -21,7 +21,7 @@ headers: Headers = Headers.init(.{}),
 
 params: std.StringHashMap(Param) = std.StringHashMap(Param).init(std.heap.page_allocator),
 
-query: ?std.Uri.Component = null,
+// query: ?std.Uri.Component = null,
 
 pub fn deinit(self: *Self) void {
     self.headers.deinit();
@@ -89,7 +89,7 @@ pub fn file(
 }
 
 pub fn dir(self: *Self, dir_name: []const u8, conf: Config.Context) anyerror!void {
-    const target = self.request.request.head.target;
+    const target = self.request.target;
 
     // const target_dir = std.fs.path.dirname(target).?;
     const target_file = std.fs.path.basename(target);
@@ -153,10 +153,18 @@ pub fn next(self: *Self) !void {
 
 pub fn redirect(self: *Self, http_status: std.http.Status, url: []const u8) anyerror!void {
     try self.headers.add("Location", url);
-    try self.request.request.respond("", .{ .status = http_status, .reason = http_status.phrase(), .extra_headers = self.headers.items(), .keep_alive = false });
+    try self.request.server_request.respond("", .{ .status = http_status, .reason = http_status.phrase(), .extra_headers = self.headers.items(), .keep_alive = false });
 }
 
-pub fn queryMap() !void {}
+/// Get the query value by name.
+/// query values is an array of strings.
+/// e.g /post?name=foo&name=bar => queryValues.get("name") => ["foo", "bar"]
+pub fn queryValues(self: *Self, name: []const u8) ?std.ArrayList([]const u8) {
+    var url = URL.init(.{});
+    _ = url.parseUrl(self.request.target) catch return null;
+    const query_map = url.values orelse return null;
+    return query_map.get(name) orelse return null;
+}
 
 pub fn postFormMap() !void {}
 

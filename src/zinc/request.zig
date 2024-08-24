@@ -7,15 +7,14 @@ const RespondOptions = server_request.RespondOptions;
 pub const Request = @This();
 const Self = @This();
 
-request: *server_request,
+server_request: *server_request,
 
-// target:[]const u8 = Self.request.head.target,
 target: []const u8 = undefined,
 
 pub fn init(self: Self) Request {
     return .{
-        .request = self.request,
-        .target = self.request.head.target,
+        .server_request = self.server_request,
+        .target = self.server_request.head.target,
     };
 }
 
