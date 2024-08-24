@@ -21,7 +21,7 @@ test "router" {
         .{ .reqMethod = .GET, .reqPath = "/static/foo", .expected = static_route },
         .{ .reqMethod = .GET, .reqPath = "/static/foo/bar", .expected = static_route },
         .{ .reqMethod = .GET, .reqPath = "/static?code=123", .expected = static_route },
-        // .{ .reqMethod = .GET, .reqPath = "/static?code=123&state=xyz#foo", .expected = static_route },
+        .{ .reqMethod = .GET, .reqPath = "/static?code=123&state=xyz#foo", .expected = static_route },
 
         .{ .reqMethod = .POST, .reqPath = "/static", .expected = RouteError.MethodNotAllowed },
 

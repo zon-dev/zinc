@@ -1,6 +1,6 @@
 .{
     .name = "zinc",
-    .version = "0.0.1-alpha3",
+    .version = "0.1.0-beta1",
     .dependencies = .{
         .url = .{
             .url = "https://github.com/zon-dev/url/archive/refs/tags/v0.1.0-beta1.zip",

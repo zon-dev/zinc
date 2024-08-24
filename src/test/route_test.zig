@@ -15,10 +15,11 @@ test "route matching error" {
     const foo_route = Route.init(.{ .methods = &.{.GET}, .path = "/foo", .handler = undefined });
     const testCases = [_]TestCase{
         .{ .route = foo_route, .reqMethod = .GET, .reqPath = "/foo", .expected = foo_route },
+        .{ .route = foo_route, .reqMethod = .GET, .reqPath = "/foo=bar?", .expected = RouteError.NotFound },
         // .{ .route = foo_route, .reqMethod = .GET, .reqPath = "/foo=bar?", .expected = foo_route },
-        // .{ .route = foo_route, .reqMethod = .GET, .reqPath = "/foo#", .expected = foo_route },
-        // .{ .route = foo_route, .reqMethod = .GET, .reqPath = "/foo?code=123", .expected = foo_route },
-        // .{ .route = foo_route, .reqMethod = .GET, .reqPath = "/foo?code=123&state=xyz", .expected = foo_route },
+        .{ .route = foo_route, .reqMethod = .GET, .reqPath = "/foo#", .expected = foo_route },
+        .{ .route = foo_route, .reqMethod = .GET, .reqPath = "/foo?code=123", .expected = foo_route },
+        .{ .route = foo_route, .reqMethod = .GET, .reqPath = "/foo?code=123&state=xyz", .expected = foo_route },
 
         .{ .route = foo_route, .reqMethod = .GET, .reqPath = "/?foo=bar?", .expected = RouteError.NotFound },
         .{ .route = foo_route, .reqMethod = .POST, .reqPath = "/foo", .expected = RouteError.MethodNotAllowed },

@@ -1,5 +1,5 @@
 const std = @import("std");
-
+const URL = @import("url");
 const logger = @import("logger.zig").init(.{});
 
 const Context = @import("context.zig");
@@ -46,7 +46,11 @@ pub const RouteError = error{
     MethodNotAllowed,
 };
 
-pub fn match(self: *Route, method: std.http.Method, path: []const u8) anyerror!*Route {
+pub fn match(self: *Route, method: std.http.Method, target: []const u8) anyerror!*Route {
+    var url = URL.init(.{});
+    const url_target = try url.parseUrl(target);
+    const path = url_target.path;
+
     if (self.isPathMatch(path)) {
         if (self.isMethodAllowed(method)) {
             return self;

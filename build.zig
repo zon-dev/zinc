@@ -4,13 +4,6 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    // const zinc = b.addStaticLibrary(.{
-    //     .name = "zinc",
-    //     .root_source_file = b.path("src/zinc.zig"),
-    //     .target = target,
-    //     .optimize = optimize,
-    // });
-
     const module = b.addModule("zinc", .{
         .root_source_file = b.path("src/zinc.zig"),
         .target = target,
@@ -30,6 +23,8 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
     unit_tests.root_module.addImport("zinc", module);
+    unit_tests.root_module.addImport("url", url.module("url"));
+
     const run_unit_tests = b.addRunArtifact(unit_tests);
 
     const test_step = b.step("test", "Run unit tests");

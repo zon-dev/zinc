@@ -96,9 +96,11 @@ pub fn addRoute(self: *Self, route: Route) anyerror!void {
     try self.routes.append(route);
 }
 
-pub fn matchRoute(self: *Self, method: std.http.Method, path: []const u8) anyerror!*Route {
+pub fn matchRoute(self: *Self, method: std.http.Method, target: []const u8) anyerror!*Route {
+    var url = URL.init(.{});
+    const url_target = try url.parseUrl(target);
+    const path = url_target.path;
 
-    // const path = URL.parse(target);
     const routes = self.routes.items;
 
     for (routes) |*route| {
