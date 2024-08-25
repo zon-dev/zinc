@@ -21,6 +21,8 @@ headers: Headers = Headers.init(.{}),
 
 params: std.StringHashMap(Param) = std.StringHashMap(Param).init(std.heap.page_allocator),
 
+// body_buffer_len: usize = 0,
+
 // query: ?std.Uri.Component = null,
 
 pub fn deinit(self: *Self) void {
@@ -158,14 +160,56 @@ pub fn redirect(self: *Self, http_status: std.http.Status, url: []const u8) anye
 
 /// Get the query value by name.
 /// query values is an array of strings.
-/// e.g /post?name=foo&name=bar => queryValues.get("name") => ["foo", "bar"]
+/// e.g /post?name=foo&name=bar => queryValues("name") => ["foo", "bar"]
 pub fn queryValues(self: *Self, name: []const u8) ?std.ArrayList([]const u8) {
-    var url = URL.init(.{});
-    _ = url.parseUrl(self.request.target) catch return null;
-    const query_map = url.values orelse return null;
+    const query_map = self.queryMap(self.request.target) orelse return null;
     return query_map.get(name) orelse return null;
 }
 
-pub fn postFormMap() !void {}
+/// Get the query values as a map.
+/// e.g /post?name=foo&name=bar => queryMap.get("name") => ["foo", "bar"]
+pub fn queryMap(self: *Self) ?std.StringHashMap(std.ArrayList([]const u8)) {
+    var url = URL.init(.{});
+    _ = url.parseUrl(self.request.target) catch return null;
+    return url.values orelse return null;
+}
 
-pub fn postForm() !void {}
+pub fn postFormMap(self: *Self) ?std.StringHashMap([]const u8) {
+    const req = self.request.server_request;
+
+    const content_type = req.head.content_type orelse {
+        std.debug.print("Content-Type is required\n", .{});
+        return null;
+    };
+
+    const content_length = req.head.content_length;
+    if (content_length == null) {
+        std.debug.print("Content-Length is required\n", .{});
+        return null;
+    }
+
+    // Read the entire response body, but only allow it to allocate 8KB of memory.
+    const request_reader = req.reader() catch  {
+        std.debug.print("Failed to get request reader\n", .{});
+        return null;
+    };
+    
+    const body_buffer = request_reader.readAllAlloc(self.allocator, content_length orelse 8*1024) catch unreachable;
+
+    const url_form = std.mem.indexOf(u8, content_type, "application/x-www-form-urlencoded");
+    if (url_form == null) {
+        std.debug.print("Content-Type must be application/x-www-form-urlencoded\n", .{});
+        return null;
+    }
+
+    var form = std.StringHashMap([]const u8).init(self.allocator);
+    var form_data = std.mem.splitSequence(u8, body_buffer, "&");
+    while (form_data.next()) |data| {
+        var kv = std.mem.splitSequence(u8, data, "=");
+        if (kv.buffer.len <= 2) continue;
+        const key = kv.first();
+        const value = kv.next().?;
+        form.put(key, value) catch continue;
+    }
+    return form;
+}
