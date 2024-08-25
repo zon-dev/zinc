@@ -210,6 +210,18 @@ pub fn queryMap(self: *Self) ?std.StringHashMap(std.ArrayList([]const u8)) {
     return self.query_map;
 }
 
+/// Get the query values as a map.
+/// e.g /post?name=foo&name=bar => queryMap() => {"name": ["foo", "bar"]}
+pub fn queryMap(self: *Self) ?std.StringHashMap(std.ArrayList([]const u8)) {
+    if (self.query_map != null) {
+        return self.query_map;
+    }
+    var url = URL.init(.{});
+    _ = url.parseUrl(self.request.target) catch return null;
+    self.query_map = url.values orelse return null;
+    return self.query_map;
+}
+
 pub fn queryArray(self: *Self, name: []const u8) anyerror![][]const u8 {
     const query_map = self.queryMap() orelse return null;
     const it: std.ArrayList([]const u8) = query_map.get(name) orelse return null;
