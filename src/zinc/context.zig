@@ -188,7 +188,7 @@ pub fn queryString(self: *Self, name: []const u8) anyerror![]const u8 {
 /// e.g /post?name=foo&name=bar => queryValues("name") => ["foo", "bar"]
 /// e.g /post?name=foo&name=bar => queryValues("any") => queryError.Empty
 pub fn queryValues(self: *Self, name: []const u8) anyerror!std.ArrayList([]const u8) {
-    const query_map = self.queryMap() orelse return queryError.InvalidValue;
+    const query_map = self.getQueryMap() orelse return queryError.InvalidValue;
     const values: std.ArrayList([]const u8) = query_map.get(name) orelse return queryError.NotFound;
 
     if (values.items.len == 0) {
@@ -199,8 +199,8 @@ pub fn queryValues(self: *Self, name: []const u8) anyerror!std.ArrayList([]const
 }
 
 /// Get the query values as a map.
-/// e.g /post?name=foo&name=bar => queryMap() => {"name": ["foo", "bar"]}
-pub fn queryMap(self: *Self) ?std.StringHashMap(std.ArrayList([]const u8)) {
+/// e.g /post?name=foo&name=bar => getQueryMap() => {"name": ["foo", "bar"]}
+pub fn getQueryMap(self: *Self) ?std.StringHashMap(std.ArrayList([]const u8)) {
     if (self.query_map != null) {
         return self.query_map;
     }
@@ -211,8 +211,8 @@ pub fn queryMap(self: *Self) ?std.StringHashMap(std.ArrayList([]const u8)) {
 }
 
 /// Get the query values as a map.
-/// e.g /post?name=foo&name=bar => queryMap() => {"name": ["foo", "bar"]}
-pub fn queryMap(self: *Self) ?std.StringHashMap(std.ArrayList([]const u8)) {
+/// e.g /post?name=foo&name=bar => getQueryMap() => {"name": ["foo", "bar"]}
+pub fn getQueryMap(self: *Self) ?std.StringHashMap(std.ArrayList([]const u8)) {
     if (self.query_map != null) {
         return self.query_map;
     }
@@ -223,7 +223,7 @@ pub fn queryMap(self: *Self) ?std.StringHashMap(std.ArrayList([]const u8)) {
 }
 
 pub fn queryArray(self: *Self, name: []const u8) anyerror![][]const u8 {
-    const query_map = self.queryMap() orelse return null;
+    const query_map = self.getQueryMap() orelse return null;
     const it: std.ArrayList([]const u8) = query_map.get(name) orelse return null;
     if (it.items.len == 0) {
         return error.Empty;
