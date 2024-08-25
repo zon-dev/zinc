@@ -148,7 +148,7 @@ pub fn group(self: *Self, prefix: []const u8, handler: anytype) anyerror!RouterG
 
 pub fn static(self: *Self, relativePath: []const u8, filepath: []const u8) anyerror!void {
     _ = self;
-    if (std.mem.eql(relativePath, "") or std.mem.eql(filepath, "")) {
+    if (std.mem.eql(u8, relativePath, "") or std.mem.eql(u8, filepath, "")) {
         return std.debug.panic("Invalid static file path: {s} {s}", .{ relativePath, filepath });
     }
 }

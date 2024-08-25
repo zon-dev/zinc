@@ -19,7 +19,10 @@ response: *Response = undefined,
 
 headers: Headers = Headers.init(.{}),
 
+query: ?std.Uri.Component = null,
 params: std.StringHashMap(Param) = std.StringHashMap(Param).init(std.heap.page_allocator),
+
+query_map: ?std.StringHashMap(std.ArrayList([]const u8)) = null,
 
 // body_buffer_len: usize = 0,
 
@@ -41,6 +44,8 @@ pub fn init(self: Self) Context {
         .headers = self.headers,
         .allocator = self.allocator,
         .params = self.params,
+        .query = self.query,
+        .query_map = self.query_map,
     };
 }
 
@@ -158,20 +163,60 @@ pub fn redirect(self: *Self, http_status: std.http.Status, url: []const u8) anye
     try self.request.server_request.respond("", .{ .status = http_status, .reason = http_status.phrase(), .extra_headers = self.headers.items(), .keep_alive = false });
 }
 
+pub const queryError = error{
+    Empty,
+    NotFound,
+    InvalidValue,
+    MultipleValues,
+};
+
 /// Get the query value by name.
 /// query values is an array of strings.
+/// e.g /post?name=foo => queryString("name") => "foo"
+/// e.g /post?name=foo&name=bar => queryString("name") => queryError.MultipleValues
+/// e.g /post?name=foo&name=bar => queryString("any") => queryError.Empty
+pub fn queryString(self: *Self, name: []const u8) anyerror![]const u8 {
+    const values = try self.queryValues(name);
+    if (values.items.len > 1) {
+        return queryError.MultipleValues;
+    }
+    return values.items[0];
+}
+
+/// Get the query value by name.
+/// e.g /post?name=foo => queryValues("name") => ["foo"]
 /// e.g /post?name=foo&name=bar => queryValues("name") => ["foo", "bar"]
-pub fn queryValues(self: *Self, name: []const u8) ?std.ArrayList([]const u8) {
-    const query_map = self.queryMap(self.request.target) orelse return null;
-    return query_map.get(name) orelse return null;
+/// e.g /post?name=foo&name=bar => queryValues("any") => queryError.Empty
+pub fn queryValues(self: *Self, name: []const u8) anyerror!std.ArrayList([]const u8) {
+    const query_map = self.queryMap() orelse return queryError.InvalidValue;
+    const values: std.ArrayList([]const u8) = query_map.get(name) orelse return queryError.NotFound;
+
+    if (values.items.len == 0) {
+        return queryError.Empty;
+    }
+
+    return values;
 }
 
 /// Get the query values as a map.
-/// e.g /post?name=foo&name=bar => queryMap.get("name") => ["foo", "bar"]
+/// e.g /post?name=foo&name=bar => queryMap() => {"name": ["foo", "bar"]}
 pub fn queryMap(self: *Self) ?std.StringHashMap(std.ArrayList([]const u8)) {
+    if (self.query_map != null) {
+        return self.query_map;
+    }
     var url = URL.init(.{});
     _ = url.parseUrl(self.request.target) catch return null;
-    return url.values orelse return null;
+    self.query_map = url.values orelse return null;
+    return self.query_map;
+}
+
+pub fn queryArray(self: *Self, name: []const u8) anyerror![][]const u8 {
+    const query_map = self.queryMap() orelse return null;
+    const it: std.ArrayList([]const u8) = query_map.get(name) orelse return null;
+    if (it.items.len == 0) {
+        return error.Empty;
+    }
+    return it.items;
 }
 
 pub fn postFormMap(self: *Self) ?std.StringHashMap([]const u8) {
@@ -189,12 +234,12 @@ pub fn postFormMap(self: *Self) ?std.StringHashMap([]const u8) {
     }
 
     // Read the entire response body, but only allow it to allocate 8KB of memory.
-    const request_reader = req.reader() catch  {
+    const request_reader = req.reader() catch {
         std.debug.print("Failed to get request reader\n", .{});
         return null;
     };
-    
-    const body_buffer = request_reader.readAllAlloc(self.allocator, content_length orelse 8*1024) catch unreachable;
+
+    const body_buffer = request_reader.readAllAlloc(self.allocator, content_length orelse 8 * 1024) catch unreachable;
 
     const url_form = std.mem.indexOf(u8, content_type, "application/x-www-form-urlencoded");
     if (url_form == null) {
