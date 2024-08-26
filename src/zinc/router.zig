@@ -32,13 +32,12 @@ pub fn deinit(self: *Self) void {
     self.routes.deinit();
 }
 
-pub fn handleContext(self: *Self, ctx: Context) void {
+pub fn handleContext(self: *Self, ctx: Context) anyerror!void {
     const routes = self.routes.items;
 
     for (routes) |*route| {
         if (route.match(ctx.request.method, ctx.request.path)) {
-            try route.HandlerFn(ctx, ctx.request, ctx.response);
-            return;
+            return try route.HandlerFn(ctx, ctx.request, ctx.response);
         }
     }
 }
@@ -133,7 +132,6 @@ pub fn use(self: *Self, middleware: Middleware) anyerror!void {
 
 pub fn group(self: *Self, prefix: []const u8, handler: anytype) anyerror!RouterGroup {
     self.add(&.{}, prefix, handler) catch |err| {
-        std.debug.panic("Failed to add route: {any}", .{err});
         return err;
     };
 
@@ -149,7 +147,7 @@ pub fn group(self: *Self, prefix: []const u8, handler: anytype) anyerror!RouterG
 pub fn static(self: *Self, relativePath: []const u8, filepath: []const u8) anyerror!void {
     _ = self;
     if (std.mem.eql(u8, relativePath, "") or std.mem.eql(u8, filepath, "")) {
-        return std.debug.panic("Invalid static file path: {s} {s}", .{ relativePath, filepath });
+        return error.Empty;
     }
 }
 
@@ -162,7 +160,7 @@ pub fn staticFile(self: *Self, target: []const u8, filepath: []const u8) anyerro
 fn staticFileHandler(self: *Self, relativePath: []const u8, handler: HandlerFn) anyerror!void {
     for (relativePath) |c| {
         if (c == '*' or c == ':') {
-            return std.debug.panic("URL parameters can not be used when serving a static file: {s}", .{relativePath});
+            return error.Unreachable;
         }
     }
 

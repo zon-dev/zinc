@@ -12,7 +12,7 @@ server_request: *server_request = undefined,
 target: []const u8 = undefined,
 
 pub fn init(self: Self) Request {
-    if (!std.mem.eql(u8, self.target, "")) {
+    if (!std.mem.eql(u8, self.target, "") and self.server_request == undefined) {
         return .{
             .server_request = self.server_request,
             .target = self.target,

@@ -36,9 +36,9 @@ pub fn deinit(self: *Self) void {
     }
 }
 
-pub fn init(self: Self) Context {
+pub fn init(self: Self) ?Context {
     if (self.request == undefined and self.response == undefined) {
-        @panic("Request and Response are required");
+        return null;
     }
 
     return Context{
@@ -206,11 +206,12 @@ pub fn queryValues(self: *Self, name: []const u8) anyerror!std.ArrayList([]const
 pub fn queryMap(self: *Self, map_key: []const u8) ?std.StringHashMap(std.ArrayList([]const u8)) {
     var qm: std.StringHashMap(std.ArrayList([]const u8)) = self.getQueryMap() orelse return null;
     var qit = qm.iterator();
-    var inner_map = std.StringHashMap(std.ArrayList([]const u8)).init(self.allocator);
+    var inner_map: std.StringHashMap(std.ArrayList([]const u8)) = std.StringHashMap(std.ArrayList([]const u8)).init(self.allocator);
+
     while (qit.next()) |kv| {
-        var key = kv.key_ptr.*;
-        key = std.mem.trim(u8, key, "");
-        var splited_key = std.mem.splitSequence(u8, key, "[");
+        const key = kv.key_ptr.*;
+        const trimmed_key = std.mem.trim(u8, key, "");
+        var splited_key = std.mem.splitSequence(u8, trimmed_key, "[");
         if (splited_key.index == null) continue;
         const key_name = splited_key.first();
 
@@ -220,13 +221,24 @@ pub fn queryMap(self: *Self, map_key: []const u8) ?std.StringHashMap(std.ArrayLi
         if (key_rest == null) continue;
         var inner_key = std.mem.splitSequence(u8, key_rest.?, "]");
         if (inner_key.index == null) continue;
-        const inner_key_name = inner_key.first();
-        inner_map.put(inner_key_name, kv.value_ptr.*) catch continue;
+
+        // const values: std.ArrayList([]const u8) = kv.value_ptr.*;
+        // var values_copy = std.ArrayList([]const u8).init(self.allocator);
+        // for (values.items) |value| {
+        //     const value_copy = self.allocator.alloc(u8, value.len) catch continue;
+        //     std.mem.copyForwards(u8, value_copy, value);
+        //     values_copy.append(value_copy) catch continue;
+        // }
+        // const key_copy = self.allocator.alloc(u8, inner_key_name.len) catch continue;
+        // std.mem.copyForwards(u8, key_copy, inner_key_name);
+        // inner_map.put(key_copy, values_copy) catch continue;
+
+        inner_map.put(inner_key.first(),  kv.value_ptr.*) catch continue;
+
     }
     if (inner_map.capacity() == 0) {
         return null;
     }
-
     return inner_map;
 }
 
@@ -235,12 +247,12 @@ test "context query" {
         .target = "/query?id=1234&message=hello&message=world&ids[a]=1234&ids[b]=hello&ids[b]=world",
     });
 
-    var ctx = Context.init(.{ .request = &req });
-    defer ctx.deinit();
+    var ctx = Context.init(.{ .request = &req }).?;
 
     var qm = ctx.getQueryMap() orelse {
         return try std.testing.expect(false);
     };
+
     try std.testing.expectEqualStrings(qm.get("id").?.items[0], "1234");
     try std.testing.expectEqualStrings(qm.get("message").?.items[0], "hello");
     try std.testing.expectEqualStrings(qm.get("message").?.items[1], "world");
@@ -252,7 +264,21 @@ test "context query" {
     try std.testing.expectEqualStrings(messages[0], "hello");
     try std.testing.expectEqualStrings(messages[1], "world");
 
+    // /query?ids[a]=1234&ids[b]=hello&ids[b]=world
     const ids: std.StringHashMap(std.ArrayList([]const u8)) = ctx.queryMap("ids") orelse return try std.testing.expect(false);
+    try std.testing.expectEqualStrings(ids.get("a").?.items[0], "1234");
+    try std.testing.expectEqualStrings(ids.get("b").?.items[0], "hello");
+    try std.testing.expectEqualStrings(ids.get("b").?.items[1], "world");
+}
+
+test "context query map" {
+    var req = Request.init(.{
+        .target = "/query?ids[a]=1234&ids[b]=hello&ids[b]=world",
+    });
+
+    var ctx = Context.init(.{ .request = &req }).?;
+
+    var ids: std.StringHashMap(std.ArrayList([]const u8)) = ctx.queryMap("ids") orelse return try std.testing.expect(false);
     try std.testing.expectEqualStrings(ids.get("a").?.items[0], "1234");
     try std.testing.expectEqualStrings(ids.get("b").?.items[0], "hello");
     try std.testing.expectEqualStrings(ids.get("b").?.items[1], "world");

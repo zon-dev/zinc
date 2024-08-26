@@ -117,7 +117,11 @@ pub fn run(self: *Self) !void {
 
             var req = Request.init(.{ .server_request = &request });
             var res = Response.init(.{ .server_request = &request });
-            var ctx = Context.init(.{ .request = &req, .response = &res });
+            var ctx = Context.init(.{ .request = &req, .response = &res }) orelse {
+                try request.respond("500 - Internal Server Error", .{ .status = .internal_server_error, .keep_alive = false });
+                continue :accept;
+            };
+            defer ctx.deinit();
             const match_route = self.router.matchRoute(method, request.head.target) catch |err| {
                 switch (err) {
                     Route.RouteError.NotFound => {
