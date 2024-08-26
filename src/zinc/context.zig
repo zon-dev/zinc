@@ -201,8 +201,8 @@ pub fn queryValues(self: *Self, name: []const u8) anyerror!std.ArrayList([]const
     return values;
 }
 
-/// Get the query values as a map.
-/// e.g /post?name=foo&name=bar => getQueryMap() => {"name": ["foo", "bar"]}
+/// e.g /query?ids[a]=1234&ids[b]=hello&ids[b]=world
+/// queryMap("ids") => {"a": ["1234"], "b": ["hello", "world"]}
 pub fn queryMap(self: *Self, map_key: []const u8) ?std.StringHashMap(std.ArrayList([]const u8)) {
     var qm: std.StringHashMap(std.ArrayList([]const u8)) = self.getQueryMap() orelse return null;
     var qit = qm.iterator();
@@ -304,11 +304,11 @@ pub fn queryArray(self: *Self, name: []const u8) anyerror![][]const u8 {
     return values.items;
 }
 
-pub fn postFormMap(self: *Self) ?std.StringHashMap([]const u8) {
+pub fn getPostFormMap(self: *Self) ?std.StringHashMap([]const u8) {
     const req = self.request.server_request;
 
     const content_type = req.head.content_type orelse return null;
-    std.mem.indexOf(u8, content_type, "application/x-www-form-urlencoded") orelse return null;
+    _ = std.mem.indexOf(u8, content_type, "application/x-www-form-urlencoded") orelse return null;
 
     const content_length = req.head.content_length orelse return null;
 
@@ -329,4 +329,38 @@ pub fn postFormMap(self: *Self) ?std.StringHashMap([]const u8) {
         form.put(key, value) catch continue;
     }
     return form;
+}
+
+/// Get the post form values as a map.
+/// e.g name[first]=foo&name[last]=bar  
+/// postFormMap("name") => {"first": ["foo"], "last": ["bar"]}
+pub fn postFormMap(self: *Self, map_key: []const u8) ?std.StringHashMap([]const u8) {
+    var qm: std.StringHashMap([]const u8) = self.getPostFormMap() orelse return null;
+    var qit = qm.iterator();
+    var inner_map: std.StringHashMap([]const u8) = std.StringHashMap([]const u8).init(self.allocator);
+
+    while (qit.next()) |kv| {
+        // const decoded_key = self.allocator.alloc(u8, key.len) catch continue;
+        const trimmed_key = std.mem.trim(u8, std.Uri.percentDecodeInPlace(@constCast(kv.key_ptr.*)), "");
+        var splited_key = std.mem.splitSequence(u8, trimmed_key, "[");
+        if (splited_key.index == null) continue;
+        const key_name = splited_key.first();
+        std.debug.print("key_name: {s}\n", .{ key_name });
+
+        if (!std.mem.eql(u8, key_name, map_key)) continue;
+
+        const key_rest = splited_key.next();
+        if (key_rest == null) continue;
+        var inner_key = std.mem.splitSequence(u8, key_rest.?, "]");
+        if (inner_key.index == null) continue;
+        
+        inner_map.put(inner_key.first(), std.Uri.percentDecodeInPlace(@constCast(kv.value_ptr.*))) catch continue;
+    }
+    if (inner_map.capacity() == 0) {
+        return null;
+    }
+    return inner_map;
+}
+
+test "context postFormMap" {
 }
