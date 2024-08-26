@@ -31,6 +31,9 @@ query_map: ?std.StringHashMap(std.ArrayList([]const u8)) = null,
 pub fn deinit(self: *Self) void {
     self.headers.deinit();
     self.params.deinit();
+    if (self.query_map != null) {
+        self.query_map.?.deinit();
+    }
 }
 
 pub fn init(self: Self) Context {
@@ -200,14 +203,43 @@ pub fn queryValues(self: *Self, name: []const u8) anyerror!std.ArrayList([]const
 
 /// Get the query values as a map.
 /// e.g /post?name=foo&name=bar => getQueryMap() => {"name": ["foo", "bar"]}
-pub fn getQueryMap(self: *Self) ?std.StringHashMap(std.ArrayList([]const u8)) {
-    if (self.query_map != null) {
-        return self.query_map;
-    }
-    var url = URL.init(.{});
-    _ = url.parseUrl(self.request.target) catch return null;
-    self.query_map = url.values orelse return null;
-    return self.query_map;
+pub fn queryMap(self: *Self, map_key: []const u8) ?std.StringHashMap(std.ArrayList([]const u8)) {
+    // var qm: std.StringHashMap(std.ArrayList([]const u8)) = self.getQueryMap().?;
+    // var qit = qm.iterator();
+
+    _ = map_key;
+    _ = self;
+    // while (qit.next()) |kv| {
+    //     const key = kv.key_ptr.*;
+    //     // &ids[a]=1234&ids[b]=hello
+    //     // key = ids[a] value = 1234; key = ids[b] value = hello
+    //     const values:std.ArrayList([]const u8) = kv.value_ptr.*;
+    //     // std.debug.print("{s}: {s}\n", .{ key, values.items[0] });
+    // }
+    return null;
+}
+
+test "context query" {
+    var req = Request.init(.{
+        .target = "/query?id=1234&message=hello&message=world&ids[a]=1234&ids[b]=hello",
+    });
+
+    var ctx = Context.init(.{ .request = &req });
+    defer ctx.deinit();
+
+    var qm = ctx.getQueryMap() orelse {
+        return try std.testing.expect(false);
+    };
+    try std.testing.expectEqualStrings(qm.get("id").?.items[0], "1234");
+    try std.testing.expectEqualStrings(qm.get("message").?.items[0], "hello");
+    try std.testing.expectEqualStrings(qm.get("message").?.items[1], "world");
+
+    const ids = ctx.queryValues("id") catch return try std.testing.expect(false);
+    try std.testing.expectEqualStrings(ids.items[0], "1234");
+
+    const messages = ctx.queryArray("message") catch return try std.testing.expect(false);
+    try std.testing.expectEqualStrings(messages[0], "hello");
+    try std.testing.expectEqualStrings(messages[1], "world");
 }
 
 /// Get the query values as a map.
@@ -223,12 +255,12 @@ pub fn getQueryMap(self: *Self) ?std.StringHashMap(std.ArrayList([]const u8)) {
 }
 
 pub fn queryArray(self: *Self, name: []const u8) anyerror![][]const u8 {
-    const query_map = self.getQueryMap() orelse return null;
-    const it: std.ArrayList([]const u8) = query_map.get(name) orelse return null;
-    if (it.items.len == 0) {
+    const query_map = self.getQueryMap() orelse return queryError.InvalidValue;
+    const values: std.ArrayList([]const u8) = query_map.get(name) orelse return queryError.NotFound;
+    if (values.items.len == 0) {
         return error.Empty;
     }
-    return it.items;
+    return values.items;
 }
 
 pub fn postFormMap(self: *Self) ?std.StringHashMap([]const u8) {

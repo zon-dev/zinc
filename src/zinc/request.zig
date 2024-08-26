@@ -7,11 +7,17 @@ const RespondOptions = server_request.RespondOptions;
 pub const Request = @This();
 const Self = @This();
 
-server_request: *server_request,
+server_request: *server_request = undefined,
 
 target: []const u8 = undefined,
 
 pub fn init(self: Self) Request {
+    if (!std.mem.eql(u8, self.target, "")) {
+        return .{
+            .server_request = self.server_request,
+            .target = self.target,
+        };
+    }
     return .{
         .server_request = self.server_request,
         .target = self.server_request.head.target,
