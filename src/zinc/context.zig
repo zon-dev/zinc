@@ -332,7 +332,7 @@ pub fn getPostFormMap(self: *Self) ?std.StringHashMap([]const u8) {
 }
 
 /// Get the post form values as a map.
-/// e.g name[first]=foo&name[last]=bar  
+/// e.g name[first]=foo&name[last]=bar
 /// postFormMap("name") => {"first": ["foo"], "last": ["bar"]}
 pub fn postFormMap(self: *Self, map_key: []const u8) ?std.StringHashMap([]const u8) {
     var qm: std.StringHashMap([]const u8) = self.getPostFormMap() orelse return null;
@@ -345,7 +345,7 @@ pub fn postFormMap(self: *Self, map_key: []const u8) ?std.StringHashMap([]const 
         var splited_key = std.mem.splitSequence(u8, trimmed_key, "[");
         if (splited_key.index == null) continue;
         const key_name = splited_key.first();
-        std.debug.print("key_name: {s}\n", .{ key_name });
+        std.debug.print("key_name: {s}\n", .{key_name});
 
         if (!std.mem.eql(u8, key_name, map_key)) continue;
 
@@ -353,14 +353,11 @@ pub fn postFormMap(self: *Self, map_key: []const u8) ?std.StringHashMap([]const 
         if (key_rest == null) continue;
         var inner_key = std.mem.splitSequence(u8, key_rest.?, "]");
         if (inner_key.index == null) continue;
-        
+
         inner_map.put(inner_key.first(), std.Uri.percentDecodeInPlace(@constCast(kv.value_ptr.*))) catch continue;
     }
     if (inner_map.capacity() == 0) {
         return null;
     }
     return inner_map;
-}
-
-test "context postFormMap" {
 }
