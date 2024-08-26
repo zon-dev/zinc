@@ -204,24 +204,35 @@ pub fn queryValues(self: *Self, name: []const u8) anyerror!std.ArrayList([]const
 /// Get the query values as a map.
 /// e.g /post?name=foo&name=bar => getQueryMap() => {"name": ["foo", "bar"]}
 pub fn queryMap(self: *Self, map_key: []const u8) ?std.StringHashMap(std.ArrayList([]const u8)) {
-    // var qm: std.StringHashMap(std.ArrayList([]const u8)) = self.getQueryMap().?;
-    // var qit = qm.iterator();
+    var qm: std.StringHashMap(std.ArrayList([]const u8)) = self.getQueryMap() orelse return null;
+    var qit = qm.iterator();
+    var inner_map = std.StringHashMap(std.ArrayList([]const u8)).init(self.allocator);
+    while (qit.next()) |kv| {
+        var key = kv.key_ptr.*;
+        key = std.mem.trim(u8, key, "");
+        var splited_key = std.mem.splitSequence(u8, key, "[");
+        if (splited_key.index == null) continue;
+        const key_name = splited_key.first();
 
-    _ = map_key;
-    _ = self;
-    // while (qit.next()) |kv| {
-    //     const key = kv.key_ptr.*;
-    //     // &ids[a]=1234&ids[b]=hello
-    //     // key = ids[a] value = 1234; key = ids[b] value = hello
-    //     const values:std.ArrayList([]const u8) = kv.value_ptr.*;
-    //     // std.debug.print("{s}: {s}\n", .{ key, values.items[0] });
-    // }
-    return null;
+        if (!std.mem.eql(u8, key_name, map_key)) continue;
+
+        const key_rest = splited_key.next();
+        if (key_rest == null) continue;
+        var inner_key = std.mem.splitSequence(u8, key_rest.?, "]");
+        if (inner_key.index == null) continue;
+        const inner_key_name = inner_key.first();
+        inner_map.put(inner_key_name, kv.value_ptr.*) catch continue;
+    }
+    if (inner_map.capacity() == 0) {
+        return null;
+    }
+
+    return inner_map;
 }
 
 test "context query" {
     var req = Request.init(.{
-        .target = "/query?id=1234&message=hello&message=world&ids[a]=1234&ids[b]=hello",
+        .target = "/query?id=1234&message=hello&message=world&ids[a]=1234&ids[b]=hello&ids[b]=world",
     });
 
     var ctx = Context.init(.{ .request = &req });
@@ -234,12 +245,17 @@ test "context query" {
     try std.testing.expectEqualStrings(qm.get("message").?.items[0], "hello");
     try std.testing.expectEqualStrings(qm.get("message").?.items[1], "world");
 
-    const ids = ctx.queryValues("id") catch return try std.testing.expect(false);
-    try std.testing.expectEqualStrings(ids.items[0], "1234");
+    const idv = ctx.queryValues("id") catch return try std.testing.expect(false);
+    try std.testing.expectEqualStrings(idv.items[0], "1234");
 
     const messages = ctx.queryArray("message") catch return try std.testing.expect(false);
     try std.testing.expectEqualStrings(messages[0], "hello");
     try std.testing.expectEqualStrings(messages[1], "world");
+
+    const ids: std.StringHashMap(std.ArrayList([]const u8)) = ctx.queryMap("ids") orelse return try std.testing.expect(false);
+    try std.testing.expectEqualStrings(ids.get("a").?.items[0], "1234");
+    try std.testing.expectEqualStrings(ids.get("b").?.items[0], "hello");
+    try std.testing.expectEqualStrings(ids.get("b").?.items[1], "world");
 }
 
 /// Get the query values as a map.
