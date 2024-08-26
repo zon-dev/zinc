@@ -233,8 +233,7 @@ pub fn queryMap(self: *Self, map_key: []const u8) ?std.StringHashMap(std.ArrayLi
         // std.mem.copyForwards(u8, key_copy, inner_key_name);
         // inner_map.put(key_copy, values_copy) catch continue;
 
-        inner_map.put(inner_key.first(),  kv.value_ptr.*) catch continue;
-
+        inner_map.put(inner_key.first(), kv.value_ptr.*) catch continue;
     }
     if (inner_map.capacity() == 0) {
         return null;
@@ -308,30 +307,17 @@ pub fn queryArray(self: *Self, name: []const u8) anyerror![][]const u8 {
 pub fn postFormMap(self: *Self) ?std.StringHashMap([]const u8) {
     const req = self.request.server_request;
 
-    const content_type = req.head.content_type orelse {
-        std.debug.print("Content-Type is required\n", .{});
-        return null;
-    };
+    const content_type = req.head.content_type orelse return null;
+    std.mem.indexOf(u8, content_type, "application/x-www-form-urlencoded") orelse return null;
 
-    const content_length = req.head.content_length;
-    if (content_length == null) {
-        std.debug.print("Content-Length is required\n", .{});
-        return null;
-    }
+    const content_length = req.head.content_length orelse return null;
 
-    // Read the entire response body, but only allow it to allocate 8KB of memory.
     const request_reader = req.reader() catch {
         std.debug.print("Failed to get request reader\n", .{});
         return null;
     };
 
-    const body_buffer = request_reader.readAllAlloc(self.allocator, content_length orelse 8 * 1024) catch unreachable;
-
-    const url_form = std.mem.indexOf(u8, content_type, "application/x-www-form-urlencoded");
-    if (url_form == null) {
-        std.debug.print("Content-Type must be application/x-www-form-urlencoded\n", .{});
-        return null;
-    }
+    const body_buffer = request_reader.readAllAlloc(self.allocator, content_length) catch return null;
 
     var form = std.StringHashMap([]const u8).init(self.allocator);
     var form_data = std.mem.splitSequence(u8, body_buffer, "&");
