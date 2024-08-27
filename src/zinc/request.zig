@@ -9,18 +9,17 @@ const Self = @This();
 
 server_request: *server_request = undefined,
 
-target: []const u8 = undefined,
+target: []const u8 = "",
 
 pub fn init(self: Self) Request {
-    if (self.target.len == 0) {
+    if (self.target.len > 0) {
         return .{
-            .server_request = self.server_request,
-            .target = self.server_request.head.target,
+            .target = self.target,
         };
     }
     return .{
         .server_request = self.server_request,
-        .target = self.target,
+        .target = self.server_request.head.target,
     };
 }
 
