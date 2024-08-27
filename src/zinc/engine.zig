@@ -117,9 +117,9 @@ pub fn run(self: *Self) !void {
                 return request.respond("", .{ .status = .ok, .keep_alive = false });
             }
 
-            var req = Request.init(.{ .server_request = &request });
-            var res = Response.init(.{ .server_request = &request });
-            var ctx = Context.init(.{ .request = &req, .response = &res }) orelse {
+            var req = Request.init(.{ .server_request = &request, .allocator = self.allocator });
+            var res = Response.init(.{ .server_request = &request, .allocator = self.allocator });
+            var ctx = Context.init(.{ .request = &req, .response = &res, .allocator = self.allocator }) orelse {
                 try request.respond("500 - Internal Server Error", .{ .status = .internal_server_error, .keep_alive = false });
                 continue :accept;
             };
