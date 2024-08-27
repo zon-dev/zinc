@@ -10,6 +10,7 @@ const Config = @import("config.zig").Config;
 pub const Response = @This();
 const Self = @This();
 
+allocator: std.mem.Allocator = std.heap.page_allocator,
 server_request: *server_request = undefined,
 server_response: *server_response = undefined,
 
@@ -20,6 +21,7 @@ body: []const u8 = "",
 
 pub fn init(self: Self) Response {
     return .{
+        .allocator = self.allocator,
         .server_request = self.server_request,
         .server_response = self.server_response,
         .version = self.version,
