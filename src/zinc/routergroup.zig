@@ -22,7 +22,7 @@ const Self = @This();
 allocator: Allocator = page_allocator,
 prefix: []const u8 = "",
 root: bool = false,
-Handlers: ArrayList(Handler.Chain) = ArrayList(Handler.Chain).init(page_allocator),
+Handlers: ArrayList(HandlerFn) = ArrayList(HandlerFn).init(page_allocator),
 router: *Router = undefined,
 
 fn relativePath(self: RouterGroup, path: []const u8) []const u8 {

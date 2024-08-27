@@ -27,13 +27,15 @@ methods: []const std.http.Method = &.{
 
 path: []const u8 = "*",
 
-handler: Handler.HandlerFn = undefined,
+// handler: Handler.HandlerFn = undefined,
+// handlers_chain: []Handler.HandlerFn = undefined,
+handlers_chain: std.ArrayList(HandlerFn) = std.ArrayList(HandlerFn).init(std.heap.page_allocator),
 
 pub fn init(self: Self) Route {
     return .{
         .methods = self.methods,
         .path = self.path,
-        .handler = self.handler,
+        .handlers_chain = self.handlers_chain,
     };
 }
 
@@ -62,33 +64,41 @@ pub fn match(self: *Route, method: std.http.Method, target: []const u8) anyerror
     return RouteError.NotFound;
 }
 
+pub fn create(path: []const u8, http_methods: []const std.http.Method, handler: anytype) Route {
+    var r = Route.init(.{ .methods = http_methods, .path = path });
+    r.handlers_chain.append(handler) catch |err| {
+        std.log.err("append handler error: {any}", .{err});
+    };
+    return r;
+}
+
 pub fn get(path: []const u8, handler: anytype) Route {
-    return init(.{ .methods = &.{.GET}, .path = path, .handler = handler });
+    return create(path, &.{.GET}, handler);
 }
 
 pub fn post(path: []const u8, handler: anytype) Route {
-    return init(.{ .methods = &.{.POST}, .path = path, .handler = handler });
+    return create(path, &.{.POST}, handler);
 }
 pub fn put(path: []const u8, handler: anytype) Route {
-    return init(.{ .methods = &.{.PUT}, .path = path, .handler = handler });
+    return create(path, &.{.PUT}, handler);
 }
 pub fn delete(path: []const u8, handler: anytype) Route {
-    return init(.{ .methods = &.{.DELETE}, .path = path, .handler = handler });
+    return create(path, &.{.DELETE}, handler);
 }
 pub fn patch(path: []const u8, handler: anytype) Route {
-    return init(.{ .methods = &.{.PATCH}, .path = path, .handler = handler });
+    return create(path, &.{.PATCH}, handler);
 }
 pub fn options(path: []const u8, handler: anytype) Route {
-    return init(.{ .methods = &.{.OPTIONS}, .path = path, .handler = handler });
+    return create(path, &.{.OPTIONS}, handler);
 }
 pub fn head(path: []const u8, handler: anytype) Route {
-    return init(.{ .methods = &.{.HEAD}, .path = path, .handler = handler });
+    return create(path, &.{.HEAD}, handler);
 }
 pub fn connect(path: []const u8, handler: anytype) Route {
-    return init(.{ .methods = &.{.CONNECT}, .path = path, .handler = handler });
+    return create(path, &.{.CONNECT}, handler);
 }
 pub fn trace(path: []const u8, handler: anytype) Route {
-    return init(.{ .methods = &.{.TRACE}, .path = path, .handler = handler });
+    return create(path, &.{.TRACE}, handler);
 }
 
 pub fn getPath(self: *Route) []const u8 {
@@ -100,8 +110,13 @@ pub fn getHandler(self: *Route) Handler.HandlerFn {
 }
 
 pub fn handle(self: *Route, ctx: *Context) anyerror!void {
-    // return try self.handler(ctx, req, res);
-    return try self.handler(ctx);
+    // return try self.handler(ctx);
+    for (self.handlers_chain.items) |handler| {
+        handler(ctx) catch |err| {
+            std.log.err("handler error: {any}", .{err});
+            return err;
+        };
+    }
 }
 
 pub fn isMethodAllowed(self: *Route, method: std.http.Method) bool {
@@ -161,7 +176,8 @@ pub fn isMatch(self: *Route, method: std.http.Method, path: []const u8) bool {
     return false;
 }
 
-pub fn use(self: *Route, middleware: Middleware) anyerror!void {
-    _ = middleware;
-    _ = self;
+pub fn use(self: *Route, handler: anytype) anyerror!void {
+    self.handlers_chain.append(handler) catch |err| {
+        return err;
+    };
 }

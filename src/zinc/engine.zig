@@ -171,7 +171,11 @@ pub fn getCatcher(self: *Self, status: http.Status) ?HandlerFn {
 
 /// use middleware to match any route
 pub fn use(self: *Self, middleware: Middleware) anyerror!void {
-    try self.router.use(middleware);
+    for (middleware.handlers.items) |handler| {
+        self.router.use("*", handler) catch |err| {
+            std.log.err("use middleware error: {}\n", .{err});
+        };
+    }
 }
 
 // static dir

@@ -35,9 +35,26 @@ pub fn send(self: *Self, content: []const u8, options: RespondOptions) server_re
     return try self.server_request.respond(content, options);
 }
 
-pub fn sendBody(self: *Self, content: []const u8) !void {
-    try self.send(content, .{
-        .status = self.status,
-        .keep_alive = false,
-    });
+pub fn setStatus(self: *Self, status: http.Status) void {
+    self.status = status;
 }
+
+pub fn setHeader(self: *Self, key: []const u8, value: []const u8) void {
+    self.header.put(key, value);
+}
+
+pub fn setBody(self: *Self, body: []const u8) void {
+    self.body = body;
+}
+
+pub fn sendStatus(self: *Self, status: http.Status) server_response.WriteError!void {
+    self.status = status;
+    return try self.server_request.respond(self.body, .{ .status = status });
+}
+
+// pub fn flush(self: *Self) void {
+//     const headers = self.header.iterator();
+//     while  (headers) |header| {
+//     }
+//     try self.server_response.flush();
+// }

@@ -12,7 +12,7 @@ test "route matching error" {
         expected: anyerror!Route,
     };
 
-    const foo_route = Route.init(.{ .methods = &.{.GET}, .path = "/foo", .handler = undefined });
+    const foo_route = Route.init(.{ .methods = &.{.GET}, .path = "/foo" });
     const testCases = [_]TestCase{
         .{ .route = foo_route, .reqMethod = .GET, .reqPath = "/foo", .expected = foo_route },
         .{ .route = foo_route, .reqMethod = .GET, .reqPath = "/foo=bar?", .expected = RouteError.NotFound },

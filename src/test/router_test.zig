@@ -13,7 +13,7 @@ test "router" {
     };
 
     var router = Router.init(.{});
-    const static_route = Route.init(.{ .methods = &.{ .GET, .HEAD }, .path = "/static", .handler = undefined });
+    const static_route = Route.init(.{ .methods = &.{ .GET, .HEAD }, .path = "/static" });
     try router.addRoute(static_route);
 
     const testCases = [_]TestCase{

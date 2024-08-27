@@ -48,52 +48,61 @@ pub fn getRoutes(self: *Self) std.ArrayList(Route) {
 }
 
 fn setNotFound(self: *Self, handler: anytype) anyerror!void {
-    try self.addRoute(Route.get("*", handler));
+    try self.add(Route.get("*", handler));
 }
 
 fn setMethodNotAllowed(self: *Self, handler: anytype) anyerror!void {
-    try self.addRoute(Route.get("*", handler));
+    try self.add(Route.get("*", handler));
 }
 
 pub fn add(self: *Self, methods: []const std.http.Method, path: []const u8, handler: anytype) anyerror!void {
-    try self.addRoute(Route{
-        .methods = methods,
-        .path = path,
-        .handler = handler,
-    });
-}
-
-pub fn get(self: *Self, path: []const u8, handler: anytype) anyerror!void {
-    try self.addRoute(Route.get(path, handler));
-}
-pub fn post(self: *Self, path: []const u8, handler: anytype) anyerror!void {
-    try self.addRoute(Route.post(path, handler));
-}
-pub fn put(self: *Self, path: []const u8, handler: anytype) anyerror!void {
-    try self.addRoute(Route.put(path, handler));
-}
-pub fn delete(self: *Self, path: []const u8, handler: anytype) anyerror!void {
-    try self.addRoute(Route.delete(path, handler));
-}
-pub fn patch(self: *Self, path: []const u8, handler: anytype) anyerror!void {
-    try self.addRoute(Route.patch(path, handler));
-}
-pub fn options(self: *Self, path: []const u8, handler: anytype) anyerror!void {
-    try self.addRoute(Route.options(path, handler));
-}
-pub fn head(self: *Self, path: []const u8, handler: anytype) anyerror!void {
-    try self.addRoute(Route.head(path, handler));
-}
-pub fn connect(self: *Self, path: []const u8, handler: anytype) anyerror!void {
-    try self.addRoute(Route.connect(path, handler));
-}
-pub fn trace(self: *Self, path: []const u8, handler: anytype) anyerror!void {
-    try self.addRoute(Route.trace(path, handler));
+    for (self.routes.items) |*route| {
+        if (route.isPathMatch(path)) {
+            route.handlers_chain.append(handler) catch |err| {
+                std.log.err("append handler error: {any}", .{err});
+                return err;
+            };
+            return;
+        }
+    }
+    try self.addRoute(Route.create(path, methods, handler));
 }
 
 pub fn addRoute(self: *Self, route: Route) anyerror!void {
     try self.routes.append(route);
 }
+
+pub fn get(self: *Self, path: []const u8, handler: anytype) anyerror!void {
+    try self.add(&.{.GET}, path, handler);
+}
+pub fn post(self: *Self, path: []const u8, handler: anytype) anyerror!void {
+    try self.add(&.{.POST}, path, handler);
+}
+pub fn put(self: *Self, path: []const u8, handler: anytype) anyerror!void {
+    try self.add(&.{.PUT}, path, handler);
+}
+pub fn delete(self: *Self, path: []const u8, handler: anytype) anyerror!void {
+    try self.add(&.{.DELETE}, path, handler);
+}
+pub fn patch(self: *Self, path: []const u8, handler: anytype) anyerror!void {
+    try self.add(&.{.PATCH}, path, handler);
+}
+pub fn options(self: *Self, path: []const u8, handler: anytype) anyerror!void {
+    try self.add(&.{.OPTIONS}, path, handler);
+}
+pub fn head(self: *Self, path: []const u8, handler: anytype) anyerror!void {
+    try self.add(&.{.HEAD}, path, handler);
+}
+pub fn connect(self: *Self, path: []const u8, handler: anytype) anyerror!void {
+    try self.add(&.{.CONNECT}, path, handler);
+}
+pub fn trace(self: *Self, path: []const u8, handler: anytype) anyerror!void {
+    try self.add(&.{.TRACE}, path, handler);
+}
+
+// pub fn add(self: *Self, route: Route) anyerror!void {
+//     try self.routes.append(route);
+// }
 
 pub fn matchRoute(self: *Self, method: std.http.Method, target: []const u8) anyerror!*Route {
     var url = URL.init(.{});
@@ -122,11 +131,13 @@ pub fn matchRoute(self: *Self, method: std.http.Method, target: []const u8) anye
     return Route.RouteError.NotFound;
 }
 
-pub fn use(self: *Self, middleware: Middleware) anyerror!void {
+pub fn use(self: *Self, path: []const u8, handler: anytype) anyerror!void {
     const routes = self.routes.items;
 
     for (routes) |*route| {
-        try route.use(middleware);
+        if (route.isPathMatch(path)) {
+            try route.use(handler);
+        }
     }
 }
 

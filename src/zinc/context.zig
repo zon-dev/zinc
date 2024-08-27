@@ -135,10 +135,6 @@ pub fn setStatus(self: *Self, status: std.http.Status) !void {
     self.response.status = status;
 }
 
-pub fn sendBody(self: *Self, body: []const u8) anyerror!void {
-    try self.response.sendBody(body);
-}
-
 fn closedResponse(self: *Self, content: []const u8, conf: Config.Context) anyerror!void {
     try self.response.send(content, .{
         .status = conf.status,
