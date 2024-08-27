@@ -61,6 +61,8 @@ pub fn init(comptime conf: config.Engine) !Engine {
         .net_server = listener,
         .threads = undefined,
         .read_buffer_len = conf.read_buffer_len,
+        .header_buffer_len = conf.header_buffer_len,
+        .body_buffer_len = conf.body_buffer_len,
     };
 }
 

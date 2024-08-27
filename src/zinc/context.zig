@@ -69,9 +69,7 @@ pub fn text(self: *Self, content: []const u8, conf: Config.Context) anyerror!voi
 }
 
 pub fn json(self: *Self, value: anytype, conf: Config.Context) anyerror!void {
-    var buf: [100]u8 = undefined;
-    var fba = std.heap.FixedBufferAllocator.init(&buf);
-    var string = std.ArrayList(u8).init(fba.allocator());
+    var string = std.ArrayList(u8).init(self.allocator);
     try std.json.stringify(value, .{}, string.writer());
     try self.headers.add("Content-Type", "application/json");
 

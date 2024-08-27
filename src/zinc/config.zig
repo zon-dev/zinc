@@ -59,6 +59,8 @@ pub const Engine = struct {
     allocator: Allocator = page_allocator,
 
     read_buffer_len: usize = 1024,
+    header_buffer_len: usize = 1024,
+    body_buffer_len: usize = 10 * 1024,
 };
 
 /// HTTP server configuration.
