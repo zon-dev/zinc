@@ -198,17 +198,14 @@ pub fn use(self: *Self, path: []const u8, handler: anytype) anyerror!void {
     }
 }
 
-pub fn group(self: *Self, prefix: []const u8, handler: anytype) anyerror!RouterGroup {
-    self.any(prefix, handler) catch |err| return err;
-
-    const g = RouterGroup{
+pub fn group(self: *Self, prefix: []const u8) anyerror!RouterGroup {
+    return RouterGroup{
         .router = self,
         .prefix = prefix,
         .root = true,
     };
-
-    return g;
 }
+
 
 pub inline fn static(self: *Self, relativePath: []const u8, filepath: []const u8) anyerror!void {
     try checkPath(filepath);
