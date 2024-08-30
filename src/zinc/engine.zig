@@ -172,11 +172,16 @@ pub fn getCatcher(self: *Self, status: http.Status) ?HandlerFn {
 /// use middleware to match any route
 pub fn use(self: *Self, middleware: Middleware) anyerror!void {
     for (middleware.handlers.items) |handler| {
-        for (middleware.methods) |method| {
-            self.router.add(method, middleware.prefix, handler) catch |err| {
+        // for (middleware.methods) |method| {
+        //     self.router.add(method, middleware.prefix, handler) catch |err| {
+        //         return err;
+        //     };
+        // }
+
+        self.router.add(.GET, middleware.prefix, handler) catch |err| {
                 return err;
             };
-        }
+
     }
     try self.routeRebuild();
 }

@@ -49,12 +49,13 @@ pub fn any(self: *Self, methods: []const std.http.Method, handler: HandlerFn) an
 }
 
 pub fn addHandler(self: *Self, method: Method, handler: HandlerFn) anyerror!void {
-    var index: usize = undefined;
-    for (self.methods, 0..) |m, i| {
-        if (m == method) {
-            index = i;
-        }
-    }
+    // var index: usize = undefined;
+    // for (self.methods, 0..) |m, i| {
+    //     if (m == method) {
+    //         index = i;
+    //     }
+    // }
+    _ = method;
     try self.handlers.append(handler);
 }
 

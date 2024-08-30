@@ -29,7 +29,8 @@ query_map: ?std.StringHashMap(std.ArrayList([]const u8)) = null,
 
 // Slice of optional function pointers
 handlers: std.ArrayList(*const fn (*Self) anyerror!void) = std.ArrayList(*const fn (*Self) anyerror!void).init(std.heap.page_allocator),
-index: u8 = 0, // Adjust the type based on your specific needs
+// index: u8 = 0, // Adjust the type based on your specific needs
+index: u8 = 1, // Adjust the type based on your specific needs
 
 // body_buffer_len: usize = 0,
 // query: ?std.Uri.Component = null,
@@ -168,6 +169,7 @@ pub fn getHeaders(self: *Self) *Headers {
 
 /// Run the next middleware or handler in the chain.
 pub inline fn next(self: *Context) !void {
+    // self.index = 1;
     while (self.index < self.handlers.items.len) {
         const handler = self.handlers.items[self.index];
         self.handlers.items = self.handlers.items[1..];
