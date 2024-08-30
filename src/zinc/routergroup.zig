@@ -33,12 +33,37 @@ fn relativePath(self: RouterGroup, path: []const u8) []const u8 {
     return prefix_path;
 }
 
-pub fn add(self: *RouterGroup, methods: []const std.http.Method, target: []const u8, handler: anytype) anyerror!void {
+pub fn add(self: *RouterGroup, method: std.http.Method, target: []const u8, handler: anytype) anyerror!void {
     if (self.root) {
-        try self.router.add(methods, target, handler);
+        try self.router.add(method, target, handler);
         return;
     }
-    try self.router.add(methods, try std.fmt.allocPrint(self.allocator, "{s}{s}", .{ self.prefix, target }), handler);
+    try self.router.add(method, try std.fmt.allocPrint(self.allocator, "{s}{s}", .{ self.prefix, target }), handler);
+}
+
+pub fn any(self: *RouterGroup, target: []const u8, handler: anytype) anyerror!void {
+    const methods = &[_]std.http.Method{ .GET, .POST, .PUT, .DELETE, .OPTIONS, .HEAD, .PATCH, .CONNECT, .TRACE };
+    if (self.root) {
+        for (methods) |method| {
+            try self.router.add(method, target, handler);
+        }
+        return;
+    }
+    for (methods) |method| {
+        try self.router.add(method, try std.fmt.allocPrint(self.allocator, "{s}{s}", .{ self.prefix, target }), handler);
+    }
+}
+
+pub fn addAny(self: *RouterGroup, methods: []const std.http.Method, target: []const u8, handler: anytype) anyerror!void {
+    if (self.root) {
+        for (methods) |method| {
+            try self.router.add(method, target, handler);
+        }
+        return;
+    }
+    for (methods) |method| {
+        try self.router.add(method, try std.fmt.allocPrint(self.allocator, "{s}{s}", .{ self.prefix, target }), handler);
+    }
 }
 
 pub fn get(self: *RouterGroup, target: []const u8, handler: anytype) anyerror!void {

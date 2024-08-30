@@ -35,7 +35,11 @@ pub fn init(self: Self) Middleware {
     };
 }
 
-pub fn add(self: *Self, methods: []const std.http.Method, handler: HandlerFn) anyerror!void {
+pub fn add(self: *Self, method: std.http.Method, handler: HandlerFn) anyerror!void {
+    try self.addHandler(method, handler);
+}
+
+pub fn any(self: *Self, methods: []const std.http.Method, handler: HandlerFn) anyerror!void {
     if (methods.len == 0) {
         try self.use(handler);
     }

@@ -75,7 +75,7 @@ pub fn default() !Engine {
 }
 
 pub fn deinit(self: *Self) void {
-    std.debug.print("deinit\n", .{});
+    // std.debug.print("deinit\n", .{});
     self.router.routes.deinit();
     self.net_server.deinit();
 }
@@ -95,21 +95,14 @@ pub fn run(self: *Self) !void {
 
         ready: while (http_server.state == .ready) {
             var request = http_server.receiveHead() catch |err| switch (err) {
-                error.HttpConnectionClosing => {
-                    std.debug.print("HttpConnectionClosing\n", .{});
-                    break :ready;
-                },
+                error.HttpConnectionClosing => break :ready,
                 error.HttpHeadersOversize => {
-                    std.debug.print("HttpHeadersOversize\n", .{});
+                    // std.debug.print("HttpHeadersOversize\n", .{});
                     _ = try conn.stream.write("HTTP/1.1 431 Request Header Fields Too Large\r\nContent-Type: text/html\r\n\r\n<h1>Request Header Fields Too Large</h1>");
                     break :ready;
                 },
                 else => |e| return e,
             };
-
-            // var header_buffer:[]u8 = undefined;
-            // header_buffer =  try self.allocator.alloc(u8, self.header_buffer_len);
-            //  defer self.allocator.free(header_buffer);
 
             const method = request.head.method;
 
@@ -120,10 +113,11 @@ pub fn run(self: *Self) !void {
             var req = Request.init(.{ .server_request = &request, .allocator = self.allocator });
             var res = Response.init(.{ .server_request = &request, .allocator = self.allocator });
             var ctx = Context.init(.{ .request = &req, .response = &res, .allocator = self.allocator }) orelse {
-                try request.respond("500 - Internal Server Error", .{ .status = .internal_server_error, .keep_alive = false });
+                try res500(conn.stream);
                 continue :accept;
             };
             defer ctx.deinit();
+
             const match_route = self.router.matchRoute(method, request.head.target) catch |err| {
                 switch (err) {
                     Route.RouteError.NotFound => {
@@ -131,7 +125,7 @@ pub fn run(self: *Self) !void {
                             try notFoundHande(&ctx);
                             continue :accept;
                         }
-                        try request.respond("404 - Not Found", .{ .status = .not_found, .keep_alive = false });
+                        try res404(conn.stream);
                         continue :accept;
                     },
                     Route.RouteError.MethodNotAllowed => {
@@ -139,13 +133,19 @@ pub fn run(self: *Self) !void {
                             try methodNotAllowedHande(&ctx);
                             continue :accept;
                         }
-                        try request.respond("405 - Method Not Allowed", .{ .status = .method_not_allowed, .keep_alive = false });
+                        try res405(conn.stream);
                         continue :accept;
                     },
                     else => |e| return e,
                 }
             };
-            try match_route.handle(&ctx);
+
+            ctx.handlers = match_route.handlers_chain;
+            ctx.handle() catch |err| {
+                try res500(conn.stream);
+                //  continue :accept;
+                return err;
+            };
         }
         // closing
         // while (http_server.state == .closing) {
@@ -172,10 +172,17 @@ pub fn getCatcher(self: *Self, status: http.Status) ?HandlerFn {
 /// use middleware to match any route
 pub fn use(self: *Self, middleware: Middleware) anyerror!void {
     for (middleware.handlers.items) |handler| {
-        self.router.use("*", handler) catch |err| {
-            std.log.err("use middleware error: {}\n", .{err});
-        };
+        for (middleware.methods) |method| {
+            self.router.add(method, middleware.prefix, handler) catch |err| {
+                return err;
+            };
+        }
     }
+    try self.routeRebuild();
+}
+
+fn routeRebuild(self: *Self) anyerror!void {
+    try self.router.rebuild();
 }
 
 // static dir
@@ -186,4 +193,17 @@ pub fn static(self: *Self, path: []const u8, dir_name: []const u8) anyerror!void
 // static file
 pub fn StaticFile(self: *Self, path: []const u8, file_name: []const u8) anyerror!void {
     try self.router.staticFile(path, file_name);
+}
+
+fn res405(conn: net.Stream) anyerror!void {
+    _ = try conn.write("HTTP/1.1 405 Method Not Allowed\r\nContent-Type: text/html\r\n\r\n<h1>Method Not Allowed</h1>");
+}
+
+fn res404(conn: net.Stream) anyerror!void {
+    _ = try conn.write("HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\n\r\n<h1>Not Found</h1>");
+}
+
+/// Response server error 500
+fn res500(conn: net.Stream) anyerror!void {
+    _ = try conn.write("HTTP/1.1 500 Internal Server Error\r\nContent-Type: text/html\r\n\r\n<h1>Internal Server Error</h1>");
 }

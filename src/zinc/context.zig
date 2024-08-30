@@ -9,11 +9,14 @@ const Config = @import("config.zig");
 const Headers = @import("headers.zig");
 const Param = @import("param.zig");
 
+const HandlerFn = @import("handler.zig").HandlerFn;
+
 pub const Context = @This();
 const Self = @This();
 
 allocator: std.mem.Allocator = std.heap.page_allocator,
 
+// connection: std.net.Server.Connection = undefined,
 request: *Request = undefined,
 response: *Response = undefined,
 
@@ -24,8 +27,11 @@ params: std.StringHashMap(Param) = std.StringHashMap(Param).init(std.heap.page_a
 
 query_map: ?std.StringHashMap(std.ArrayList([]const u8)) = null,
 
-// body_buffer_len: usize = 0,
+// Slice of optional function pointers
+handlers: std.ArrayList(*const fn (*Self) anyerror!void) = std.ArrayList(*const fn (*Self) anyerror!void).init(std.heap.page_allocator),
+index: u8 = 0, // Adjust the type based on your specific needs
 
+// body_buffer_len: usize = 0,
 // query: ?std.Uri.Component = null,
 
 pub fn deinit(self: *Self) void {
@@ -54,7 +60,7 @@ pub fn init(self: Self) ?Context {
 
 pub fn html(self: *Self, content: []const u8, conf: Config.Context) anyerror!void {
     try self.headers.add("Content-Type", "text/html");
-    try self.closedResponse(
+    try self.resp(
         content,
         conf,
     );
@@ -62,7 +68,7 @@ pub fn html(self: *Self, content: []const u8, conf: Config.Context) anyerror!voi
 
 pub fn text(self: *Self, content: []const u8, conf: Config.Context) anyerror!void {
     try self.headers.add("Content-Type", "text/plain");
-    try self.closedResponse(
+    try self.resp(
         content,
         conf,
     );
@@ -73,7 +79,7 @@ pub fn json(self: *Self, value: anytype, conf: Config.Context) anyerror!void {
     try std.json.stringify(value, .{}, string.writer());
     try self.headers.add("Content-Type", "application/json");
 
-    try self.closedResponse(string.items, conf);
+    try self.resp(string.items, conf);
 }
 
 pub fn send(self: *Self, content: []const u8, options: RespondOptions) anyerror!void {
@@ -85,6 +91,12 @@ pub fn file(
     file_path: []const u8,
     conf: Config.Context,
 ) anyerror!void {
+    if (std.fs.path.basename(file_path).len == 0) {
+        try self.headers.add("Content-Type", "text/plain");
+        try self.resp("404 Not Found", conf);
+        return error.NotFound;
+    }
+
     var f = try std.fs.cwd().openFile(file_path, .{});
     defer f.close();
 
@@ -92,8 +104,7 @@ pub fn file(
     const stat = try f.stat();
     const buffer = try f.readToEndAlloc(self.allocator, stat.size);
     defer self.allocator.free(buffer);
-
-    try self.closedResponse(buffer, conf);
+    try self.resp(buffer, conf);
 }
 
 pub fn dir(self: *Self, dir_name: []const u8, conf: Config.Context) anyerror!void {
@@ -116,7 +127,11 @@ pub fn dir(self: *Self, dir_name: []const u8, conf: Config.Context) anyerror!voi
         sub_path = try std.fmt.allocPrint(self.allocator, "{s}/{s}", .{ dir_name, target_file });
     }
 
-    var f = try std.fs.cwd().openFile(sub_path, .{});
+    var f = std.fs.cwd().openFile(sub_path, .{}) catch |err| {
+        try self.headers.add("Content-Type", "text/plain");
+        try self.resp("404 Not Found", conf);
+        return err;
+    };
     defer f.close();
 
     // Read the file into a buffer.
@@ -124,7 +139,7 @@ pub fn dir(self: *Self, dir_name: []const u8, conf: Config.Context) anyerror!voi
     const buffer = try f.readToEndAlloc(self.allocator, stat.size);
     defer self.allocator.free(buffer);
 
-    try self.closedResponse(buffer, conf);
+    try self.resp(buffer, conf);
 }
 
 pub fn getParam(self: *Self, key: []const u8) ?Param {
@@ -135,7 +150,7 @@ pub fn setStatus(self: *Self, status: std.http.Status) !void {
     self.response.status = status;
 }
 
-fn closedResponse(self: *Self, content: []const u8, conf: Config.Context) anyerror!void {
+fn resp(self: *Self, content: []const u8, conf: Config.Context) anyerror!void {
     try self.response.send(content, .{
         .status = conf.status,
         .extra_headers = self.headers.items(),
@@ -151,9 +166,28 @@ pub fn getHeaders(self: *Self) *Headers {
     return &self.headers;
 }
 
-pub fn next(self: *Self) !void {
-    _ = self;
+/// Run the next middleware or handler in the chain.
+pub inline fn next(self: *Context) !void {
+    while (self.index < self.handlers.items.len) {
+        const handler = self.handlers.items[self.index];
+        self.handlers.items = self.handlers.items[1..];
+        self.index += 1;
+        try handler(self);
+    }
 }
+
+// pub fn next(self: *Self) void {
+//     self.index += 1;
+//     while (self.index < self.handlers.items.len) {
+//         const handler = self.handlers.items[self.index];
+//         if (handler == null) {
+//             self.index += 1;
+//             continue;
+//         }
+//         handler(self);
+//         self.index += 1;
+//     }
+// }
 
 pub fn redirect(self: *Self, http_status: std.http.Status, url: []const u8) anyerror!void {
     try self.headers.add("Location", url);
@@ -165,6 +199,7 @@ pub const queryError = error{
     NotFound,
     InvalidValue,
     MultipleValues,
+    AccessDenied,
 };
 
 /// Get the query value by name.
@@ -215,18 +250,6 @@ pub fn queryMap(self: *Self, map_key: []const u8) ?std.StringHashMap(std.ArrayLi
         if (key_rest == null) continue;
         var inner_key = std.mem.splitSequence(u8, key_rest.?, "]");
         if (inner_key.index == null) continue;
-
-        // const values: std.ArrayList([]const u8) = kv.value_ptr.*;
-        // var values_copy = std.ArrayList([]const u8).init(self.allocator);
-        // for (values.items) |value| {
-        //     const value_copy = self.allocator.alloc(u8, value.len) catch continue;
-        //     std.mem.copyForwards(u8, value_copy, value);
-        //     values_copy.append(value_copy) catch continue;
-        // }
-        // const key_copy = self.allocator.alloc(u8, inner_key_name.len) catch continue;
-        // std.mem.copyForwards(u8, key_copy, inner_key_name);
-        // inner_map.put(key_copy, values_copy) catch continue;
-
         inner_map.put(inner_key.first(), kv.value_ptr.*) catch continue;
     }
     if (inner_map.capacity() == 0) {
@@ -257,7 +280,6 @@ test "context query" {
     try std.testing.expectEqualStrings(messages[0], "hello");
     try std.testing.expectEqualStrings(messages[1], "world");
 
-    // /query?ids[a]=1234&ids[b]=hello&ids[b]=world
     const ids: std.StringHashMap(std.ArrayList([]const u8)) = ctx.queryMap("ids") orelse return try std.testing.expect(false);
     try std.testing.expectEqualStrings(ids.get("a").?.items[0], "1234");
     try std.testing.expectEqualStrings(ids.get("b").?.items[0], "hello");
@@ -306,10 +328,7 @@ pub fn getPostFormMap(self: *Self) ?std.StringHashMap([]const u8) {
 
     const content_length = req.head.content_length orelse return null;
 
-    const request_reader = req.reader() catch {
-        std.debug.print("Failed to get request reader\n", .{});
-        return null;
-    };
+    const request_reader = req.reader() catch return null;
 
     const body_buffer = request_reader.readAllAlloc(self.allocator, content_length) catch return null;
 
@@ -339,7 +358,7 @@ pub fn postFormMap(self: *Self, map_key: []const u8) ?std.StringHashMap([]const 
         var splited_key = std.mem.splitSequence(u8, trimmed_key, "[");
         if (splited_key.index == null) continue;
         const key_name = splited_key.first();
-        std.debug.print("key_name: {s}\n", .{key_name});
+        // std.debug.print("key_name: {s}\n", .{key_name});
 
         if (!std.mem.eql(u8, key_name, map_key)) continue;
 
@@ -354,4 +373,10 @@ pub fn postFormMap(self: *Self, map_key: []const u8) ?std.StringHashMap([]const 
         return null;
     }
     return inner_map;
+}
+
+pub fn handle(self: *Self) anyerror!void {
+    for (self.handlers.items) |handler| {
+        try handler(self);
+    }
 }

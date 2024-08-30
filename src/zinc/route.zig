@@ -1,4 +1,5 @@
 const std = @import("std");
+const Method = std.http.Method;
 const URL = @import("url");
 const logger = @import("logger.zig").init(.{});
 
@@ -13,27 +14,18 @@ const HandlerChain = Handler.Chain;
 pub const Route = @This();
 const Self = @This();
 
-methods: []const std.http.Method = &.{
-    .GET,
-    .POST,
-    .PUT,
-    .DELETE,
-    .PATCH,
-    .OPTIONS,
-    .HEAD,
-    .CONNECT,
-    .TRACE,
-},
+allocator: std.mem.Allocator = std.heap.page_allocator,
+
+method: Method = undefined,
 
 path: []const u8 = "*",
 
-// handler: Handler.HandlerFn = undefined,
-// handlers_chain: []Handler.HandlerFn = undefined,
 handlers_chain: std.ArrayList(HandlerFn) = std.ArrayList(HandlerFn).init(std.heap.page_allocator),
 
 pub fn init(self: Self) Route {
     return .{
-        .methods = self.methods,
+        .allocator = self.allocator,
+        .method = self.method,
         .path = self.path,
         .handlers_chain = self.handlers_chain,
     };
@@ -48,7 +40,7 @@ pub const RouteError = error{
     MethodNotAllowed,
 };
 
-pub fn match(self: *Route, method: std.http.Method, target: []const u8) anyerror!*Route {
+pub fn match(self: *Route, method: Method, target: []const u8) anyerror!*Route {
     var url = URL.init(.{});
     const url_target = try url.parseUrl(target);
     const path = url_target.path;
@@ -64,41 +56,57 @@ pub fn match(self: *Route, method: std.http.Method, target: []const u8) anyerror
     return RouteError.NotFound;
 }
 
-pub fn create(path: []const u8, http_methods: []const std.http.Method, handler: anytype) Route {
-    var r = Route.init(.{ .methods = http_methods, .path = path });
+pub fn create(path: []const u8, http_method: Method, handler: HandlerFn) Route {
+    var r = Route.init(.{ .method = http_method, .path = path });
     r.handlers_chain.append(handler) catch |err| {
-        std.log.err("append handler error: {any}", .{err});
+        std.debug.print("failed to append handler to route: {any}", .{err});
     };
     return r;
 }
 
+pub fn any(path: []const u8, handler: anytype) Route {
+    const ms = [_]Method{ .GET, .POST, .PUT, .DELETE, .PATCH, .OPTIONS, .HEAD, .CONNECT, .TRACE };
+    for (ms) |m| {
+        try create(path, m, handler);
+    }
+}
+
+pub fn isHandlerExists(self: *Route, handler: HandlerFn) bool {
+    for (self.handlers_chain.items) |h| {
+        if (h == handler) {
+            return true;
+        }
+    }
+    return false;
+}
+
 pub fn get(path: []const u8, handler: anytype) Route {
-    return create(path, &.{.GET}, handler);
+    return create(path, .GET, handler);
 }
 
 pub fn post(path: []const u8, handler: anytype) Route {
-    return create(path, &.{.POST}, handler);
+    return create(path, .POST, handler);
 }
 pub fn put(path: []const u8, handler: anytype) Route {
-    return create(path, &.{.PUT}, handler);
+    return create(path, .PUT, handler);
 }
 pub fn delete(path: []const u8, handler: anytype) Route {
-    return create(path, &.{.DELETE}, handler);
+    return create(path, .DELETE, handler);
 }
 pub fn patch(path: []const u8, handler: anytype) Route {
-    return create(path, &.{.PATCH}, handler);
+    return create(path, .PATCH, handler);
 }
 pub fn options(path: []const u8, handler: anytype) Route {
-    return create(path, &.{.OPTIONS}, handler);
+    return create(path, .OPTIONS, handler);
 }
 pub fn head(path: []const u8, handler: anytype) Route {
-    return create(path, &.{.HEAD}, handler);
+    return create(path, .HEAD, handler);
 }
 pub fn connect(path: []const u8, handler: anytype) Route {
-    return create(path, &.{.CONNECT}, handler);
+    return create(path, .CONNECT, handler);
 }
 pub fn trace(path: []const u8, handler: anytype) Route {
-    return create(path, &.{.TRACE}, handler);
+    return create(path, .TRACE, handler);
 }
 
 pub fn getPath(self: *Route) []const u8 {
@@ -119,11 +127,9 @@ pub fn handle(self: *Route, ctx: *Context) anyerror!void {
     }
 }
 
-pub fn isMethodAllowed(self: *Route, method: std.http.Method) bool {
-    for (self.methods) |m| {
-        if (m == method) {
-            return true;
-        }
+pub fn isMethodAllowed(self: *Route, method: Method) bool {
+    if (self.method == method) {
+        return true;
     }
 
     return false;
@@ -168,7 +174,7 @@ pub fn isStaticRoute(self: *Route, target: []const u8) bool {
     return std.ascii.eqlIgnoreCase(self.path, target);
 }
 
-pub fn isMatch(self: *Route, method: std.http.Method, path: []const u8) bool {
+pub fn isMatch(self: *Route, method: Method, path: []const u8) bool {
     if (self.isPathMatch(path) and self.isMethodAllowed(method)) {
         return true;
     }

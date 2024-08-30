@@ -12,7 +12,7 @@ test "route matching error" {
         expected: anyerror!Route,
     };
 
-    const foo_route = Route.init(.{ .methods = &.{.GET}, .path = "/foo" });
+    const foo_route = Route.init(.{ .method = .GET, .path = "/foo" });
     const testCases = [_]TestCase{
         .{ .route = foo_route, .reqMethod = .GET, .reqPath = "/foo", .expected = foo_route },
         .{ .route = foo_route, .reqMethod = .GET, .reqPath = "/foo=bar?", .expected = RouteError.NotFound },
@@ -32,11 +32,11 @@ test "route matching error" {
         var route = tc.route;
         const route_expected = route.match(tc.reqMethod, tc.reqPath) catch |err| {
             try testing.expect(err == (tc.expected catch |e| e));
-            std.debug.print(" \r\n route test1 case {d} passed, path: {s} ", .{ i, tc.reqPath });
+            // std.debug.print(" \r\n route test1 case {d} passed, path: {s} ", .{ i, tc.reqPath });
             continue;
         };
 
         try testing.expectEqual(route_expected.*, (try tc.expected));
-        std.debug.print(" \r\n route test2 case {d} passed, path: {s} ", .{ i, tc.reqPath });
+        // std.debug.print(" \r\n route test2 case {d} passed, path: {s} ", .{ i, tc.reqPath });
     }
 }

@@ -13,6 +13,7 @@ server_request: *server_request = undefined,
 header: std.StringArrayHashMap([]u8) = std.StringArrayHashMap([]u8).init(std.heap.page_allocator),
 status: http.Status = http.Status.ok,
 target: []const u8 = "",
+method: http.Method = undefined,
 
 pub fn init(self: Self) Request {
     if (self.target.len > 0) {
@@ -27,11 +28,8 @@ pub fn init(self: Self) Request {
         .allocator = self.allocator,
         .server_request = self.server_request,
         .target = self.server_request.head.target,
+        .method = self.server_request.head.method,
     };
-}
-
-pub fn method(self: *Request) http.Method {
-    return self.server_request.head.method;
 }
 
 pub fn send(self: *Request, content: []const u8, options: RespondOptions) !void {
