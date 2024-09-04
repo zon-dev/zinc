@@ -141,11 +141,7 @@ pub fn run(self: *Self) !void {
             };
 
             ctx.handlers = match_route.handlers_chain;
-            ctx.handle() catch |err| {
-                try res500(conn.stream);
-                //  continue :accept;
-                return err;
-            };
+            ctx.handle() catch try res500(conn.stream);
         }
         // closing
         // while (http_server.state == .closing) {
@@ -172,16 +168,9 @@ pub fn getCatcher(self: *Self, status: http.Status) ?HandlerFn {
 /// use middleware to match any route
 pub fn use(self: *Self, middleware: Middleware) anyerror!void {
     for (middleware.handlers.items) |handler| {
-        // for (middleware.methods) |method| {
-        //     self.router.add(method, middleware.prefix, handler) catch |err| {
-        //         return err;
-        //     };
-        // }
-
         self.router.add(.GET, middleware.prefix, handler) catch |err| {
-                return err;
-            };
-
+            return err;
+        };
     }
     try self.routeRebuild();
 }

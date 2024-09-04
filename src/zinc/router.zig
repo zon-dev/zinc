@@ -206,7 +206,6 @@ pub fn group(self: *Self, prefix: []const u8) anyerror!RouterGroup {
     };
 }
 
-
 pub inline fn static(self: *Self, relativePath: []const u8, filepath: []const u8) anyerror!void {
     try checkPath(filepath);
 
