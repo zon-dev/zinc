@@ -29,8 +29,8 @@ query_map: ?std.StringHashMap(std.ArrayList([]const u8)) = null,
 
 // Slice of optional function pointers
 handlers: std.ArrayList(*const fn (*Self) anyerror!void) = std.ArrayList(*const fn (*Self) anyerror!void).init(std.heap.page_allocator),
-// index: u8 = 0, // Adjust the type based on your specific needs
-index: usize = 1, // Adjust the type based on your specific needs
+index: u8 = 0, // Adjust the type based on your specific needs
+// index: usize = 0, // Adjust the type based on your specific needs
 
 // body_buffer_len: usize = 0,
 // query: ?std.Uri.Component = null,
@@ -169,12 +169,12 @@ pub fn getHeaders(self: *Self) *Headers {
 
 /// Run the next middleware or handler in the chain.
 pub inline fn next(self: *Context) anyerror!void {
-    if (self.index <= self.handlers.items.len) {
-        return;
-    }
+    self.index += 1;
 
-    const handler = self.handlers.items[self.index];
-    try handler(self);
+    if (self.index >= self.handlers.items.len) return;
+
+    try self.handlers.items[self.index](self);
+
     self.index += 1;
 }
 
@@ -366,6 +366,9 @@ pub fn postFormMap(self: *Self, map_key: []const u8) ?std.StringHashMap([]const 
 
 pub fn handle(self: *Self) anyerror!void {
     for (self.handlers.items) |handler| {
+        if (self.index >= self.handlers.items.len) {
+            continue;
+        }
         try handler(self);
     }
 }
