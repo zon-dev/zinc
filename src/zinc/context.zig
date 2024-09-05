@@ -333,11 +333,10 @@ pub fn postFormMap(self: *Self, map_key: []const u8) ?std.StringHashMap([]const 
 pub fn handle(self: *Self) anyerror!void {
     if (self.handlers.items.len == 0) try self.handlers.items[self.index](self);
 
-    for (self.handlers.items) |handler| {
-        if (self.index > self.handlers.items.len) {
+    for (self.handlers.items, 0..) |handler, index| {
+        if (index < self.index) {
             continue;
         }
-
         try handler(self);
     }
 }

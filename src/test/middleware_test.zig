@@ -1,17 +1,21 @@
-// test "Middleware" {
-//     var text: []const u8 = undefined;
+const std = @import("std");
+const zinc = @import("../zinc.zig");
+const expect = std.testing.expect;
 
-//     var router = zinc.Router.init(.{});
+test "Middleware" {
+    var router = zinc.Router.init(.{});
 
-//     const mid1 = struct {
-//         var signature: []const u8 = undefined;
-//         inline fn testMiddle1(c: *Context) anyerror!void {
-//             text += "A";
-//             try c.next();
-//             text += "B";
-//         }
-//     };
-//     router.use(mid1.testMiddle1);
-//     // router.get("/", mid3.testMiddle3);
-//     std.testing.expectEqualStrings("ACDB", signature);
-// }
+    var signature: []const u8 = undefined;
+    signature = "";
+
+    const mid1 = struct {
+        fn testMiddle1(c: *zinc.Context) anyerror!void {
+            signature += "A";
+            try c.next();
+            signature += "B";
+        }
+    }.testMiddle1;
+
+    try router.use(&.{mid1});
+    try std.testing.expectEqualStrings("AB", signature);
+}
