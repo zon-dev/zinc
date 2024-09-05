@@ -1,13 +1,13 @@
 const std = @import("std");
 const Method = std.http.Method;
 const URL = @import("url");
-const logger = @import("logger.zig").init(.{});
 
-const Context = @import("context.zig");
-const Request = @import("request.zig");
-const Response = @import("response.zig");
-const Handler = @import("handler.zig");
-const Middleware = @import("middleware.zig");
+const zinc = @import("../zinc.zig");
+
+const Context = zinc.Context;
+const Request = zinc.Request;
+const Response = zinc.Response;
+const Handler = zinc.Handler;
 const HandlerFn = Handler.HandlerFn;
 const HandlerChain = Handler.Chain;
 
@@ -182,8 +182,11 @@ pub fn isMatch(self: *Route, method: Method, path: []const u8) bool {
     return false;
 }
 
-pub fn use(self: *Route, handler: anytype) anyerror!void {
-    self.handlers_chain.append(handler) catch |err| {
-        return err;
-    };
+pub fn use(self: *Route, handlers: []const HandlerFn) anyerror!void {
+    // try self.handlers_chain.append(handler);
+    var chain = std.ArrayList(HandlerFn).init(std.heap.page_allocator);
+    try chain.appendSlice(handlers);
+    try chain.appendSlice(self.handlers_chain.items);
+    self.handlers_chain.clearAndFree();
+    self.handlers_chain = chain;
 }

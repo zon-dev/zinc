@@ -1,6 +1,6 @@
 const std = @import("std");
 const http = std.http;
-const header = http.Header;
+// const header = http.Header;
 const server_request = std.http.Server.Request;
 const server_response = std.http.Server.Response;
 const RespondOptions = server_request.RespondOptions;
@@ -11,8 +11,8 @@ pub const Response = @This();
 const Self = @This();
 
 allocator: std.mem.Allocator = std.heap.page_allocator,
-server_request: *server_request = undefined,
-server_response: *server_response = undefined,
+req: *server_request = undefined,
+res: *server_response = undefined,
 
 version: []const u8 = "HTTP/1.1",
 status: http.Status = http.Status.ok,
@@ -22,8 +22,8 @@ body: []const u8 = "",
 pub fn init(self: Self) Response {
     return .{
         .allocator = self.allocator,
-        .server_request = self.server_request,
-        .server_response = self.server_response,
+        .req = self.req,
+        .res = self.res,
         .version = self.version,
         .status = self.status,
         .header = self.header,
@@ -32,7 +32,7 @@ pub fn init(self: Self) Response {
 }
 
 pub fn send(self: *Self, content: []const u8, options: RespondOptions) server_response.WriteError!void {
-    return try self.server_request.respond(content, options);
+    return try self.req.respond(content, options);
 }
 
 pub fn setStatus(self: *Self, status: http.Status) void {
@@ -49,12 +49,5 @@ pub fn setBody(self: *Self, body: []const u8) void {
 
 pub fn sendStatus(self: *Self, status: http.Status) server_response.WriteError!void {
     self.status = status;
-    return try self.server_request.respond(self.body, .{ .status = status });
+    return try self.req.respond(self.body, .{ .status = status });
 }
-
-// pub fn flush(self: *Self) void {
-//     const headers = self.header.iterator();
-//     while  (headers) |header| {
-//     }
-//     try self.server_response.flush();
-// }

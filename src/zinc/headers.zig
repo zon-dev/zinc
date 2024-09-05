@@ -3,11 +3,11 @@ const Header = std.http.Header;
 const Allocator = std.mem.Allocator;
 const heap = std.heap;
 
-allocator: Allocator = heap.page_allocator,
-headers: std.ArrayList(Header) = std.ArrayList(Header).init(heap.page_allocator),
-
 pub const Headers = @This();
 const Self = @This();
+
+allocator: Allocator = heap.page_allocator,
+headers: std.ArrayList(Header) = std.ArrayList(Header).init(heap.page_allocator),
 
 pub fn init(self: Self) Headers {
     return .{

@@ -3,18 +3,17 @@ const heap = std.heap;
 const page_allocator = heap.page_allocator;
 const Allocator = std.mem.Allocator;
 const ArrayList = std.ArrayList;
-
 const print = std.debug.print;
+
 const zinc = @import("../zinc.zig");
 
-const Context = @import("context.zig");
-const Request = @import("request.zig");
-const Response = @import("response.zig");
-const Route = @import("route.zig");
-const Handler = @import("handler.zig");
+const Context = zinc.Context;
+const Request = zinc.Request;
+const Response = zinc.Response;
+const Route = zinc.Route;
+const Handler = zinc.Handler;
 const HandlerFn = Handler.HandlerFn;
-const Middleware = @import("middleware.zig");
-const Router = @import("router.zig");
+const Router = zinc.Router;
 
 pub const RouterGroup = @This();
 const Self = @This();
@@ -24,7 +23,6 @@ prefix: []const u8 = "",
 root: bool = false,
 Handlers: ArrayList(HandlerFn) = ArrayList(HandlerFn).init(page_allocator),
 router: *Router = undefined,
-
 fn relativePath(self: RouterGroup, path: []const u8) []const u8 {
     if (self.root) {
         return self.prefix;
@@ -100,4 +98,22 @@ pub fn connect(self: *RouterGroup, target: []const u8, handler: anytype) anyerro
 
 pub fn trace(self: *RouterGroup, target: []const u8, handler: anytype) anyerror!void {
     try self.router.trace(try std.fmt.allocPrint(self.allocator, "{s}{s}", .{ self.prefix, target }), handler);
+}
+
+pub fn use(self: *RouterGroup, handler: anytype) anyerror!void {
+    if (self.root) {
+        try self.router.use(handler);
+        return;
+    }
+    try self.router.use(handler);
+}
+
+// pub fn getRoutes(self: *RouterGroup) []Route {
+//     return self.router.getRoutes();
+// }
+
+/// Return routes.
+pub fn getRoutes(self: *RouterGroup) std.ArrayList(Route) {
+    // return self.routes;
+    return self.router.getRoutes();
 }

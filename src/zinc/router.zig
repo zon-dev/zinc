@@ -4,15 +4,16 @@ const heap = std.heap;
 const page_allocator = heap.page_allocator;
 const print = std.debug.print;
 const URL = @import("url");
-const Context = @import("context.zig");
-const Request = @import("request.zig");
-const Response = @import("response.zig");
-const Route = @import("route.zig");
-const Handler = @import("handler.zig");
-const HandlerFn = Handler.HandlerFn;
-const Middleware = @import("middleware.zig");
 
-const RouterGroup = @import("routergroup.zig");
+const zinc = @import("../zinc.zig");
+const Context = zinc.Context;
+const Request = zinc.Request;
+const Response = zinc.Response;
+const Route = zinc.Route;
+const Handler = zinc.Handler;
+const HandlerFn = Handler.HandlerFn;
+
+const RouterGroup = zinc.RouterGroup;
 
 pub const Router = @This();
 const Self = @This();
@@ -31,7 +32,8 @@ methods: []const std.http.Method = &[_]std.http.Method{
 
 allocator: Allocator = page_allocator,
 routes: std.ArrayList(Route) = std.ArrayList(Route).init(page_allocator),
-// catchers: std.AutoHashMap(std.http.Status, HandlerFn) = std.AutoHashMap(std.http.Status, HandlerFn).init(std.heap.page_allocator),
+
+middlewares: std.ArrayList(HandlerFn) = std.ArrayList(HandlerFn).init(std.heap.page_allocator),
 
 pub fn init(self: Self) Router {
     return .{
@@ -56,21 +58,12 @@ pub fn handleContext(self: *Self, ctx: Context) anyerror!void {
 
 /// Rebuild all routes.
 pub fn rebuild(self: *Self) !void {
-    var all_route_handlers = std.ArrayList(HandlerFn).init(self.allocator);
-
     for (self.routes.items) |*route| {
-        if (std.mem.eql(u8, route.path, "*")) {
-            try all_route_handlers.appendSlice(route.handlers_chain.items);
-            continue;
-        }
-    }
-
-    for (self.routes.items) |*route| {
-        if (std.mem.eql(u8, route.path, "*")) {
-            continue;
-        }
-
-        try route.handlers_chain.appendSlice(all_route_handlers.items);
+        var chain = std.ArrayList(HandlerFn).init(std.heap.page_allocator);
+        try chain.appendSlice(self.middlewares.items);
+        try chain.appendSlice(route.handlers_chain.items);
+        route.handlers_chain.clearAndFree();
+        route.handlers_chain = chain;
     }
 }
 
@@ -80,41 +73,34 @@ pub fn getRoutes(self: *Self) std.ArrayList(Route) {
 }
 
 pub fn add(self: *Self, method: std.http.Method, path: []const u8, handler: anytype) anyerror!void {
-    if (self.routes.items.len == 0) {
-        try self.addRoute(Route.create(path, method, handler));
-        return;
-    }
+    if (self.routes.items.len != 0) {
+        for (self.routes.items) |*route| {
+            if (std.mem.eql(u8, route.path, path) and route.method == method) {
+                for (self.middlewares.items) |middleware| {
+                    if (!route.isHandlerExists(middleware)) {
+                        try route.handlers_chain.append(middleware);
+                        return;
+                    }
+                }
 
-    for (self.routes.items) |*route| {
-        if (std.mem.eql(u8, route.path, path) and route.method == method) {
-            if (!route.isHandlerExists(handler)) {
-                try route.handlers_chain.append(handler);
+                if (!route.isHandlerExists(handler)) {
+                    try route.handlers_chain.append(handler);
+                    return;
+                }
+
                 return;
             }
-            return;
         }
     }
 
-    try self.addRoute(Route.create(path, method, handler));
+    var route = Route.create(path, method, handler);
+    try route.use(self.middlewares.items);
+    try self.addRoute(route);
     return;
 }
 
 pub fn addAny(self: *Self, http_methods: []const std.http.Method, path: []const u8, handler: HandlerFn) anyerror!void {
     for (http_methods) |method| {
-        if (self.routes.items.len == 0) {
-            try self.add(method, path, handler);
-            continue;
-        }
-
-        for (self.routes.items) |*route| {
-            if (std.mem.eql(u8, route.path, path) and route.method == method) {
-                if (!route.isHandlerExists(handler)) {
-                    try route.handlers_chain.append(handler);
-                }
-                continue;
-            }
-        }
-
         try self.add(method, path, handler);
     }
 }
@@ -188,13 +174,9 @@ pub fn matchRoute(self: *Self, method: std.http.Method, target: []const u8) anye
     return err;
 }
 
-pub fn use(self: *Self, path: []const u8, handler: anytype) anyerror!void {
-    const routes = self.routes.items;
-
-    for (routes) |*route| {
-        if (route.isPathMatch(path) or std.mem.eql(u8, path, "*")) {
-            try route.use(handler);
-        }
+pub fn use(self: *Self, handler: anytype) anyerror!void {
+    for (self.routes.items) |*route| {
+        try route.use(handler);
     }
 }
 

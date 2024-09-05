@@ -2,11 +2,12 @@ const std = @import("std");
 const http = std.http;
 const Method = http.Method;
 
-const Handler = @import("handler.zig");
+const zinc = @import("../zinc.zig");
+
+const Handler = zinc.Handler;
 const HandlerFn = Handler.HandlerFn;
 const HandlerChain = Handler.Chain;
-
-const Context = @import("context.zig");
+const Context = zinc.Context;
 
 pub const Middleware = @This();
 const Self = @This();
@@ -25,37 +26,14 @@ methods: []const Method = &[_]Method{
 
 handlers: std.ArrayList(HandlerFn) = std.ArrayList(HandlerFn).init(std.heap.page_allocator),
 
-prefix: []const u8 = "/",
-
 pub fn init(self: Self) Middleware {
     return .{
         .methods = self.methods,
-        .prefix = self.prefix,
         .handlers = self.handlers,
     };
 }
 
-pub fn add(self: *Self, method: std.http.Method, handler: HandlerFn) anyerror!void {
-    try self.addHandler(method, handler);
-}
-
-pub fn any(self: *Self, methods: []const std.http.Method, handler: HandlerFn) anyerror!void {
-    if (methods.len == 0) {
-        try self.use(handler);
-    }
-    for (methods) |method| {
-        try self.addHandler(method, handler);
-    }
-}
-
-pub fn addHandler(self: *Self, method: Method, handler: HandlerFn) anyerror!void {
-    // var index: usize = undefined;
-    // for (self.methods, 0..) |m, i| {
-    //     if (m == method) {
-    //         index = i;
-    //     }
-    // }
-    _ = method;
+pub fn add(self: *Self, handler: HandlerFn) anyerror!void {
     try self.handlers.append(handler);
 }
 
@@ -74,13 +52,6 @@ pub fn handle(self: *Self, ctx: *Context) anyerror!void {
         return;
     }
     return handler(ctx);
-}
-
-pub fn use(self: *Self, handler: HandlerFn) anyerror!void {
-    const methods = self.methods;
-    for (methods) |method| {
-        try self.addHandler(method, handler);
-    }
 }
 
 pub fn cors() HandlerFn {
@@ -102,3 +73,25 @@ pub fn cors() HandlerFn {
     };
     return H.handle;
 }
+
+// pub const cors = struct {
+//     // "Access-Control-Allow-Origin"
+//     const Origin: []const u8 = "*";
+//     // "Access-Control-Allow-Methods"
+//     const Methods: []std.http.Method = &[_]std.http.Method{ .GET, .POST, .PUT, .DELETE, .OPTIONS };
+//     // "Access-Control-Allow-Headers"
+//     const Headers: []const u8 = "Content-Type";
+//     // "Access-Control-Allow-Private-Network"
+//     const Private: bool = true;
+//     // "Access-Control-Max-Age"
+//     const MaxAge: usize = 3600;
+//     pub fn init(self: cors) cors {
+//         return .{
+//             .Origin = self.Origin,
+//             .Methods = self.Methods,
+//             .Headers = self.Headers,
+//             .Private = self.Private,
+//             .MaxAge = self.MaxAge,
+//         };
+//     }
+// };

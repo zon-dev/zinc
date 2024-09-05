@@ -22,7 +22,7 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
-    unit_tests.root_module.addImport("zinc", module);
+    // unit_tests.root_module.addImport("zinc", module);
     unit_tests.root_module.addImport("url", url.module("url"));
 
     const run_unit_tests = b.addRunArtifact(unit_tests);

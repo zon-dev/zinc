@@ -8,7 +8,7 @@ pub const Request = @This();
 const Self = @This();
 
 allocator: std.mem.Allocator = std.heap.page_allocator,
-server_request: *server_request = undefined,
+req: *server_request = undefined,
 
 header: std.StringArrayHashMap([]u8) = std.StringArrayHashMap([]u8).init(std.heap.page_allocator),
 status: http.Status = http.Status.ok,
@@ -26,18 +26,18 @@ pub fn init(self: Self) Request {
     return .{
         .header = self.header,
         .allocator = self.allocator,
-        .server_request = self.server_request,
-        .target = self.server_request.head.target,
-        .method = self.server_request.head.method,
+        .req = self.req,
+        .target = self.req.head.target,
+        .method = self.req.head.method,
     };
 }
 
-pub fn send(self: *Request, content: []const u8, options: RespondOptions) !void {
-    try self.server_request.respond(content, options);
+pub fn send(self: *Request, content: []const u8, options: RespondOptions) anyerror!void {
+    try self.req.respond(content, options);
 }
 
-pub fn setHeader(self: *Request, key: []const u8, value: []const u8) void {
-    self.header.put(key, value);
+pub fn setHeader(self: *Request, key: []const u8, value: []const u8) anyerror!void {
+    try self.header.put(key, @constCast(value));
 }
 
 pub fn getHeader(self: *Request, key: []const u8) ?[]const u8 {

@@ -8,20 +8,22 @@ const Allocator = std.mem.Allocator;
 const page_allocator = std.heap.page_allocator;
 
 const URL = @import("url");
-const Router = @import("router.zig");
-const Route = @import("route.zig");
-const Context = @import("context.zig");
-const Request = @import("request.zig");
-const Response = @import("response.zig");
-const config = @import("config.zig");
-const Middleware = @import("middleware.zig");
-const Handler = @import("handler.zig");
+
+const zinc = @import("../zinc.zig");
+
+const Router = zinc.Router;
+const Route = zinc.Route;
+const RouterGroup = zinc.RouterGroup;
+const Context = zinc.Context;
+const Request = zinc.Request;
+const Response = zinc.Response;
+const config = zinc.Config;
+const Handler = zinc.Handler;
 const HandlerFn = Handler.HandlerFn;
-const Catchers = @import("catchers.zig");
+const Catchers = zinc.Catchers;
+
 pub const Engine = @This();
 const Self = @This();
-
-var logger = @import("logger.zig").init(.{});
 
 allocator: Allocator = page_allocator,
 
@@ -37,9 +39,9 @@ read_buffer_len: usize = 1024,
 header_buffer_len: usize = 1024,
 body_buffer_len: usize = 10 * 1024,
 
-// catchers: std.AutoHashMap(http.Status, HandlerFn) = std.AutoHashMap(http.Status, HandlerFn).init(std.heap.page_allocator),
-
 catchers: Catchers = Catchers.init(std.heap.page_allocator),
+
+middlewares: std.ArrayList(HandlerFn) = std.ArrayList(HandlerFn).init(std.heap.page_allocator),
 
 pub fn getPort(self: *Self) u16 {
     return self.net_server.listen_address.getPort();
@@ -110,8 +112,8 @@ pub fn run(self: *Self) !void {
                 return request.respond("", .{ .status = .ok, .keep_alive = false });
             }
 
-            var req = Request.init(.{ .server_request = &request, .allocator = self.allocator });
-            var res = Response.init(.{ .server_request = &request, .allocator = self.allocator });
+            var req = Request.init(.{ .req = &request, .allocator = self.allocator });
+            var res = Response.init(.{ .req = &request, .allocator = self.allocator });
             var ctx = Context.init(.{ .request = &req, .response = &res, .allocator = self.allocator }) orelse {
                 try res500(conn.stream);
                 continue :accept;
@@ -166,16 +168,13 @@ pub fn getCatcher(self: *Self, status: http.Status) ?HandlerFn {
 }
 
 /// use middleware to match any route
-pub fn use(self: *Self, middleware: Middleware) anyerror!void {
-    for (middleware.handlers.items) |handler| {
-        self.router.add(.GET, middleware.prefix, handler) catch |err| {
-            return err;
-        };
-    }
+pub fn use(self: *Self, handlers: []const HandlerFn) anyerror!void {
+    try self.middlewares.appendSlice(handlers);
     try self.routeRebuild();
 }
 
 fn routeRebuild(self: *Self) anyerror!void {
+    try self.router.middlewares.appendSlice(self.middlewares.items);
     try self.router.rebuild();
 }
 

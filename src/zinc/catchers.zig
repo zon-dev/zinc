@@ -5,7 +5,9 @@ const net = std.net;
 const proto = http.protocol;
 const Server = http.Server;
 const Allocator = std.mem.Allocator;
-const Handler = @import("handler.zig");
+
+const zinc = @import("../zinc.zig");
+const Handler = zinc.Handler;
 const HandlerFn = Handler.HandlerFn;
 
 pub const Self = @This();
@@ -17,10 +19,6 @@ pub fn init(allocator: Allocator) Self {
         .catchers = std.AutoHashMap(http.Status, HandlerFn).init(allocator),
     };
 }
-
-// pub fn getCatchers(self: *Self) *std.AutoHashMap(http.Status, HandlerFn) {
-//     return &self.catchers;
-// }
 
 pub fn get(self: *Self, status: http.Status) ?HandlerFn {
     return self.catchers.get(status);
@@ -49,10 +47,3 @@ pub fn methodNotAllowed(self: *Self) ?HandlerFn {
 pub fn internalServerError(self: *Self) ?HandlerFn {
     return self.get(http.Status.internal_server_error);
 }
-
-// pub fn handle(self: *Self, status: http.Status, ctx: Handler.Context) void {
-//     const handler = self.catchers.get(status);
-//     if (handler != null) {
-//         handler(ctx);
-//     }
-// }

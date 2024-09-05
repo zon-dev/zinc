@@ -8,7 +8,8 @@ const StringHashMap = std.StringHashMap;
 const ArrayList = std.ArrayList;
 const Method = http.Method;
 
-const Handler = @import("handler.zig");
+const zinc = @import("../zinc.zig");
+const Handler = zinc.Handler;
 
 pub const Config = @This();
 

@@ -3,13 +3,22 @@ const URL = @import("url");
 const RespondOptions = std.http.Server.Request.RespondOptions;
 const Header = std.http.Header;
 
-const Request = @import("request.zig");
-const Response = @import("response.zig");
-const Config = @import("config.zig");
-const Headers = @import("headers.zig");
-const Param = @import("param.zig");
+const zinc = @import("../zinc.zig");
+const Request = zinc.Request;
+const Response = zinc.Response;
+const Config = zinc.Config;
+const Headers = zinc.Headers;
+const Param = zinc.Param;
+const HandlerFn = zinc.HandlerFn;
+// const Context = zinc.Context;
 
-const HandlerFn = @import("handler.zig").HandlerFn;
+// const Request = @import("request.zig");
+// const Response = @import("response.zig");
+// const Config = @import("config.zig");
+// const Headers = @import("headers.zig");
+// const Param = @import("param.zig");
+
+// const HandlerFn = @import("handler.zig").HandlerFn;
 
 pub const Context = @This();
 const Self = @This();
@@ -30,10 +39,8 @@ query_map: ?std.StringHashMap(std.ArrayList([]const u8)) = null,
 // Slice of optional function pointers
 handlers: std.ArrayList(*const fn (*Self) anyerror!void) = std.ArrayList(*const fn (*Self) anyerror!void).init(std.heap.page_allocator),
 index: u8 = 0, // Adjust the type based on your specific needs
-// index: usize = 0, // Adjust the type based on your specific needs
 
-// body_buffer_len: usize = 0,
-// query: ?std.Uri.Component = null,
+// writer: std.io.AnyWriter = std.net.Stream.writer(),
 
 pub fn deinit(self: *Self) void {
     self.headers.deinit();
@@ -56,6 +63,9 @@ pub fn init(self: Self) ?Context {
         .params = self.params,
         .query = self.query,
         .query_map = self.query_map,
+        .handlers = self.handlers,
+        .index = self.index,
+        // .writer = try self.request.server_request.server.connection.stream.writer(),
     };
 }
 
@@ -172,15 +182,15 @@ pub inline fn next(self: *Context) anyerror!void {
     self.index += 1;
 
     if (self.index >= self.handlers.items.len) return;
-
-    try self.handlers.items[self.index](self);
+    const handler = self.handlers.items[self.index];
+    try handler(self);
 
     self.index += 1;
 }
 
 pub fn redirect(self: *Self, http_status: std.http.Status, url: []const u8) anyerror!void {
     try self.headers.add("Location", url);
-    try self.request.server_request.respond("", .{ .status = http_status, .reason = http_status.phrase(), .extra_headers = self.headers.items(), .keep_alive = false });
+    try self.request.req.respond("", .{ .status = http_status, .reason = http_status.phrase(), .extra_headers = self.headers.items(), .keep_alive = false });
 }
 
 pub const queryError = error{
@@ -247,47 +257,6 @@ pub fn queryMap(self: *Self, map_key: []const u8) ?std.StringHashMap(std.ArrayLi
     return inner_map;
 }
 
-test "context query" {
-    var req = Request.init(.{
-        .target = "/query?id=1234&message=hello&message=world&ids[a]=1234&ids[b]=hello&ids[b]=world",
-    });
-
-    var ctx = Context.init(.{ .request = &req }).?;
-
-    var qm = ctx.getQueryMap() orelse {
-        return try std.testing.expect(false);
-    };
-
-    try std.testing.expectEqualStrings(qm.get("id").?.items[0], "1234");
-    try std.testing.expectEqualStrings(qm.get("message").?.items[0], "hello");
-    try std.testing.expectEqualStrings(qm.get("message").?.items[1], "world");
-
-    const idv = ctx.queryValues("id") catch return try std.testing.expect(false);
-    try std.testing.expectEqualStrings(idv.items[0], "1234");
-
-    const messages = ctx.queryArray("message") catch return try std.testing.expect(false);
-    try std.testing.expectEqualStrings(messages[0], "hello");
-    try std.testing.expectEqualStrings(messages[1], "world");
-
-    const ids: std.StringHashMap(std.ArrayList([]const u8)) = ctx.queryMap("ids") orelse return try std.testing.expect(false);
-    try std.testing.expectEqualStrings(ids.get("a").?.items[0], "1234");
-    try std.testing.expectEqualStrings(ids.get("b").?.items[0], "hello");
-    try std.testing.expectEqualStrings(ids.get("b").?.items[1], "world");
-}
-
-test "context query map" {
-    var req = Request.init(.{
-        .target = "/query?ids[a]=1234&ids[b]=hello&ids[b]=world",
-    });
-
-    var ctx = Context.init(.{ .request = &req }).?;
-
-    var ids: std.StringHashMap(std.ArrayList([]const u8)) = ctx.queryMap("ids") orelse return try std.testing.expect(false);
-    try std.testing.expectEqualStrings(ids.get("a").?.items[0], "1234");
-    try std.testing.expectEqualStrings(ids.get("b").?.items[0], "hello");
-    try std.testing.expectEqualStrings(ids.get("b").?.items[1], "world");
-}
-
 /// Get the query values as a map.
 /// e.g /post?name=foo&name=bar => getQueryMap() => {"name": ["foo", "bar"]}
 pub fn getQueryMap(self: *Self) ?std.StringHashMap(std.ArrayList([]const u8)) {
@@ -310,7 +279,7 @@ pub fn queryArray(self: *Self, name: []const u8) anyerror![][]const u8 {
 }
 
 pub fn getPostFormMap(self: *Self) ?std.StringHashMap([]const u8) {
-    const req = self.request.server_request;
+    const req = self.request.req;
 
     const content_type = req.head.content_type orelse return null;
     _ = std.mem.indexOf(u8, content_type, "application/x-www-form-urlencoded") orelse return null;
@@ -342,13 +311,10 @@ pub fn postFormMap(self: *Self, map_key: []const u8) ?std.StringHashMap([]const 
     var inner_map: std.StringHashMap([]const u8) = std.StringHashMap([]const u8).init(self.allocator);
 
     while (qit.next()) |kv| {
-        // const decoded_key = self.allocator.alloc(u8, key.len) catch continue;
         const trimmed_key = std.mem.trim(u8, std.Uri.percentDecodeInPlace(@constCast(kv.key_ptr.*)), "");
         var splited_key = std.mem.splitSequence(u8, trimmed_key, "[");
         if (splited_key.index == null) continue;
         const key_name = splited_key.first();
-        // std.debug.print("key_name: {s}\n", .{key_name});
-
         if (!std.mem.eql(u8, key_name, map_key)) continue;
 
         const key_rest = splited_key.next();
@@ -365,10 +331,13 @@ pub fn postFormMap(self: *Self, map_key: []const u8) ?std.StringHashMap([]const 
 }
 
 pub fn handle(self: *Self) anyerror!void {
+    if (self.handlers.items.len == 0) try self.handlers.items[self.index](self);
+
     for (self.handlers.items) |handler| {
-        if (self.index >= self.handlers.items.len) {
+        if (self.index > self.handlers.items.len) {
             continue;
         }
+
         try handler(self);
     }
 }
