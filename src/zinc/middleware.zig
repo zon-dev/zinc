@@ -1,9 +1,5 @@
 const std = @import("std");
-const http = std.http;
-const Method = http.Method;
-
 const zinc = @import("../zinc.zig");
-
 const Handler = zinc.Handler;
 const HandlerFn = Handler.HandlerFn;
 const HandlerChain = Handler.Chain;
@@ -11,48 +7,6 @@ const Context = zinc.Context;
 
 pub const Middleware = @This();
 const Self = @This();
-
-methods: []const Method = &[_]Method{
-    .GET,
-    .POST,
-    .PUT,
-    .DELETE,
-    .OPTIONS,
-    .HEAD,
-    .PATCH,
-    .CONNECT,
-    .TRACE,
-},
-
-handlers: std.ArrayList(HandlerFn) = std.ArrayList(HandlerFn).init(std.heap.page_allocator),
-
-pub fn init(self: Self) Middleware {
-    return .{
-        .methods = self.methods,
-        .handlers = self.handlers,
-    };
-}
-
-pub fn add(self: *Self, handler: HandlerFn) anyerror!void {
-    try self.handlers.append(handler);
-}
-
-pub fn getHandler(self: *Self, method: Method) !HandlerFn {
-    const index = self.methods.index(method);
-    if (index == self.methods.len) {
-        return null;
-    }
-    return self.handlers[index];
-}
-
-pub fn handle(self: *Self, ctx: *Context) anyerror!void {
-    const method = ctx.request.method();
-    const handler = try self.getHandler(method);
-    if (handler == null) {
-        return;
-    }
-    return handler(ctx);
-}
 
 pub fn cors() HandlerFn {
     const H = struct {

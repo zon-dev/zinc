@@ -10,15 +10,6 @@ const Config = zinc.Config;
 const Headers = zinc.Headers;
 const Param = zinc.Param;
 const HandlerFn = zinc.HandlerFn;
-// const Context = zinc.Context;
-
-// const Request = @import("request.zig");
-// const Response = @import("response.zig");
-// const Config = @import("config.zig");
-// const Headers = @import("headers.zig");
-// const Param = @import("param.zig");
-
-// const HandlerFn = @import("handler.zig").HandlerFn;
 
 pub const Context = @This();
 const Self = @This();
@@ -103,8 +94,6 @@ pub fn file(
     conf: Config.Context,
 ) anyerror!void {
     if (std.fs.path.basename(file_path).len == 0) {
-        try self.headers.add("Content-Type", "text/plain");
-        try self.resp("404 Not Found", conf);
         return error.NotFound;
     }
 
@@ -121,7 +110,6 @@ pub fn file(
 pub fn dir(self: *Self, dir_name: []const u8, conf: Config.Context) anyerror!void {
     const target = self.request.target;
 
-    // const target_dir = std.fs.path.dirname(target).?;
     const target_file = std.fs.path.basename(target);
 
     var targets = std.mem.splitSequence(u8, target, "/");
@@ -139,8 +127,6 @@ pub fn dir(self: *Self, dir_name: []const u8, conf: Config.Context) anyerror!voi
     }
 
     var f = std.fs.cwd().openFile(sub_path, .{}) catch |err| {
-        try self.headers.add("Content-Type", "text/plain");
-        try self.resp("404 Not Found", conf);
         return err;
     };
     defer f.close();

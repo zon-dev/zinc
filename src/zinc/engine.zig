@@ -10,7 +10,6 @@ const page_allocator = std.heap.page_allocator;
 const URL = @import("url");
 
 const zinc = @import("../zinc.zig");
-
 const Router = zinc.Router;
 const Route = zinc.Route;
 const RouterGroup = zinc.RouterGroup;
@@ -22,12 +21,14 @@ const Handler = zinc.Handler;
 const HandlerFn = Handler.HandlerFn;
 const Catchers = zinc.Catchers;
 
+const default_response = @import("default_response.zig");
+
 pub const Engine = @This();
 const Self = @This();
 
 allocator: Allocator = page_allocator,
-
 net_server: std.net.Server,
+
 threads: []std.Thread = &[_]std.Thread{},
 mutex: std.Thread.Mutex = .{},
 
@@ -35,12 +36,10 @@ router: Router = Router.init(.{}),
 
 // To lower memory usage and improve performance but mybe crash when request body is too large
 read_buffer_len: usize = 1024,
-
 header_buffer_len: usize = 1024,
 body_buffer_len: usize = 10 * 1024,
 
 catchers: Catchers = Catchers.init(std.heap.page_allocator),
-
 middlewares: std.ArrayList(HandlerFn) = std.ArrayList(HandlerFn).init(std.heap.page_allocator),
 
 pub fn getPort(self: *Self) u16 {
@@ -84,7 +83,6 @@ pub fn deinit(self: *Self) void {
 
 pub fn run(self: *Self) !void {
     var net_server = self.net_server;
-    // var read_buffer: [1024]u8 = undefined;
     var read_buffer: []u8 = undefined;
     read_buffer = try self.allocator.alloc(u8, self.read_buffer_len);
     defer self.allocator.free(read_buffer);
@@ -94,62 +92,63 @@ pub fn run(self: *Self) !void {
         defer conn.stream.close();
 
         var http_server = http.Server.init(conn, read_buffer);
-
         ready: while (http_server.state == .ready) {
             var request = http_server.receiveHead() catch |err| switch (err) {
-                error.HttpConnectionClosing => break :ready,
-                error.HttpHeadersOversize => {
-                    // std.debug.print("HttpHeadersOversize\n", .{});
-                    _ = try conn.stream.write("HTTP/1.1 431 Request Header Fields Too Large\r\nContent-Type: text/html\r\n\r\n<h1>Request Header Fields Too Large</h1>");
-                    break :ready;
-                },
+                error.HttpConnectionClosing => continue :ready,
+                error.HttpHeadersOversize => return default_response.requestHeaderFieldsTooLarge(conn.stream),
                 else => |e| return e,
             };
 
             const method = request.head.method;
 
-            if (method == .HEAD) {
-                return request.respond("", .{ .status = .ok, .keep_alive = false });
-            }
-
             var req = Request.init(.{ .req = &request, .allocator = self.allocator });
             var res = Response.init(.{ .req = &request, .allocator = self.allocator });
             var ctx = Context.init(.{ .request = &req, .response = &res, .allocator = self.allocator }) orelse {
-                try res500(conn.stream);
+                try default_response.internalServerError(conn.stream);
                 continue :accept;
             };
             defer ctx.deinit();
 
             const match_route = self.router.matchRoute(method, request.head.target) catch |err| {
-                switch (err) {
-                    Route.RouteError.NotFound => {
-                        if (self.getCatcher(.not_found)) |notFoundHande| {
-                            try notFoundHande(&ctx);
-                            continue :accept;
-                        }
-                        try res404(conn.stream);
-                        continue :accept;
-                    },
-                    Route.RouteError.MethodNotAllowed => {
-                        if (self.getCatcher(.method_not_allowed)) |methodNotAllowedHande| {
-                            try methodNotAllowedHande(&ctx);
-                            continue :accept;
-                        }
-                        try res405(conn.stream);
-                        continue :accept;
-                    },
-                    else => |e| return e,
-                }
+                try self.catchRouteError(err, conn.stream, &ctx);
+                continue :accept;
             };
 
             ctx.handlers = match_route.handlers_chain;
-            ctx.handle() catch try res500(conn.stream);
+            ctx.handle() catch try default_response.internalServerError(conn.stream);
         }
         // closing
         // while (http_server.state == .closing) {
         //     std.debug.print("closing\n", .{});
         //     continue :accept;
         // }
+    }
+}
+
+fn catchRouteError(self: *Self, err: anyerror, stream: net.Stream, ctx: *Context) anyerror!void {
+    switch (err) {
+        Route.RouteError.NotFound => {
+            if (ctx.request.method == .HEAD) {
+                _ = try stream.write("HTTP/1.1 404 Not Found\r\n\r\n");
+                return;
+            }
+
+            if (self.getCatcher(.not_found)) |notFoundHande| {
+                try notFoundHande(ctx);
+                return;
+            }
+            try default_response.notFound(stream);
+            return;
+        },
+        Route.RouteError.MethodNotAllowed => {
+            if (self.getCatcher(.method_not_allowed)) |methodNotAllowedHande| {
+                try methodNotAllowedHande(ctx);
+                return;
+            }
+            try default_response.methodNotAllowed(stream);
+            return;
+        },
+        else => |e| return e,
     }
 }
 
@@ -186,17 +185,4 @@ pub fn static(self: *Self, path: []const u8, dir_name: []const u8) anyerror!void
 // static file
 pub fn StaticFile(self: *Self, path: []const u8, file_name: []const u8) anyerror!void {
     try self.router.staticFile(path, file_name);
-}
-
-fn res405(conn: net.Stream) anyerror!void {
-    _ = try conn.write("HTTP/1.1 405 Method Not Allowed\r\nContent-Type: text/html\r\n\r\n<h1>Method Not Allowed</h1>");
-}
-
-fn res404(conn: net.Stream) anyerror!void {
-    _ = try conn.write("HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\n\r\n<h1>Not Found</h1>");
-}
-
-/// Response server error 500
-fn res500(conn: net.Stream) anyerror!void {
-    _ = try conn.write("HTTP/1.1 500 Internal Server Error\r\nContent-Type: text/html\r\n\r\n<h1>Internal Server Error</h1>");
 }
