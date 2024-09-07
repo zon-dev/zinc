@@ -121,7 +121,7 @@ pub const RouteTree = struct {
     // Get the path of the current node
     pub fn get_path(self: *RouteTree) ?[]const u8 {
         var path = std.ArrayList([]const u8).init(self.allocator);
-        // defer path.deinit();
+        defer path.deinit();
 
         var current = self;
 
@@ -132,18 +132,9 @@ pub const RouteTree = struct {
 
         path.append(@constCast(current.value)) catch return null; // Add the root node value
 
-        const reversed = self.reverse(path.items);
+        const reversed = path.items;
+        std.mem.reverse([]const u8, reversed);
 
-        const full_path = std.mem.join(self.allocator, "/", reversed.items) catch return null;
-        return full_path;
-    }
-
-    fn reverse(self: *RouteTree, str_arr: [][]const u8) std.ArrayList([]const u8) {
-        var rev_iter = std.mem.reverseIterator(str_arr);
-        var reversed_str = std.ArrayList([]const u8).init(self.allocator);
-        while (rev_iter.next()) |letter| {
-            reversed_str.append(letter) catch {};
-        }
-        return reversed_str;
+        return std.mem.join(self.allocator, "/", reversed) catch return null;
     }
 };
