@@ -49,3 +49,38 @@ test {
     const subroute = two.?.getChild("subroute");
     try std.testing.expect(subroute != null);
 }
+
+const RootTree = zinc.RootTree;
+
+test "RootTree" {
+    var root = RootTree.init(.{});
+    var root_tree = root.get(.GET);
+    try std.testing.expect(root_tree != null);
+    try root_tree.?.insert("/test");
+    const found = root_tree.?.find("/test");
+    try std.testing.expect(found != null);
+
+    const not_found = root_tree.?.find("/not_found");
+    try std.testing.expect(not_found == null);
+
+    try found.?.insert("/1");
+    try found.?.insert("/2");
+    try found.?.insert("/3");
+
+    const find_one = root_tree.?.find("/test/1");
+    try std.testing.expect(find_one != null);
+    try std.testing.expectEqualStrings("1", find_one.?.value);
+
+    const find_two = root_tree.?.findByValue("2");
+    try std.testing.expect(find_two != null);
+    const find_two_path = find_two.?.getPath().?;
+    try std.testing.expectEqualStrings("/test/2", find_two_path);
+
+    try root_tree.?.insert("/test2");
+    const found2 = root_tree.?.find("/test2");
+    try found2.?.insert("/2");
+    const find_two2 = root_tree.?.findByValue("2");
+    try std.testing.expect(find_two2 != null);
+    const find_two2_path = find_two2.?.getPath().?;
+    try std.testing.expectEqualStrings("/test2/2", find_two2_path);
+}

@@ -1,4 +1,48 @@
 const std = @import("std");
+const zinc = @import("../zinc.zig");
+const HandlerFn = zinc.Handler.HandlerFn;
+
+pub const methodTree = struct {
+    method: std.http.Method,
+    root: *RouteTree,
+};
+
+const methodTrees: std.ArrayList(methodTree) = std.ArrayList(methodTree).init(std.heap.page_allocator);
+
+pub const RootTree = struct {
+    trees: std.ArrayList(methodTree) = std.ArrayList(methodTree).init(std.heap.page_allocator),
+
+    pub fn init(self: RootTree) RootTree {
+        const methods = &[_]std.http.Method{
+            .GET,
+            .POST,
+            .PUT,
+            .DELETE,
+            .OPTIONS,
+            .HEAD,
+            .PATCH,
+            .CONNECT,
+            .TRACE,
+        };
+        var this = self;
+
+        for (methods) |method| {
+            const r = RouteTree.create(.{}) catch unreachable;
+            const tree = methodTree{ .method = method, .root = r };
+            this.trees.append(tree) catch unreachable;
+        }
+        return this;
+    }
+
+    pub fn get(self: *RootTree, method: std.http.Method) ?*RouteTree {
+        for (self.trees.items) |tree| {
+            if (tree.method == method) {
+                return tree.root;
+            }
+        }
+        return null;
+    }
+};
 
 // Define the structure of a Route Tree node
 pub const RouteTree = struct {
@@ -10,6 +54,9 @@ pub const RouteTree = struct {
 
     children: std.StringHashMap((*RouteTree)) = std.StringHashMap(*RouteTree).init(std.heap.page_allocator),
 
+    // Handlers for the node
+    handlers: std.ArrayList(HandlerFn) = std.ArrayList(HandlerFn).init(std.heap.page_allocator),
+
     // Create a new node
     pub fn create(self: RouteTree) !*RouteTree {
         // value: []const u8
@@ -19,6 +66,7 @@ pub const RouteTree = struct {
             .value = self.value,
             .parent = self.parent,
             .children = self.children,
+            .handlers = self.handlers,
         };
         return node;
     }
