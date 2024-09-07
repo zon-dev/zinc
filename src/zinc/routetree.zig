@@ -45,12 +45,12 @@ pub const RouteTree = struct {
     }
 
     // Get the parent node
-    pub fn get_parent(self: *RouteTree) ?*RouteTree {
+    pub fn getParent(self: *RouteTree) ?*RouteTree {
         return self.parent orelse null;
     }
 
     // Get a child node by segment
-    pub fn get_child(self: *RouteTree, segment: []const u8) ?*RouteTree {
+    pub fn getChild(self: *RouteTree, segment: []const u8) ?*RouteTree {
         return self.children.get(segment) orelse null;
     }
 
@@ -75,7 +75,7 @@ pub const RouteTree = struct {
     }
 
     // Find a node by its value using DFS
-    pub fn find_node_by_value(self: *RouteTree, value: []const u8) ?*RouteTree {
+    pub fn findByValue(self: *RouteTree, value: []const u8) ?*RouteTree {
         // Stack for DFS traversal
         var stack = std.ArrayList(*RouteTree).init(self.allocator);
         // defer stack.deinit();
@@ -95,31 +95,8 @@ pub const RouteTree = struct {
         return null;
     }
 
-    // Print the tree in a structured way
-    pub fn print_tree(self: *RouteTree, writer: anytype, indent: usize) !void {
-        std.debug.print("calling print_tree {s}\n", .{self.value});
-        try writer.print("{s}{s}\n", .{ "  ", self.value });
-
-        var iter = self.children.valueIterator();
-        while (iter.next()) |child| {
-            try child.*.print_tree(writer, indent + 2);
-        }
-    }
-    // Print all parents of the current node
-    pub fn print_all_parents(self: *RouteTree, writer: anytype) !void {
-        var current = self;
-        while (current.parent) |parent| {
-            // ignore root node
-            if (parent.value.len == 0) {
-                break;
-            }
-            try writer.print("Parent: {s}\n", .{parent.value});
-            current = parent;
-        }
-    }
-
     // Get the path of the current node
-    pub fn get_path(self: *RouteTree) ?[]const u8 {
+    pub fn getPath(self: *RouteTree) ?[]const u8 {
         var path = std.ArrayList([]const u8).init(self.allocator);
         defer path.deinit();
 
