@@ -9,7 +9,7 @@ const ArrayList = std.ArrayList;
 const Method = http.Method;
 
 const zinc = @import("../zinc.zig");
-const Handler = zinc.Handler;
+const HandlerFn = zinc.HandlerFn;
 
 pub const Config = @This();
 
@@ -33,7 +33,7 @@ pub const Middleware = struct {
         .OPTIONS,
     },
     prefix: []const u8 = "/",
-    handler_fn: *const fn () Handler.HandlerFn = undefined,
+    handler_fn: *const fn () HandlerFn = undefined,
 };
 
 pub const CORS = struct {

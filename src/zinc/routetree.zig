@@ -1,6 +1,6 @@
 const std = @import("std");
 const zinc = @import("../zinc.zig");
-const HandlerFn = zinc.Handler.HandlerFn;
+const HandlerFn = zinc.HandlerFn;
 
 pub const methodTree = struct {
     method: std.http.Method,

@@ -8,7 +8,6 @@ pub const Response = @import("zinc/response.zig");
 pub const Route = @import("zinc/route.zig");
 pub const Router = @import("zinc/router.zig");
 pub const Headers = @import("zinc/headers.zig");
-pub const Handler = @import("zinc/handler.zig");
 pub const HandlerFn = @import("zinc/handler.zig").HandlerFn;
 pub const Middleware = @import("zinc/middleware.zig");
 pub const RouterGroup = @import("zinc/routergroup.zig");

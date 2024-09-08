@@ -11,8 +11,7 @@ const Context = zinc.Context;
 const Request = zinc.Request;
 const Response = zinc.Response;
 const Route = zinc.Route;
-const Handler = zinc.Handler;
-const HandlerFn = Handler.HandlerFn;
+const HandlerFn = zinc.HandlerFn;
 const Router = zinc.Router;
 
 pub const RouterGroup = @This();
@@ -31,7 +30,7 @@ fn relativePath(self: RouterGroup, path: []const u8) []const u8 {
     return prefix_path;
 }
 
-pub fn add(self: *RouterGroup, method: std.http.Method, target: []const u8, handler: anytype) anyerror!void {
+pub fn add(self: *RouterGroup, method: std.http.Method, target: []const u8, handler: HandlerFn) anyerror!void {
     if (self.root) {
         try self.router.add(method, target, handler);
         return;
@@ -39,7 +38,7 @@ pub fn add(self: *RouterGroup, method: std.http.Method, target: []const u8, hand
     try self.router.add(method, try std.fmt.allocPrint(self.allocator, "{s}{s}", .{ self.prefix, target }), handler);
 }
 
-pub fn any(self: *RouterGroup, target: []const u8, handler: anytype) anyerror!void {
+pub fn any(self: *RouterGroup, target: []const u8, handler: HandlerFn) anyerror!void {
     const methods = &[_]std.http.Method{ .GET, .POST, .PUT, .DELETE, .OPTIONS, .HEAD, .PATCH, .CONNECT, .TRACE };
     if (self.root) {
         for (methods) |method| {
@@ -52,7 +51,7 @@ pub fn any(self: *RouterGroup, target: []const u8, handler: anytype) anyerror!vo
     }
 }
 
-pub fn addAny(self: *RouterGroup, methods: []const std.http.Method, target: []const u8, handler: anytype) anyerror!void {
+pub fn addAny(self: *RouterGroup, methods: []const std.http.Method, target: []const u8, handler: HandlerFn) anyerror!void {
     if (self.root) {
         for (methods) |method| {
             try self.router.add(method, target, handler);
@@ -64,43 +63,43 @@ pub fn addAny(self: *RouterGroup, methods: []const std.http.Method, target: []co
     }
 }
 
-pub fn get(self: *RouterGroup, target: []const u8, handler: anytype) anyerror!void {
+pub fn get(self: *RouterGroup, target: []const u8, handler: HandlerFn) anyerror!void {
     try self.router.get(try std.fmt.allocPrint(self.allocator, "{s}{s}", .{ self.prefix, target }), handler);
 }
 
-pub fn post(self: *RouterGroup, target: []const u8, handler: anytype) anyerror!void {
+pub fn post(self: *RouterGroup, target: []const u8, handler: HandlerFn) anyerror!void {
     try self.router.post(try std.fmt.allocPrint(self.allocator, "{s}{s}", .{ self.prefix, target }), handler);
 }
 
-pub fn put(self: *RouterGroup, target: []const u8, handler: anytype) anyerror!void {
+pub fn put(self: *RouterGroup, target: []const u8, handler: HandlerFn) anyerror!void {
     try self.router.put(try std.fmt.allocPrint(self.allocator, "{s}{s}", .{ self.prefix, target }), handler);
 }
 
-pub fn delete(self: *RouterGroup, target: []const u8, handler: anytype) anyerror!void {
+pub fn delete(self: *RouterGroup, target: []const u8, handler: HandlerFn) anyerror!void {
     try self.router.delete(try std.fmt.allocPrint(self.allocator, "{s}{s}", .{ self.prefix, target }), handler);
 }
 
-pub fn patch(self: *RouterGroup, target: []const u8, handler: anytype) anyerror!void {
+pub fn patch(self: *RouterGroup, target: []const u8, handler: HandlerFn) anyerror!void {
     try self.router.patch(try std.fmt.allocPrint(self.allocator, "{s}{s}", .{ self.prefix, target }), handler);
 }
 
-pub fn options(self: *RouterGroup, target: []const u8, handler: anytype) anyerror!void {
+pub fn options(self: *RouterGroup, target: []const u8, handler: HandlerFn) anyerror!void {
     try self.router.options(try std.fmt.allocPrint(self.allocator, "{s}{s}", .{ self.prefix, target }), handler);
 }
 
-pub fn head(self: *RouterGroup, target: []const u8, handler: anytype) anyerror!void {
+pub fn head(self: *RouterGroup, target: []const u8, handler: HandlerFn) anyerror!void {
     try self.router.head(try std.fmt.allocPrint(self.allocator, "{s}{s}", .{ self.prefix, target }), handler);
 }
 
-pub fn connect(self: *RouterGroup, target: []const u8, handler: anytype) anyerror!void {
+pub fn connect(self: *RouterGroup, target: []const u8, handler: HandlerFn) anyerror!void {
     try self.router.connect(try std.fmt.allocPrint(self.allocator, "{s}{s}", .{ self.prefix, target }), handler);
 }
 
-pub fn trace(self: *RouterGroup, target: []const u8, handler: anytype) anyerror!void {
+pub fn trace(self: *RouterGroup, target: []const u8, handler: HandlerFn) anyerror!void {
     try self.router.trace(try std.fmt.allocPrint(self.allocator, "{s}{s}", .{ self.prefix, target }), handler);
 }
 
-pub fn use(self: *RouterGroup, handler: anytype) anyerror!void {
+pub fn use(self: *RouterGroup, handler: HandlerFn) anyerror!void {
     if (self.root) {
         try self.router.use(handler);
         return;

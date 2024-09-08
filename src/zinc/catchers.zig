@@ -8,8 +8,7 @@ const Server = http.Server;
 const Allocator = std.mem.Allocator;
 
 const zinc = @import("../zinc.zig");
-const Handler = zinc.Handler;
-const HandlerFn = Handler.HandlerFn;
+const HandlerFn = zinc.HandlerFn;
 
 pub const Self = @This();
 

@@ -10,8 +10,7 @@ const Context = zinc.Context;
 const Request = zinc.Request;
 const Response = zinc.Response;
 const Route = zinc.Route;
-const Handler = zinc.Handler;
-const HandlerFn = Handler.HandlerFn;
+const HandlerFn = zinc.HandlerFn;
 
 const RouterGroup = zinc.RouterGroup;
 

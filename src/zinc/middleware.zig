@@ -1,9 +1,7 @@
 const std = @import("std");
 const zinc = @import("../zinc.zig");
-const Handler = zinc.Handler;
-const HandlerFn = Handler.HandlerFn;
-const HandlerChain = Handler.Chain;
 const Context = zinc.Context;
+const HandlerFn = zinc.HandlerFn;
 
 pub const Middleware = @This();
 const Self = @This();

@@ -17,8 +17,7 @@ const Context = zinc.Context;
 const Request = zinc.Request;
 const Response = zinc.Response;
 const config = zinc.Config;
-const Handler = zinc.Handler;
-const HandlerFn = Handler.HandlerFn;
+const HandlerFn = zinc.HandlerFn;
 const Catchers = zinc.Catchers;
 
 const default_response = @import("default_response.zig");

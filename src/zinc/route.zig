@@ -7,9 +7,7 @@ const zinc = @import("../zinc.zig");
 const Context = zinc.Context;
 const Request = zinc.Request;
 const Response = zinc.Response;
-const Handler = zinc.Handler;
-const HandlerFn = Handler.HandlerFn;
-const HandlerChain = Handler.Chain;
+const HandlerFn = zinc.HandlerFn;
 
 pub const Route = @This();
 const Self = @This();
@@ -113,7 +111,7 @@ pub fn getPath(self: *Route) []const u8 {
     return self.path;
 }
 
-pub fn getHandler(self: *Route) Handler.HandlerFn {
+pub fn getHandler(self: *Route) HandlerFn {
     return &self.handler;
 }
 

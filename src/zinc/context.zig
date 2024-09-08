@@ -9,14 +9,16 @@ const Response = zinc.Response;
 const Config = zinc.Config;
 const Headers = zinc.Headers;
 const Param = zinc.Param;
-const HandlerFn = zinc.HandlerFn;
 
 pub const Context = @This();
 const Self = @This();
 
+// const HandlerFn = zinc.HandlerFn;
+const handlerFn = *const fn (*Context) anyerror!void;
+
 allocator: std.mem.Allocator = std.heap.page_allocator,
 
-// connection: std.net.Server.Connection = undefined,
+connection: std.net.Server.Connection = undefined,
 request: *Request = undefined,
 response: *Response = undefined,
 
@@ -28,7 +30,7 @@ params: std.StringHashMap(Param) = std.StringHashMap(Param).init(std.heap.page_a
 query_map: ?std.StringHashMap(std.ArrayList([]const u8)) = null,
 
 // Slice of optional function pointers
-handlers: std.ArrayList(*const fn (*Self) anyerror!void) = std.ArrayList(*const fn (*Self) anyerror!void).init(std.heap.page_allocator),
+handlers: std.ArrayList(handlerFn) = std.ArrayList(handlerFn).init(std.heap.page_allocator),
 index: u8 = 0, // Adjust the type based on your specific needs
 
 // writer: std.io.AnyWriter = std.net.Stream.writer(),
@@ -56,7 +58,7 @@ pub fn init(self: Self) ?Context {
         .query_map = self.query_map,
         .handlers = self.handlers,
         .index = self.index,
-        // .writer = try self.request.server_request.server.connection.stream.writer(),
+        .connection = self.request.req.server.connection,
     };
 }
 
@@ -317,8 +319,7 @@ pub fn postFormMap(self: *Self, map_key: []const u8) ?std.StringHashMap([]const 
 }
 
 pub fn handle(self: *Self) anyerror!void {
-    if (self.handlers.items.len == 0) try self.handlers.items[self.index](self);
-
+    if (self.handlers.items.len == 0) return error.Empty;
     for (self.handlers.items, 0..) |handler, index| {
         if (index < self.index) {
             continue;
