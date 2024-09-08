@@ -11,8 +11,9 @@ const Request = zinc.Request;
 const Response = zinc.Response;
 const Route = zinc.Route;
 const HandlerFn = zinc.HandlerFn;
-
 const RouterGroup = zinc.RouterGroup;
+
+const RouteTree = zinc.RouteTree;
 
 pub const Router = @This();
 const Self = @This();
@@ -30,14 +31,18 @@ methods: []const std.http.Method = &[_]std.http.Method{
 },
 
 allocator: Allocator = page_allocator,
-routes: std.ArrayList(Route) = std.ArrayList(Route).init(page_allocator),
+routes: std.ArrayList(Route) = undefined,
+middlewares: std.ArrayList(HandlerFn) = undefined,
 
-middlewares: std.ArrayList(HandlerFn) = std.ArrayList(HandlerFn).init(std.heap.page_allocator),
+route_tree: *RouteTree = undefined,
 
 pub fn init(self: Self) Router {
+    const root = RouteTree.create(.{ .allocator = self.allocator }) catch unreachable;
     return .{
         .allocator = self.allocator,
-        .routes = self.routes,
+        .routes = std.ArrayList(Route).init(self.allocator),
+        .middlewares = std.ArrayList(HandlerFn).init(self.allocator),
+        .route_tree = root,
     };
 }
 
@@ -95,7 +100,6 @@ pub fn add(self: *Self, method: std.http.Method, path: []const u8, handler: anyt
     var route = Route.create(path, method, handler);
     try route.use(self.middlewares.items);
     try self.addRoute(route);
-    return;
 }
 
 pub fn addAny(self: *Self, http_methods: []const std.http.Method, path: []const u8, handler: HandlerFn) anyerror!void {
@@ -110,7 +114,18 @@ pub fn any(self: *Self, path: []const u8, handler: anytype) anyerror!void {
     }
 }
 
+fn insertRouteToRouteTree(self: *Self, route: Route) anyerror!void {
+    var url = URL.init(.{});
+    const url_target = try url.parseUrl(route.path);
+    const path = url_target.path;
+
+    try self.route_tree.insert(path);
+    const rTree = self.route_tree.find(path).?;
+    rTree.route = route;
+}
+
 pub fn addRoute(self: *Self, route: Route) anyerror!void {
+    try self.insertRouteToRouteTree(route);
     try self.routes.append(route);
 }
 
@@ -171,6 +186,27 @@ pub fn matchRoute(self: *Self, method: std.http.Method, target: []const u8) anye
     }
 
     return err;
+}
+
+pub fn getRouteTree(self: *Self, target: []const u8) anyerror!*RouteTree {
+    var url = URL.init(.{});
+    const url_target = try url.parseUrl(target);
+    const path = url_target.path;
+
+    const rTree = self.route_tree.find(path);
+    if (rTree == null) return Route.RouteError.NotFound;
+    return rTree.?;
+}
+
+pub fn getRoute(self: *Self, method: std.http.Method, target: []const u8) anyerror!*Route {
+    var url = URL.init(.{});
+    const url_target = try url.parseUrl(target);
+    const path = url_target.path;
+
+    const rTree = try self.getRouteTree(path);
+    if (rTree.route.method == method) return &rTree.route;
+
+    return Route.RouteError.MethodNotAllowed;
 }
 
 pub fn use(self: *Self, handler: anytype) anyerror!void {

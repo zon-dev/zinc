@@ -25,6 +25,7 @@ response: *Response = undefined,
 headers: Headers = Headers.init(.{}),
 
 query: ?std.Uri.Component = null,
+
 params: std.StringHashMap(Param) = std.StringHashMap(Param).init(std.heap.page_allocator),
 
 query_map: ?std.StringHashMap(std.ArrayList([]const u8)) = null,
@@ -48,17 +49,22 @@ pub fn init(self: Self) ?Context {
         return null;
     }
 
+    var query: ?std.Uri.Component = null;
+    if (self.request != undefined) {
+        query = self.request.query;
+    }
+
     return Context{
         .request = self.request,
         .response = self.response,
         .headers = self.headers,
         .allocator = self.allocator,
         .params = self.params,
-        .query = self.query,
+        // .query = self.query,
+        .query = query,
         .query_map = self.query_map,
         .handlers = self.handlers,
         .index = self.index,
-        .connection = self.request.req.server.connection,
     };
 }
 

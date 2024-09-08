@@ -1,6 +1,8 @@
 const std = @import("std");
 const zinc = @import("../zinc.zig");
 const HandlerFn = zinc.HandlerFn;
+const Route = zinc.Route;
+const URL = @import("url");
 
 pub const methodTree = struct {
     method: std.http.Method,
@@ -52,10 +54,13 @@ pub const RouteTree = struct {
 
     parent: ?*RouteTree = null,
 
-    children: std.StringHashMap((*RouteTree)) = std.StringHashMap(*RouteTree).init(std.heap.page_allocator),
+    children: std.StringHashMap((*RouteTree)) = undefined,
 
     // Handlers for the node
-    handlers: std.ArrayList(HandlerFn) = std.ArrayList(HandlerFn).init(std.heap.page_allocator),
+    handlers: std.ArrayList(HandlerFn) = undefined,
+
+    /// Route
+    route: Route = undefined,
 
     // Create a new node
     pub fn create(self: RouteTree) !*RouteTree {
@@ -65,15 +70,17 @@ pub const RouteTree = struct {
             .allocator = self.allocator,
             .value = self.value,
             .parent = self.parent,
-            .children = self.children,
-            .handlers = self.handlers,
+            .children = std.StringHashMap(*RouteTree).init(self.allocator),
+            .handlers = std.ArrayList(HandlerFn).init(self.allocator),
+            .route = self.route,
         };
         return node;
     }
 
     // Insert a value into the Route Tree
-    pub fn insert(self: *RouteTree, value: []const u8) !void {
+    pub fn insert(self: *RouteTree, value: []const u8) anyerror!void {
         var current = self;
+
         // Split the value into segments
         var segments = std.mem.splitSequence(u8, value, "/");
         // Insert each segment into the tree

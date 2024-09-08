@@ -15,6 +15,8 @@ status: http.Status = http.Status.ok,
 target: []const u8 = "",
 method: http.Method = undefined,
 
+query: ?std.Uri.Component = null,
+
 pub fn init(self: Self) Request {
     if (self.target.len > 0) {
         return .{

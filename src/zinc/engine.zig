@@ -31,7 +31,7 @@ net_server: std.net.Server,
 threads: []std.Thread = &[_]std.Thread{},
 mutex: std.Thread.Mutex = .{},
 
-router: Router = Router.init(.{}),
+router: Router = undefined,
 
 // To lower memory usage and improve performance but mybe crash when request body is too large
 read_buffer_len: usize = 1024,
@@ -63,6 +63,7 @@ pub fn init(comptime conf: config.Engine) !Engine {
         .read_buffer_len = conf.read_buffer_len,
         .header_buffer_len = conf.header_buffer_len,
         .body_buffer_len = conf.body_buffer_len,
+        .router = Router.init(.{ .allocator = conf.allocator }),
     };
 }
 
@@ -108,11 +109,14 @@ pub fn run(self: *Self) !void {
             };
             defer ctx.deinit();
 
-            const match_route = self.router.matchRoute(method, request.head.target) catch |err| {
+            const match_route = self.router.getRoute(method, request.head.target) catch |err| {
                 try self.catchRouteError(err, conn.stream, &ctx);
                 continue :accept;
             };
-
+            // const match_route = self.router.matchRoute(method, request.head.target) catch |err| {
+            //     try self.catchRouteError(err, conn.stream, &ctx);
+            //     continue :accept;
+            // };
             ctx.handlers = match_route.handlers_chain;
             ctx.handle() catch try default_response.internalServerError(conn.stream);
         }
