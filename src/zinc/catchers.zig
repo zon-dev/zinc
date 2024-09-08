@@ -6,16 +6,19 @@ const net = std.net;
 const proto = http.protocol;
 const Server = http.Server;
 const Allocator = std.mem.Allocator;
+const page_allocator = std.heap.page_allocator;
 
 const zinc = @import("../zinc.zig");
 const HandlerFn = zinc.HandlerFn;
 
 pub const Self = @This();
 
-catchers: std.AutoHashMap(Status, HandlerFn) = std.AutoHashMap(Status, HandlerFn).init(std.heap.page_allocator),
+allocator: Allocator = page_allocator,
+catchers: std.AutoHashMap(Status, HandlerFn) = undefined,
 
 pub fn init(allocator: Allocator) Self {
     return .{
+        .allocator = allocator,
         .catchers = std.AutoHashMap(Status, HandlerFn).init(allocator),
     };
 }

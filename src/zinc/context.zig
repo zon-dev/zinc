@@ -2,6 +2,7 @@ const std = @import("std");
 const URL = @import("url");
 const RespondOptions = std.http.Server.Request.RespondOptions;
 const Header = std.http.Header;
+const page_allocator = std.heap.page_allocator;
 
 const zinc = @import("../zinc.zig");
 const Request = zinc.Request;
@@ -16,7 +17,7 @@ const Self = @This();
 // const HandlerFn = zinc.HandlerFn;
 const handlerFn = *const fn (*Context) anyerror!void;
 
-allocator: std.mem.Allocator = std.heap.page_allocator,
+allocator: std.mem.Allocator = page_allocator,
 
 connection: std.net.Server.Connection = undefined,
 request: *Request = undefined,
@@ -26,12 +27,12 @@ headers: Headers = Headers.init(.{}),
 
 query: ?std.Uri.Component = null,
 
-params: std.StringHashMap(Param) = std.StringHashMap(Param).init(std.heap.page_allocator),
+params: std.StringHashMap(Param) = undefined,
 
 query_map: ?std.StringHashMap(std.ArrayList([]const u8)) = null,
 
 // Slice of optional function pointers
-handlers: std.ArrayList(handlerFn) = std.ArrayList(handlerFn).init(std.heap.page_allocator),
+handlers: std.ArrayList(handlerFn) = undefined,
 index: u8 = 0, // Adjust the type based on your specific needs
 
 // writer: std.io.AnyWriter = std.net.Stream.writer(),
@@ -55,15 +56,14 @@ pub fn init(self: Self) ?Context {
     }
 
     return Context{
+        .allocator = self.allocator,
         .request = self.request,
         .response = self.response,
         .headers = self.headers,
-        .allocator = self.allocator,
-        .params = self.params,
-        // .query = self.query,
+        .params = std.StringHashMap(Param).init(self.allocator),
         .query = query,
         .query_map = self.query_map,
-        .handlers = self.handlers,
+        .handlers = std.ArrayList(handlerFn).init(self.allocator),
         .index = self.index,
     };
 }

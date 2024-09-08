@@ -2,6 +2,7 @@ const std = @import("std");
 const http = std.http;
 const Server = http.Server;
 const Status = http.Status;
+const page_allocator = std.heap.page_allocator;
 
 const server_request = Server.Request;
 const server_response = Server.Response;
@@ -12,13 +13,13 @@ const Config = @import("config.zig").Config;
 pub const Response = @This();
 const Self = @This();
 
-allocator: std.mem.Allocator = std.heap.page_allocator,
+allocator: std.mem.Allocator = page_allocator,
 req: *server_request = undefined,
 res: *server_response = undefined,
 
 version: []const u8 = "HTTP/1.1",
 status: Status = .ok,
-header: std.StringArrayHashMap([]u8) = std.StringArrayHashMap([]u8).init(std.heap.page_allocator),
+header: std.StringArrayHashMap([]u8) = undefined,
 body: []const u8 = "",
 
 pub fn init(self: Self) Response {
@@ -28,7 +29,7 @@ pub fn init(self: Self) Response {
         .res = self.res,
         .version = self.version,
         .status = self.status,
-        .header = self.header,
+        .header = std.StringArrayHashMap([]u8).init(self.allocator),
         .body = self.body,
     };
 }

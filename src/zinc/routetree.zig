@@ -1,4 +1,5 @@
 const std = @import("std");
+const page_allocator = std.heap.page_allocator;
 const zinc = @import("../zinc.zig");
 const HandlerFn = zinc.HandlerFn;
 const Route = zinc.Route;
@@ -9,10 +10,10 @@ pub const methodTree = struct {
     root: *RouteTree,
 };
 
-const methodTrees: std.ArrayList(methodTree) = std.ArrayList(methodTree).init(std.heap.page_allocator);
+const methodTrees: std.ArrayList(methodTree) = std.ArrayList(methodTree).init(page_allocator);
 
 pub const RootTree = struct {
-    trees: std.ArrayList(methodTree) = std.ArrayList(methodTree).init(std.heap.page_allocator),
+    trees: std.ArrayList(methodTree) = std.ArrayList(methodTree).init(page_allocator),
 
     pub fn init(self: RootTree) RootTree {
         const methods = &[_]std.http.Method{
@@ -48,7 +49,7 @@ pub const RootTree = struct {
 
 // Define the structure of a Route Tree node
 pub const RouteTree = struct {
-    allocator: std.mem.Allocator = std.heap.page_allocator,
+    allocator: std.mem.Allocator = page_allocator,
 
     value: []const u8 = "",
 

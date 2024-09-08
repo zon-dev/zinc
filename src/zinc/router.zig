@@ -63,7 +63,7 @@ pub fn handleContext(self: *Self, ctx: Context) anyerror!void {
 /// Rebuild all routes.
 pub fn rebuild(self: *Self) !void {
     for (self.routes.items) |*route| {
-        var chain = std.ArrayList(HandlerFn).init(std.heap.page_allocator);
+        var chain = std.ArrayList(HandlerFn).init(self.allocator);
         try chain.appendSlice(self.middlewares.items);
         try chain.appendSlice(route.handlers_chain.items);
         route.handlers_chain.clearAndFree();

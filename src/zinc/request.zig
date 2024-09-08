@@ -10,7 +10,7 @@ const Self = @This();
 allocator: std.mem.Allocator = std.heap.page_allocator,
 req: *server_request = undefined,
 
-header: std.StringArrayHashMap([]u8) = std.StringArrayHashMap([]u8).init(std.heap.page_allocator),
+header: std.StringArrayHashMap([]u8) = undefined,
 status: http.Status = http.Status.ok,
 target: []const u8 = "",
 method: http.Method = undefined,
@@ -22,7 +22,7 @@ pub fn init(self: Self) Request {
         return .{
             .allocator = self.allocator,
             .target = self.target,
-            .header = self.header,
+            .header = std.StringArrayHashMap([]u8).init(self.allocator),
         };
     }
     return .{

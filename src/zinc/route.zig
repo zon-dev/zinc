@@ -18,14 +18,14 @@ method: Method = undefined,
 
 path: []const u8 = "*",
 
-handlers_chain: std.ArrayList(HandlerFn) = std.ArrayList(HandlerFn).init(std.heap.page_allocator),
+handlers_chain: std.ArrayList(HandlerFn) = undefined,
 
 pub fn init(self: Self) Route {
     return .{
         .allocator = self.allocator,
         .method = self.method,
         .path = self.path,
-        .handlers_chain = self.handlers_chain,
+        .handlers_chain = std.ArrayList(HandlerFn).init(self.allocator),
     };
 }
 
@@ -182,7 +182,7 @@ pub fn isMatch(self: *Route, method: Method, path: []const u8) bool {
 
 pub fn use(self: *Route, handlers: []const HandlerFn) anyerror!void {
     // try self.handlers_chain.append(handler);
-    var chain = std.ArrayList(HandlerFn).init(std.heap.page_allocator);
+    var chain = std.ArrayList(HandlerFn).init(self.allocator);
     try chain.appendSlice(handlers);
     try chain.appendSlice(self.handlers_chain.items);
     self.handlers_chain.clearAndFree();

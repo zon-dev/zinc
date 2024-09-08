@@ -38,8 +38,8 @@ read_buffer_len: usize = 1024,
 header_buffer_len: usize = 1024,
 body_buffer_len: usize = 10 * 1024,
 
-catchers: Catchers = Catchers.init(std.heap.page_allocator),
-middlewares: std.ArrayList(HandlerFn) = std.ArrayList(HandlerFn).init(std.heap.page_allocator),
+catchers: Catchers = undefined,
+middlewares: std.ArrayList(HandlerFn) = undefined,
 
 pub fn getPort(self: *Self) u16 {
     return self.net_server.listen_address.getPort();
@@ -64,6 +64,7 @@ pub fn init(comptime conf: config.Engine) !Engine {
         .header_buffer_len = conf.header_buffer_len,
         .body_buffer_len = conf.body_buffer_len,
         .router = Router.init(.{ .allocator = conf.allocator }),
+        .middlewares = std.ArrayList(HandlerFn).init(conf.allocator),
     };
 }
 

@@ -7,7 +7,7 @@ const RouteError = Route.RouteError;
 
 test "router" {
     var router = Router.init(.{});
-    const static_route = Route.init(.{ .method = .GET, .path = "/static", .allocator = std.heap.page_allocator });
+    const static_route = Route.init(.{ .method = .GET, .path = "/static" });
     try router.addRoute(static_route);
 
     const TestCase = struct {
@@ -43,7 +43,7 @@ test "router" {
 }
 
 test "routeTree" {
-    var router = Router.init(.{ .allocator = std.heap.page_allocator });
+    var router = Router.init(.{});
     const static_route = Route.init(.{ .method = .GET, .path = "/static" });
     try router.addRoute(static_route);
 
