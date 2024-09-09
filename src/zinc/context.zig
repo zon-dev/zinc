@@ -70,26 +70,22 @@ pub fn init(self: Self) ?Context {
 
 pub fn html(self: *Self, content: []const u8, conf: Config.Context) anyerror!void {
     try self.headers.add("Content-Type", "text/html");
-    try self.resp(
-        content,
-        conf,
-    );
+    try self.setBody(content);
+    try self.setStatus(conf.status);
 }
 
 pub fn text(self: *Self, content: []const u8, conf: Config.Context) anyerror!void {
     try self.headers.add("Content-Type", "text/plain");
-    try self.resp(
-        content,
-        conf,
-    );
+    try self.setBody(content);
+    try self.setStatus(conf.status);
 }
 
 pub fn json(self: *Self, value: anytype, conf: Config.Context) anyerror!void {
     var string = std.ArrayList(u8).init(self.allocator);
     try std.json.stringify(value, .{}, string.writer());
     try self.headers.add("Content-Type", "application/json");
-
-    try self.resp(string.items, conf);
+    try self.setBody(string.items);
+    try self.setStatus(conf.status);
 }
 
 pub fn send(self: *Self, content: []const u8, options: RespondOptions) anyerror!void {
@@ -112,7 +108,9 @@ pub fn file(
     const stat = try f.stat();
     const buffer = try f.readToEndAlloc(self.allocator, stat.size);
     defer self.allocator.free(buffer);
-    try self.resp(buffer, conf);
+
+    self.setBody(buffer);
+    self.setStatus(conf.status);
 }
 
 pub fn dir(self: *Self, dir_name: []const u8, conf: Config.Context) anyerror!void {
@@ -144,7 +142,8 @@ pub fn dir(self: *Self, dir_name: []const u8, conf: Config.Context) anyerror!voi
     const buffer = try f.readToEndAlloc(self.allocator, stat.size);
     defer self.allocator.free(buffer);
 
-    try self.resp(buffer, conf);
+    self.setBody(buffer);
+    self.setStatus(conf.status);
 }
 
 pub fn getParam(self: *Self, key: []const u8) ?Param {
@@ -152,21 +151,13 @@ pub fn getParam(self: *Self, key: []const u8) ?Param {
 }
 
 pub fn setStatus(self: *Self, status: std.http.Status) !void {
-    self.response.status = status;
+    self.response.setStatus(status);
 }
 pub fn setHeader(self: *Self, key: []const u8, value: []const u8) !void {
     self.headers.add(key, value);
 }
 pub fn setBody(self: *Self, body: []const u8) !void {
-    self.response.body = body;
-}
-
-fn resp(self: *Self, content: []const u8, conf: Config.Context) anyerror!void {
-    try self.response.send(content, .{
-        .status = conf.status,
-        .extra_headers = self.headers.items(),
-        .keep_alive = false,
-    });
+    try self.response.setBody(body);
 }
 
 pub fn addHeader(self: *Self, name: []const u8, value: []const u8) anyerror!void {
@@ -338,4 +329,18 @@ pub fn handle(self: *Self) anyerror!void {
         }
         try handler(self);
     }
+    // Send the response after all handlers are executed.
+    try self.doRequest();
+}
+
+pub fn doRequest(self: *Self) anyerror!void {
+    // TODO: handle the case where the request is not fully received.
+
+    if (self.request.req.head_end == 0) return;
+
+    try self.send(self.response.body.?, .{
+        .status = self.response.status,
+        .extra_headers = self.headers.items(),
+        .keep_alive = false,
+    });
 }

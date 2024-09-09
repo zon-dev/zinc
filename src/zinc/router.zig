@@ -53,6 +53,9 @@ pub fn deinit(self: *Self) void {
 pub fn handleContext(self: *Self, ctx: *Context) anyerror!void {
     const route = try self.getRoute(ctx.request.method, ctx.request.target);
     try route.handle(ctx);
+
+    // TODO
+    // try ctx.doRequest();
 }
 
 /// Rebuild all routes.

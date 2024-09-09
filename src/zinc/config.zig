@@ -17,8 +17,8 @@ allocator: Allocator = page_allocator,
 
 pub const Context = struct {
     status: http.Status = .ok,
-    query: StringHashMap([]const u8) = StringHashMap([]const u8).init(page_allocator),
-    params: ArrayList([]const u8) = ArrayList([]const u8).init(page_allocator),
+    // query: StringHashMap([]const u8) = StringHashMap([]const u8).init(page_allocator),
+    // params: ArrayList([]const u8) = ArrayList([]const u8).init(page_allocator),
 };
 
 pub const Catcher = struct {};

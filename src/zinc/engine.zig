@@ -132,7 +132,7 @@ pub fn run(self: *Self) !void {
 fn catchRouteError(self: *Self, err: anyerror, stream: net.Stream, ctx: *Context) anyerror!void {
     switch (err) {
         Route.RouteError.NotFound => {
-            if (ctx.request.method == .HEAD) {
+            if (!ctx.request.method.responseHasBody()) {
                 _ = try stream.write("HTTP/1.1 404 Not Found\r\n\r\n");
                 return;
             }

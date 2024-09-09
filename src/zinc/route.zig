@@ -116,6 +116,10 @@ pub fn getHandler(self: *Route) HandlerFn {
 }
 
 pub fn handle(self: *Route, ctx: *Context) anyerror!void {
+    if (self.handlers_chain.items.len == 0) {
+        return;
+    }
+
     for (self.handlers_chain.items) |handler| {
         handler(ctx) catch |err| {
             std.log.err("handler error: {any}", .{err});
@@ -180,10 +184,13 @@ pub fn isMatch(self: *Route, method: Method, path: []const u8) bool {
 }
 
 pub fn use(self: *Route, handlers: []const HandlerFn) anyerror!void {
-    // try self.handlers_chain.append(handler);
-    var chain = std.ArrayList(HandlerFn).init(self.allocator);
-    try chain.appendSlice(handlers);
-    try chain.appendSlice(self.handlers_chain.items);
-    self.handlers_chain.clearAndFree();
-    self.handlers_chain = chain;
+    // var chain = std.ArrayList(HandlerFn).init(self.allocator);
+    // try chain.appendSlice(handlers);
+    // try chain.appendSlice(self.handlers_chain.items);
+    // self.handlers_chain.clearAndFree();
+    // self.handlers_chain = chain;
+
+    const old_chain = try self.handlers_chain.toOwnedSlice();
+    try self.handlers_chain.appendSlice(handlers);
+    try self.handlers_chain.appendSlice(old_chain);
 }
