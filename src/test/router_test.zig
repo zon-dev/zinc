@@ -10,6 +10,13 @@ const Route = zinc.Route;
 const Router = zinc.Router;
 const RouteError = Route.RouteError;
 
+fn createContext(method: std.http.Method, target: []const u8) anyerror!Context {
+    var req = zinc.Request.init(.{ .method = method, .target = target });
+    var res = zinc.Response.init(.{});
+    const ctx = zinc.Context.init(.{ .request = &req, .response = &res }).?;
+    return ctx;
+}
+
 test "root page" {
     var router = Router.init(.{});
 
@@ -22,36 +29,29 @@ test "root page" {
     try router.get("/", handle);
     try router.post("/", handle);
 
-    var req = zinc.Request.init(.{ .method = .GET, .target = "/" });
-    var res = zinc.Response.init(.{});
-    var ctx = zinc.Context.init(.{ .request = &req, .response = &res }).?;
-    _ = try router.handleContext(&ctx);
-
     // GET Request.
-    try testing.expectEqual(.ok, ctx.response.status);
-    try testing.expectEqualStrings("Hello Zinc!", ctx.response.body);
+    var ctx_get = try createContext(.GET, "/");
+    try router.handleContext(&ctx_get);
 
-    var req_post = zinc.Request.init(.{ .method = .POST, .target = "/" });
-    var res_post = zinc.Response.init(.{});
-    var ctx_post = zinc.Context.init(.{ .request = &req_post, .response = &res_post }).?;
-    _ = try router.handleContext(&ctx_post);
+    try testing.expectEqual(.ok, ctx_get.response.status);
+    try testing.expectEqualStrings("Hello Zinc!", ctx_get.response.body);
 
     // POST Request.
+    var ctx_post = try createContext(.POST, "/");
+    try router.handleContext(&ctx_post);
+
     try testing.expectEqual(.ok, ctx_post.response.status);
     try testing.expectEqualStrings("Hello Zinc!", ctx_post.response.body);
 
     // Not found
-    var req_not_found = zinc.Request.init(.{ .method = .GET, .target = "/not-found" });
-    var res_not_found = zinc.Response.init(.{});
-    var ctx_not_found = zinc.Context.init(.{ .request = &req_not_found, .response = &res_not_found }).?;
+    var ctx_not_found = try createContext(.GET, "/not-found");
+
     router.handleContext(&ctx_not_found) catch |err| {
         try testing.expect(err == RouteError.NotFound);
     };
 
     // Method not allowed
-    var req_not_allowed = zinc.Request.init(.{ .method = .PUT, .target = "/" });
-    var res_not_allowed = zinc.Response.init(.{});
-    var ctx_not_allowed = zinc.Context.init(.{ .request = &req_not_allowed, .response = &res_not_allowed }).?;
+    var ctx_not_allowed = try createContext(.PUT, "/");
     router.handleContext(&ctx_not_allowed) catch |err| {
         try testing.expect(err == RouteError.MethodNotAllowed);
     };
