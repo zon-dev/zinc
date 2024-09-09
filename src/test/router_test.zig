@@ -17,7 +17,7 @@ fn createContext(method: std.http.Method, target: []const u8) anyerror!Context {
     return ctx;
 }
 
-test "root page" {
+test "Handle Request" {
     var router = Router.init(.{});
 
     const handle = struct {
@@ -32,20 +32,17 @@ test "root page" {
     // GET Request.
     var ctx_get = try createContext(.GET, "/");
     try router.handleContext(&ctx_get);
-
     try testing.expectEqual(.ok, ctx_get.response.status);
     try testing.expectEqualStrings("Hello Zinc!", ctx_get.response.body);
 
     // POST Request.
     var ctx_post = try createContext(.POST, "/");
     try router.handleContext(&ctx_post);
-
     try testing.expectEqual(.ok, ctx_post.response.status);
     try testing.expectEqualStrings("Hello Zinc!", ctx_post.response.body);
 
     // Not found
     var ctx_not_found = try createContext(.GET, "/not-found");
-
     router.handleContext(&ctx_not_found) catch |err| {
         try testing.expect(err == RouteError.NotFound);
     };
