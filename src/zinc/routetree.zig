@@ -57,11 +57,7 @@ pub const RouteTree = struct {
 
     children: std.StringHashMap((*RouteTree)) = undefined,
 
-    // Handlers for the node
-    handlers: std.ArrayList(HandlerFn) = undefined,
-
-    /// Route
-    route: Route = undefined,
+    routes: std.ArrayList(Route) = undefined,
 
     // Create a new node
     pub fn create(self: RouteTree) !*RouteTree {
@@ -72,14 +68,14 @@ pub const RouteTree = struct {
             .value = self.value,
             .parent = self.parent,
             .children = std.StringHashMap(*RouteTree).init(self.allocator),
-            .handlers = std.ArrayList(HandlerFn).init(self.allocator),
-            .route = self.route,
+            .routes = std.ArrayList(Route).init(self.allocator),
         };
         return node;
     }
 
-    // Insert a value into the Route Tree
-    pub fn insert(self: *RouteTree, value: []const u8) anyerror!void {
+    /// Insert a value into the Route Tree.
+    /// Return the last node of the inserted value
+    pub fn insert(self: *RouteTree, value: []const u8) anyerror!*RouteTree {
         var current = self;
 
         // Split the value into segments
@@ -98,6 +94,8 @@ pub const RouteTree = struct {
                 current = new_node;
             }
         }
+
+        return current;
     }
 
     // Get the parent node

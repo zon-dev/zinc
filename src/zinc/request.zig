@@ -23,6 +23,7 @@ pub fn init(self: Self) Request {
             .allocator = self.allocator,
             .target = self.target,
             .header = std.StringArrayHashMap([]u8).init(self.allocator),
+            .method = self.method,
         };
     }
     return .{

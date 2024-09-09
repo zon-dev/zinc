@@ -116,7 +116,6 @@ pub fn getHandler(self: *Route) HandlerFn {
 }
 
 pub fn handle(self: *Route, ctx: *Context) anyerror!void {
-    // return try self.handler(ctx);
     for (self.handlers_chain.items) |handler| {
         handler(ctx) catch |err| {
             std.log.err("handler error: {any}", .{err});

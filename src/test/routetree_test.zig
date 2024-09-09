@@ -7,15 +7,15 @@ test {
     var root = try RouteTree.create(.{});
 
     // Insert values into the Route Tree
-    try root.insert("/root/route/one_subroute");
-    try root.insert("/root/route/two_subroute");
-    try root.insert("/root/route/one");
-    try root.insert("/root/route");
-    try root.insert("/root/route/two/subroute/three");
-    try root.insert("/root/route/two/subroute/four");
-    try root.insert("/root/route/two/subroute/five");
-    try root.insert("/root/route/two");
-    try root.insert("/root/route/one/one_subroute");
+    _ = try root.insert("/root/route/one_subroute");
+    _ = try root.insert("/root/route/two_subroute");
+    _ = try root.insert("/root/route/one");
+    _ = try root.insert("/root/route");
+    _ = try root.insert("/root/route/two/subroute/three");
+    _ = try root.insert("/root/route/two/subroute/four");
+    _ = try root.insert("/root/route/two/subroute/five");
+    _ = try root.insert("/root/route/two");
+    _ = try root.insert("/root/route/one/one_subroute");
 
     // Find and print a specific node
     // const path_to_find = "/root/route/two/subroute/three";
@@ -36,11 +36,6 @@ test {
     const four_path = found_node.?.getPath().?;
     try std.testing.expectEqualStrings("/root/route/two/subroute/four", four_path);
 
-    // var cit = root.findByValue("route").?.children.iterator();
-    // while (cit.next()) |item| {
-    //     std.debug.print("\nchild: {s}", .{item.key_ptr.*});
-    // }
-
     const route_node = root.findByValue("route");
     const two = route_node.?.getChild("two");
     try std.testing.expect(two != null);
@@ -56,16 +51,16 @@ test "RootTree" {
     var root = RootTree.init(.{});
     var root_tree = root.get(.GET);
     try std.testing.expect(root_tree != null);
-    try root_tree.?.insert("/test");
+    _ = try root_tree.?.insert("/test");
     const found = root_tree.?.find("/test");
     try std.testing.expect(found != null);
 
     const not_found = root_tree.?.find("/not_found");
     try std.testing.expect(not_found == null);
 
-    try found.?.insert("/1");
-    try found.?.insert("/2");
-    try found.?.insert("/3");
+    _ = try found.?.insert("/1");
+    _ = try found.?.insert("/2");
+    _ = try found.?.insert("/3");
 
     const find_one = root_tree.?.find("/test/1");
     try std.testing.expect(find_one != null);
@@ -76,9 +71,9 @@ test "RootTree" {
     const find_two_path = find_two.?.getPath().?;
     try std.testing.expectEqualStrings("/test/2", find_two_path);
 
-    try root_tree.?.insert("/test2");
+    _ = try root_tree.?.insert("/test2");
     const found2 = root_tree.?.find("/test2");
-    try found2.?.insert("/2");
+    _ = try found2.?.insert("/2");
     const find_two2 = root_tree.?.findByValue("2");
     try std.testing.expect(find_two2 != null);
     const find_two2_path = find_two2.?.getPath().?;

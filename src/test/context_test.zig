@@ -6,11 +6,11 @@ const Header = std.http.Header;
 const zinc = @import("../zinc.zig");
 const Request = zinc.Request;
 const Response = zinc.Response;
+const Context = zinc.Context;
 const Config = zinc.Config;
 const Headers = zinc.Headers;
 const Param = zinc.Param;
 const HandlerFn = zinc.HandlerFn;
-const Context = zinc.Context;
 
 test "context query" {
     var req = Request.init(.{

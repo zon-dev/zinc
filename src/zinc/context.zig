@@ -154,6 +154,12 @@ pub fn getParam(self: *Self, key: []const u8) ?Param {
 pub fn setStatus(self: *Self, status: std.http.Status) !void {
     self.response.status = status;
 }
+pub fn setHeader(self: *Self, key: []const u8, value: []const u8) !void {
+    self.headers.add(key, value);
+}
+pub fn setBody(self: *Self, body: []const u8) !void {
+    self.response.body = body;
+}
 
 fn resp(self: *Self, content: []const u8, conf: Config.Context) anyerror!void {
     try self.response.send(content, .{

@@ -50,14 +50,9 @@ pub fn deinit(self: *Self) void {
     self.routes.deinit();
 }
 
-pub fn handleContext(self: *Self, ctx: Context) anyerror!void {
-    const routes = self.routes.items;
-
-    for (routes) |*route| {
-        if (route.match(ctx.request.method, ctx.request.path)) {
-            return try route.HandlerFn(ctx, ctx.request, ctx.response);
-        }
-    }
+pub fn handleContext(self: *Self, ctx: *Context) anyerror!void {
+    const route = try self.getRoute(ctx.request.method, ctx.request.target);
+    try route.handle(ctx);
 }
 
 /// Rebuild all routes.
@@ -119,9 +114,9 @@ fn insertRouteToRouteTree(self: *Self, route: Route) anyerror!void {
     const url_target = try url.parseUrl(route.path);
     const path = url_target.path;
 
-    try self.route_tree.insert(path);
-    const rTree = self.route_tree.find(path).?;
-    rTree.route = route;
+    const rTree = try self.route_tree.insert(path);
+    // const rTree = self.route_tree.find(path).?;
+    try rTree.routes.append(route);
 }
 
 pub fn addRoute(self: *Self, route: Route) anyerror!void {
@@ -156,37 +151,6 @@ pub fn connect(self: *Self, path: []const u8, handler: anytype) anyerror!void {
 pub fn trace(self: *Self, path: []const u8, handler: anytype) anyerror!void {
     try self.add(.TRACE, path, handler);
 }
-pub fn matchRoute(self: *Self, method: std.http.Method, target: []const u8) anyerror!*Route {
-    var err = Route.RouteError.NotFound;
-    var url = URL.init(.{});
-    const url_target = try url.parseUrl(target);
-    const path = url_target.path;
-    for (self.routes.items) |*route| {
-        if (std.mem.eql(u8, path, "*")) {
-            if (route.isMethodAllowed(method)) {
-                return route;
-            }
-            err = Route.RouteError.MethodNotAllowed;
-        }
-
-        if (route.isPathMatch(path)) {
-            if (route.isMethodAllowed(method)) {
-                return route;
-            }
-            err = Route.RouteError.MethodNotAllowed;
-        }
-
-        // match static file
-        if (route.isStaticRoute(path)) {
-            if (route.isMethodAllowed(method)) {
-                return route;
-            }
-            err = Route.RouteError.MethodNotAllowed;
-        }
-    }
-
-    return err;
-}
 
 pub fn getRouteTree(self: *Self, target: []const u8) anyerror!*RouteTree {
     var url = URL.init(.{});
@@ -204,7 +168,16 @@ pub fn getRoute(self: *Self, method: std.http.Method, target: []const u8) anyerr
     const path = url_target.path;
 
     const rTree = try self.getRouteTree(path);
-    if (rTree.route.method == method) return &rTree.route;
+
+    if (rTree.routes.items.len == 0) {
+        return Route.RouteError.NotFound;
+    }
+
+    for (rTree.routes.items) |*route| {
+        if (route.method == method) return route;
+    }
+
+    // if (rTree.route.method == method) return &rTree.route;
 
     return Route.RouteError.MethodNotAllowed;
 }
