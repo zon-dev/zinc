@@ -184,12 +184,6 @@ pub fn isMatch(self: *Route, method: Method, path: []const u8) bool {
 }
 
 pub fn use(self: *Route, handlers: []const HandlerFn) anyerror!void {
-    // var chain = std.ArrayList(HandlerFn).init(self.allocator);
-    // try chain.appendSlice(handlers);
-    // try chain.appendSlice(self.handlers_chain.items);
-    // self.handlers_chain.clearAndFree();
-    // self.handlers_chain = chain;
-
     const old_chain = try self.handlers_chain.toOwnedSlice();
     try self.handlers_chain.appendSlice(handlers);
     try self.handlers_chain.appendSlice(old_chain);

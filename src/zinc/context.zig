@@ -19,6 +19,8 @@ const handlerFn = *const fn (*Context) anyerror!void;
 
 allocator: std.mem.Allocator = page_allocator,
 
+server_request: *std.http.Server.Request = undefined,
+
 connection: std.net.Server.Connection = undefined,
 request: *Request = undefined,
 response: *Response = undefined,
@@ -37,7 +39,7 @@ index: u8 = 0, // Adjust the type based on your specific needs
 
 // writer: std.io.AnyWriter = std.net.Stream.writer(),
 
-pub fn deinit(self: *Self) void {
+pub fn destroy(self: *Self) void {
     self.headers.deinit();
     self.params.deinit();
     if (self.query_map != null) {
@@ -46,22 +48,13 @@ pub fn deinit(self: *Self) void {
 }
 
 pub fn init(self: Self) ?Context {
-    if (self.request == undefined and self.response == undefined) {
-        return null;
-    }
-
-    var query: ?std.Uri.Component = null;
-    if (self.request != undefined) {
-        query = self.request.query;
-    }
-
     return Context{
         .allocator = self.allocator,
         .request = self.request,
         .response = self.response,
         .headers = self.headers,
         .params = std.StringHashMap(Param).init(self.allocator),
-        .query = query,
+        .query = self.request.query,
         .query_map = self.query_map,
         .handlers = std.ArrayList(handlerFn).init(self.allocator),
         .index = self.index,

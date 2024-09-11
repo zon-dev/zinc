@@ -23,7 +23,7 @@ fn handleRequest(request: *http.Server.Request) void {
 }
 
 test "Zinc Server" {
-    var z = try zinc.create(.{ .addr = "127.0.0.1", .port = 0 });
+    var z = try zinc.init(.{ .addr = "127.0.0.1", .port = 0, .threads_len = 1 });
     defer z.destroy();
 
     var router = z.getRouter();

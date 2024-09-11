@@ -47,34 +47,6 @@ fn createTestServer(S: type) !*TestServer {
     return test_server;
 }
 
-fn handleRequest(request: *http.Server.Request) void {
-    _ = request;
-    return;
-}
-test "Router runing!" {
-    // const test_server = try createTestServer(struct {
-    //     fn run(net_server: *std.net.Server) anyerror!void {
-    //         var read_buffer: [1024]u8 = undefined;
-
-    //         accept: while (true) {
-    //             const conn = try net_server.accept();
-    //             defer conn.stream.close();
-
-    //             var http_server = http.Server.init(conn, &read_buffer);
-
-    //             while (http_server.state == .ready) {
-    //                 var request = http_server.receiveHead() catch |err| switch (err) {
-    //                     error.HttpConnectionClosing => continue :accept,
-    //                     else => |e| return e,
-    //                 };
-    //                 handleRequest(&request);
-    //             }
-    //         }
-    //     }
-    // });
-    // defer test_server.destroy();
-}
-
 test "Handle Request" {
     var router = Router.init(.{});
 
@@ -93,7 +65,7 @@ test "Handle Request" {
     // TODO
     // try testing.expectEqual(.ok, ctx_get.response.status);
     try testing.expectEqualStrings("Hello Zinc!", ctx_get.response.body.?);
-    ctx_get.deinit();
+    ctx_get.destroy();
     std.debug.print("\r\n Done handle request test", .{});
 
     // POST Request.
@@ -102,7 +74,7 @@ test "Handle Request" {
     // TODO
     // try testing.expectEqual(.ok, ctx_post.response.status);
     try testing.expectEqualStrings("Hello Zinc!", ctx_post.response.body.?);
-    ctx_post.deinit();
+    ctx_post.destroy();
     std.debug.print("\r\n Done handle request test", .{});
 
     // Not found
@@ -110,7 +82,7 @@ test "Handle Request" {
     router.handleContext(&ctx_not_found) catch |err| {
         try testing.expect(err == RouteError.NotFound);
     };
-    ctx_not_found.deinit();
+    ctx_not_found.destroy();
     std.debug.print("\r\n Done not found test", .{});
 
     // Method not allowed
@@ -118,7 +90,7 @@ test "Handle Request" {
     router.handleContext(&ctx_not_allowed) catch |err| {
         try testing.expect(err == RouteError.MethodNotAllowed);
     };
-    ctx_not_allowed.deinit();
+    ctx_not_allowed.destroy();
     std.debug.print("\r\n Done method not allowed test", .{});
 }
 

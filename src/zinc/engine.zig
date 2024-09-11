@@ -29,190 +29,147 @@ allocator: Allocator = page_allocator,
 
 net_server: std.net.Server,
 
+// threads
 threads: std.ArrayList(std.Thread) = undefined,
-
+stopping: std.Thread.ResetEvent = .{},
+stopped: std.Thread.ResetEvent = .{},
 mutex: std.Thread.Mutex = .{},
 
-// To lower memory usage and improve performance but mybe crash when request body is too large
-read_buffer_len: usize = 1024,
-header_buffer_len: usize = 1024,
-body_buffer_len: usize = 10 * 1024,
+// buffer len
+read_buffer_len: usize = undefined,
+header_buffer_len: usize = undefined,
+body_buffer_len: usize = undefined,
 
+// options
 router: Router = undefined,
 catchers: Catchers = undefined,
 middlewares: std.ArrayList(HandlerFn) = undefined,
 
-pub fn getPort(self: *Self) u16 {
-    return self.net_server.listen_address.getPort();
-}
+/// Create a new engine.
+fn create(comptime conf: config.Engine) !*Engine {
+    const engine = try conf.allocator.create(Engine);
+    errdefer conf.allocator.destroy(engine);
 
-pub fn getAddress(self: *Self) net.Address {
-    return self.net_server.listen_address;
-}
-
-fn createFromConfig(comptime conf: config.Engine) !*Engine {
-    const listen_addr = conf.addr;
-    const listen_port = conf.port;
-
-    const address = try std.net.Address.parseIp(listen_addr, listen_port);
-    var listener = try address.listen(.{ .reuse_address = true });
-    errdefer listener.deinit();
-
-    var engine_server = try conf.allocator.create(Engine);
-    engine_server.net_server = listener;
-
-    // options
-    engine_server.allocator = conf.allocator;
-    engine_server.catchers = Catchers.init(conf.allocator);
-    engine_server.router = Router.init(.{ .allocator = conf.allocator });
-    engine_server.middlewares = std.ArrayList(HandlerFn).init(conf.allocator);
-
-    // buffer len
-    engine_server.read_buffer_len = conf.read_buffer_len;
-    engine_server.header_buffer_len = conf.header_buffer_len;
-    engine_server.body_buffer_len = conf.body_buffer_len;
-
-    return engine_server;
-}
-
-pub fn create(comptime conf: config.Engine) !*Engine {
-    var engine_server = try createFromConfig(conf);
-
-    var threads = std.ArrayList(std.Thread).init(engine_server.allocator);
-    errdefer engine_server.allocator.free(threads.items);
-
-    for (conf.threads) |_| {
-        const thread = try std.Thread.spawn(.{
-            .stack_size = conf.stack_size,
-            .allocator = conf.allocator,
-        }, Engine.run, .{engine_server});
-
-        try threads.append(thread);
-    }
-    engine_server.threads = threads;
-
-    return engine_server;
-}
-
-pub fn init(comptime conf: config.Engine) !Engine {
     const address = try std.net.Address.parseIp(conf.addr, conf.port);
     var listener = try address.listen(.{ .reuse_address = true });
     errdefer listener.deinit();
 
-    var engine = Engine{
+    engine.* = .{
         .allocator = conf.allocator,
         .net_server = listener,
-        .threads = undefined,
+
+        // buffer len
         .read_buffer_len = conf.read_buffer_len,
         .header_buffer_len = conf.header_buffer_len,
         .body_buffer_len = conf.body_buffer_len,
+
+        // options
         .catchers = Catchers.init(conf.allocator),
         .router = Router.init(.{ .allocator = conf.allocator }),
         .middlewares = std.ArrayList(HandlerFn).init(conf.allocator),
     };
 
-    var threads = std.ArrayList(std.Thread).init(engine.allocator);
-    errdefer engine.allocator.free(threads.items);
-
-    for (conf.threads) |_| {
-        const thread = try std.Thread.spawn(.{
-            .stack_size = conf.stack_size,
-            .allocator = conf.allocator,
-        }, Engine.run, .{&engine});
-
-        try threads.append(thread);
-    }
-    engine.threads = threads;
     return engine;
 }
 
-pub fn getTheadCount(self: *Self) usize {
-    return self.threads.items.len;
+/// Initialize the engine.
+pub fn init(comptime conf: config.Engine) anyerror!*Engine {
+    var engine = try create(conf);
+    errdefer conf.allocator.destroy(engine);
+
+    var threads = std.ArrayList(std.Thread).init(conf.allocator);
+    errdefer conf.allocator.free(threads.items);
+    for (conf.threads_len) |_| {
+        const thread = try std.Thread.spawn(.{
+            .stack_size = conf.stack_size,
+            .allocator = conf.allocator,
+        }, Engine.worker, .{engine});
+
+        try threads.append(thread);
+    }
+
+    engine.threads = threads;
+
+    return engine;
 }
 
-pub fn default() !Engine {
-    return init(.{
-        .addr = "127.0.0.1",
-        .port = 0,
-    });
+/// Accept a new connection.
+fn accept(self: *Engine) ?std.net.Server.Connection {
+    self.mutex.lock();
+    defer self.mutex.unlock();
+
+    if (self.stopping.isSet()) return null;
+
+    const conn = self.net_server.accept() catch |e| {
+        if (self.stopping.isSet()) return null;
+        switch (e) {
+            error.ConnectionAborted => {
+                // try again
+                return self.accept();
+            },
+            else => return null,
+        }
+    };
+
+    // const timeout = std.posix.timeval{
+    //     .sec = @as(i32, 10),
+    //     .usec = @as(i32, 0),
+    // };
+    // std.posix.setsockopt(conn.stream.handle, std.posix.SOL.SOCKET, std.posix.SO.RCVTIMEO, std.mem.asBytes(&timeout)) catch {};
+
+    return conn;
 }
 
-pub fn shutdown(self: *Self) void {
-    self.net_server.deinit();
+/// Run the server. This function will block the current thread.
+pub fn run(self: *Engine) !void {
+    defer self.destroy();
+    self.wait();
 }
 
-// pub fn destroy(self: *@This()) void {
-pub fn destroy(self: *Self) void {
-    // if (std.net.tcpConnectToAddress(self.getAddress())) |c| c.close() else |_| {}
-
-    // TODO
-    // for (self.threads.items, 0..) |t, i| {
-    //     std.debug.print("thread {d} is closing\n", .{i});
-    //     t.join();
-    // }
-    self.allocator.free(self.threads.items);
-
-    self.net_server.deinit();
-
-    self.router.routes.deinit();
-    self.catchers.catchers.deinit();
-    self.middlewares.deinit();
-
-    self.allocator.destroy(self);
-}
-
-pub fn run(self: *Self) anyerror!void {
-    var net_server = self.net_server;
+/// Allocate server worker threads
+fn worker(self: *Engine) anyerror!void {
+    const engine_allocator = self.allocator;
+    var router = self.router;
+    const catchers = self.catchers;
     var read_buffer: []u8 = undefined;
-    read_buffer = try self.allocator.alloc(u8, self.read_buffer_len);
-    defer self.allocator.free(read_buffer);
 
-    accept: while (true) {
-        const conn = net_server.accept() catch |err| switch (err) {
-            error.ConnectionAborted => continue :accept,
-            else => return,
-        };
+    const read_buffer_len = self.read_buffer_len;
+    read_buffer = try engine_allocator.alloc(u8, read_buffer_len);
+    defer engine_allocator.free(read_buffer);
 
-        defer conn.stream.close();
-
+    accept: while (self.accept()) |conn| {
         var http_server = http.Server.init(conn, read_buffer);
         ready: while (http_server.state == .ready) {
             var request = http_server.receiveHead() catch |err| switch (err) {
                 error.HttpConnectionClosing => continue :ready,
                 error.HttpHeadersOversize => return default_response.requestHeaderFieldsTooLarge(conn.stream),
-                // else => |e| return e,
                 else => {
                     try default_response.badRequest(conn.stream);
                     continue :accept;
                 },
             };
 
-            const method = request.head.method;
+            var req = Request.init(.{ .req = &request, .allocator = engine_allocator });
+            var res = Response.init(.{ .req = &request, .allocator = engine_allocator });
+            var ctx = Context.init(.{ .request = &req, .response = &res, .server_request = &request, .allocator = engine_allocator }).?;
 
-            var req = Request.init(.{ .req = &request, .allocator = self.allocator });
-            var res = Response.init(.{ .req = &request, .allocator = self.allocator });
-            var ctx = Context.init(.{ .request = &req, .response = &res, .allocator = self.allocator }) orelse {
-                try default_response.internalServerError(conn.stream);
-                continue :accept;
-            };
-            const match_route = self.router.getRoute(method, request.head.target) catch |err| {
-                try self.catchRouteError(err, conn.stream, &ctx);
+            const match_route = router.getRoute(request.head.method, request.head.target) catch |err| {
+                try catchRouteError(@constCast(&catchers), err, conn.stream, &ctx);
                 continue :accept;
             };
             ctx.handlers = match_route.handlers_chain;
-            ctx.handle() catch try default_response.internalServerError(conn.stream);
-
-            ctx.deinit();
+            ctx.handle() catch {
+                try default_response.internalServerError(conn.stream);
+            };
         }
         // closing
         while (http_server.state == .closing) {
-            // std.debug.print("The connection is closing\n", .{});
             continue :accept;
         }
     }
 }
 
-fn catchRouteError(self: *Self, err: anyerror, stream: net.Stream, ctx: *Context) anyerror!void {
+fn catchRouteError(self: *Catchers, err: anyerror, stream: net.Stream, ctx: *Context) anyerror!void {
     switch (err) {
         Route.RouteError.NotFound => {
             if (!ctx.request.method.responseHasBody()) {
@@ -220,7 +177,7 @@ fn catchRouteError(self: *Self, err: anyerror, stream: net.Stream, ctx: *Context
                 return;
             }
 
-            if (self.getCatcher(.not_found)) |notFoundHande| {
+            if (self.get(.not_found)) |notFoundHande| {
                 try notFoundHande(ctx);
                 return;
             }
@@ -228,7 +185,7 @@ fn catchRouteError(self: *Self, err: anyerror, stream: net.Stream, ctx: *Context
             return;
         },
         Route.RouteError.MethodNotAllowed => {
-            if (self.getCatcher(.method_not_allowed)) |methodNotAllowedHande| {
+            if (self.get(.method_not_allowed)) |methodNotAllowedHande| {
                 try methodNotAllowedHande(ctx);
                 return;
             }
@@ -239,17 +196,70 @@ fn catchRouteError(self: *Self, err: anyerror, stream: net.Stream, ctx: *Context
     }
 }
 
+pub fn destroy(self: *Self) void {
+    self.stopping.set();
+
+    if (std.net.tcpConnectToAddress(self.net_server.listen_address)) |c| c.close() else |_| {}
+    self.net_server.deinit();
+
+    for (self.threads.items, 1..) |t, i| {
+        t.join();
+        std.debug.print("\n thread {d} is closed\n", .{i});
+    }
+
+    self.allocator.free(self.threads.items);
+
+    self.router.routes.deinit();
+    self.catchers.catchers.deinit();
+    self.middlewares.deinit();
+
+    self.stopped.set();
+    self.allocator.destroy(self);
+}
+
+// create a default engine
+pub fn default() anyerror!*Engine {
+    return init(.{
+        .addr = "127.0.0.1",
+        .port = 0,
+    });
+}
+
+pub fn getPort(self: *Self) u16 {
+    return self.net_server.listen_address.getPort();
+}
+
+pub fn getAddress(self: *Self) net.Address {
+    return self.net_server.listen_address;
+}
+
+/// Wait for the server to stop.
+pub fn wait(self: *Self) void {
+    self.stopped.wait();
+}
+
+/// Shutdown the server.
+pub fn shutdown(self: *Self) void {
+    self.stopping.set();
+}
+
+/// Add custom router to engine.s
 pub fn addRouter(self: *Self, r: Router) void {
     self.router = r;
 }
+
+/// Get the router.
 pub fn getRouter(self: *Self) *Router {
     return &self.router;
 }
 
+/// Get the catchers.
 pub fn getCatchers(self: *Self) *Catchers {
     return &self.catchers;
 }
-pub fn getCatcher(self: *Self, status: http.Status) ?HandlerFn {
+
+/// Get the catcher by status.
+fn getCatcher(self: *Self, status: http.Status) ?HandlerFn {
     return self.catchers.get(status);
 }
 
@@ -264,12 +274,19 @@ fn routeRebuild(self: *Self) anyerror!void {
     try self.router.rebuild();
 }
 
-// static dir
+// Serve a static file.
+pub fn StaticFile(self: *Self, path: []const u8, file_name: []const u8) anyerror!void {
+    try self.router.staticFile(path, file_name);
+}
+
+/// Serve a static directory.
 pub fn static(self: *Self, path: []const u8, dir_name: []const u8) anyerror!void {
     try self.router.static(path, dir_name);
 }
 
-// static file
-pub fn StaticFile(self: *Self, path: []const u8, file_name: []const u8) anyerror!void {
-    try self.router.staticFile(path, file_name);
-}
+/// Engine error.
+pub const EngineError = error{
+    None,
+    Stopping,
+    Stopped,
+};

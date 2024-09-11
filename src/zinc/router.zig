@@ -58,43 +58,12 @@ pub fn handleContext(self: *Self, ctx: *Context) anyerror!void {
     // try ctx.doRequest();
 }
 
-/// Rebuild all routes.
-pub fn rebuild(self: *Self) !void {
-    for (self.routes.items) |*route| {
-        var chain = std.ArrayList(HandlerFn).init(self.allocator);
-        try chain.appendSlice(self.middlewares.items);
-        try chain.appendSlice(route.handlers_chain.items);
-        route.handlers_chain.clearAndFree();
-        route.handlers_chain = chain;
-    }
-}
-
 /// Return routes.
 pub fn getRoutes(self: *Self) std.ArrayList(Route) {
     return self.routes;
 }
 
 pub fn add(self: *Self, method: std.http.Method, path: []const u8, handler: anytype) anyerror!void {
-    // if (self.routes.items.len != 0) {
-    //     for (self.routes.items) |*route| {
-    //         if (std.mem.eql(u8, route.path, path) and route.method == method) {
-    //             for (self.middlewares.items) |middleware| {
-    //                 if (!route.isHandlerExists(middleware)) {
-    //                     try route.handlers_chain.append(middleware);
-    //                     return;
-    //                 }
-    //             }
-
-    //             if (!route.isHandlerExists(handler)) {
-    //                 try route.handlers_chain.append(handler);
-    //                 return;
-    //             }
-
-    //             return;
-    //         }
-    //     }
-    // }
-
     const rTreeRoute = self.getRoute(method, path) catch {
         var route = Route.create(path, method, handler);
         try route.use(self.middlewares.items);
@@ -132,7 +101,6 @@ fn insertRouteToRouteTree(self: *Self, route: Route) anyerror!void {
     const path = url_target.path;
 
     const rTree = try self.route_tree.insert(path);
-    // const rTree = self.route_tree.find(path).?;
     try rTree.routes.append(route);
 }
 
@@ -169,7 +137,7 @@ pub fn trace(self: *Self, path: []const u8, handler: anytype) anyerror!void {
     try self.add(.TRACE, path, handler);
 }
 
-pub fn getRouteTree(self: *Self, target: []const u8) anyerror!*RouteTree {
+fn getRouteTree(self: *Self, target: []const u8) anyerror!*RouteTree {
     var url = URL.init(.{});
     const url_target = try url.parseUrl(target);
     const path = url_target.path;
@@ -186,22 +154,30 @@ pub fn getRoute(self: *Self, method: std.http.Method, target: []const u8) anyerr
 
     const rTree = try self.getRouteTree(path);
 
-    if (rTree.routes.items.len == 0) {
-        return Route.RouteError.NotFound;
-    }
+    if (rTree.routes.items.len == 0) return Route.RouteError.NotFound;
 
-    for (rTree.routes.items) |*route| {
-        if (route.method == method) return route;
-    }
-
-    // if (rTree.route.method == method) return &rTree.route;
+    for (rTree.routes.items) |*route| if (route.isMethodAllowed(method)) return route;
 
     return Route.RouteError.MethodNotAllowed;
 }
 
 pub fn use(self: *Self, handler: []const HandlerFn) anyerror!void {
+    try self.middlewares.appendSlice(handler);
+    // for (self.routes.items) |*route| try route.use(handler);
+    try self.rebuild();
+}
+
+/// Rebuild all routes.
+pub fn rebuild(self: *Self) !void {
     for (self.routes.items) |*route| {
-        try route.use(handler);
+        const old_chain = try route.handlers_chain.toOwnedSlice();
+        try route.handlers_chain.appendSlice(self.middlewares.items);
+        try route.handlers_chain.appendSlice(old_chain);
+        // var chain = std.ArrayList(HandlerFn).init(self.allocator);
+        // try chain.appendSlice(self.middlewares.items);
+        // try chain.appendSlice(route.handlers_chain.items);
+        // route.handlers_chain.clearAndFree();
+        // route.handlers_chain = chain;
     }
 }
 
@@ -216,13 +192,9 @@ pub fn group(self: *Self, prefix: []const u8) anyerror!RouterGroup {
 pub inline fn static(self: *Self, relativePath: []const u8, filepath: []const u8) anyerror!void {
     try checkPath(filepath);
 
-    if (std.mem.eql(u8, relativePath, "")) {
-        return error.Empty;
-    }
+    if (std.mem.eql(u8, relativePath, "")) return error.Empty;
 
-    if (std.mem.eql(u8, filepath, "") or std.mem.eql(u8, filepath, "/")) {
-        return error.AccessDenied;
-    }
+    if (std.mem.eql(u8, filepath, "") or std.mem.eql(u8, filepath, "/")) return error.AccessDenied;
 
     if (std.fs.path.basename(filepath).len == 0) {
         return self.staticDir(relativePath, filepath);

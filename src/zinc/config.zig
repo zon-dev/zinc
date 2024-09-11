@@ -55,7 +55,7 @@ pub const Engine = struct {
     // The server address.
     addr: []const u8 = "0.0.0.0",
     // The server port.
-    port: u16 = 8080,
+    port: u16 = 0,
 
     allocator: Allocator = page_allocator,
 
@@ -66,7 +66,7 @@ pub const Engine = struct {
     stack_size: usize = 10 * 1024 * 1024,
 
     // theads count
-    threads: u8 = 8,
+    threads_len: u8 = 8,
 };
 
 /// HTTP server configuration.
