@@ -2,7 +2,7 @@
 
 ----
 
-Zinc is a high-performance web framework written in Zig.
+Zinc is a framework written in pure Zig with a focus on high performance, usability, security, and extensibility.
 
 A basic example:
 ```zig
