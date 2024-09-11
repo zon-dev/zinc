@@ -14,10 +14,17 @@ pub const RouterGroup = @import("zinc/routergroup.zig");
 pub const RouteTree = @import("zinc/routetree.zig").RouteTree;
 pub const RootTree = @import("zinc/routetree.zig").RootTree;
 
+// init a single thread engine.
 pub fn init(comptime conf: Config.Engine) !Engine {
     return Engine.init(conf);
 }
 
+// create a default single thread engine.
 pub fn default() !Engine {
     return Engine.default();
+}
+
+// Create a multithreaded server engine.
+pub fn create(comptime conf: Config.Engine) !*Engine {
+    return Engine.create(conf);
 }

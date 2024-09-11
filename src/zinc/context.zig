@@ -89,7 +89,8 @@ pub fn json(self: *Self, value: anytype, conf: Config.Context) anyerror!void {
 }
 
 pub fn send(self: *Self, content: []const u8, options: RespondOptions) anyerror!void {
-    try self.response.send(content, options);
+    // try self.response.send(content, options);
+    try self.request.send(content, options);
 }
 
 pub fn file(
@@ -109,8 +110,8 @@ pub fn file(
     const buffer = try f.readToEndAlloc(self.allocator, stat.size);
     defer self.allocator.free(buffer);
 
-    self.setBody(buffer);
-    self.setStatus(conf.status);
+    try self.setBody(buffer);
+    try self.setStatus(conf.status);
 }
 
 pub fn dir(self: *Self, dir_name: []const u8, conf: Config.Context) anyerror!void {
@@ -142,8 +143,8 @@ pub fn dir(self: *Self, dir_name: []const u8, conf: Config.Context) anyerror!voi
     const buffer = try f.readToEndAlloc(self.allocator, stat.size);
     defer self.allocator.free(buffer);
 
-    self.setBody(buffer);
-    self.setStatus(conf.status);
+    try self.setBody(buffer);
+    try self.setStatus(conf.status);
 }
 
 pub fn getParam(self: *Self, key: []const u8) ?Param {
@@ -169,7 +170,8 @@ pub fn getHeaders(self: *Self) *Headers {
 }
 
 /// Run the next middleware or handler in the chain.
-pub inline fn next(self: *Context) anyerror!void {
+// pub inline fn next(self: *Context) anyerror!void {
+pub fn next(self: *Context) anyerror!void {
     self.index += 1;
 
     if (self.index >= self.handlers.items.len) return;
@@ -322,7 +324,8 @@ pub fn postFormMap(self: *Self, map_key: []const u8) ?std.StringHashMap([]const 
 }
 
 pub fn handle(self: *Self) anyerror!void {
-    if (self.handlers.items.len == 0) return error.Empty;
+    if (self.handlers.items.len == 0) return;
+
     for (self.handlers.items, 0..) |handler, index| {
         if (index < self.index) {
             continue;

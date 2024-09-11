@@ -1,5 +1,6 @@
 const std = @import("std");
 const testing = std.testing;
+const http = std.http;
 
 const zinc = @import("../zinc.zig");
 const Request = zinc.Request;
@@ -15,6 +16,63 @@ fn createContext(method: std.http.Method, target: []const u8) anyerror!Context {
     var res = zinc.Response.init(.{});
     const ctx = zinc.Context.init(.{ .request = &req, .response = &res }).?;
     return ctx;
+}
+
+const TestServer = struct {
+    server_thread: std.Thread,
+    net_server: std.net.Server,
+
+    fn destroy(self: *@This()) void {
+        self.server_thread.join();
+        self.net_server.deinit();
+        std.testing.allocator.destroy(self);
+    }
+
+    fn port(self: @This()) u16 {
+        return self.net_server.listen_address.in.getPort();
+    }
+};
+
+fn createTestServer(S: type) !*TestServer {
+    // if (std.builtin.single_threaded) return error.SkipZigTest;
+    // if (builtin.zig_backend == .stage2_llvm and native_endian == .big) {
+    //     // https://github.com/ziglang/zig/issues/13782
+    //     return error.SkipZigTest;
+    // }
+
+    const address = try std.net.Address.parseIp("127.0.0.1", 0);
+    const test_server = try std.testing.allocator.create(TestServer);
+    test_server.net_server = try address.listen(.{ .reuse_address = true });
+    test_server.server_thread = try std.Thread.spawn(.{}, S.run, .{&test_server.net_server});
+    return test_server;
+}
+
+fn handleRequest(request: *http.Server.Request) void {
+    _ = request;
+    return;
+}
+test "Router runing!" {
+    // const test_server = try createTestServer(struct {
+    //     fn run(net_server: *std.net.Server) anyerror!void {
+    //         var read_buffer: [1024]u8 = undefined;
+
+    //         accept: while (true) {
+    //             const conn = try net_server.accept();
+    //             defer conn.stream.close();
+
+    //             var http_server = http.Server.init(conn, &read_buffer);
+
+    //             while (http_server.state == .ready) {
+    //                 var request = http_server.receiveHead() catch |err| switch (err) {
+    //                     error.HttpConnectionClosing => continue :accept,
+    //                     else => |e| return e,
+    //                 };
+    //                 handleRequest(&request);
+    //             }
+    //         }
+    //     }
+    // });
+    // defer test_server.destroy();
 }
 
 test "Handle Request" {
@@ -36,6 +94,7 @@ test "Handle Request" {
     // try testing.expectEqual(.ok, ctx_get.response.status);
     try testing.expectEqualStrings("Hello Zinc!", ctx_get.response.body.?);
     ctx_get.deinit();
+    std.debug.print("\r\n Done handle request test", .{});
 
     // POST Request.
     var ctx_post = try createContext(.POST, "/");
@@ -44,6 +103,7 @@ test "Handle Request" {
     // try testing.expectEqual(.ok, ctx_post.response.status);
     try testing.expectEqualStrings("Hello Zinc!", ctx_post.response.body.?);
     ctx_post.deinit();
+    std.debug.print("\r\n Done handle request test", .{});
 
     // Not found
     var ctx_not_found = try createContext(.GET, "/not-found");
@@ -51,6 +111,7 @@ test "Handle Request" {
         try testing.expect(err == RouteError.NotFound);
     };
     ctx_not_found.deinit();
+    std.debug.print("\r\n Done not found test", .{});
 
     // Method not allowed
     var ctx_not_allowed = try createContext(.PUT, "/");
@@ -58,6 +119,7 @@ test "Handle Request" {
         try testing.expect(err == RouteError.MethodNotAllowed);
     };
     ctx_not_allowed.deinit();
+    std.debug.print("\r\n Done method not allowed test", .{});
 }
 
 test "router, routeTree and router.getRoute" {
@@ -84,7 +146,7 @@ test "router, routeTree and router.getRoute" {
     };
 
     for (testCases, 0..) |tc, i| {
-        std.debug.print(" \r\n routeTree test case {d}, path: {s}", .{ i, tc.reqPath });
+        std.debug.print("\n routeTree test case {d}, path: {s} ", .{ i, tc.reqPath });
         const rTree_route = router.getRoute(tc.reqMethod, tc.reqPath) catch |err| {
             try testing.expect(err == (tc.expected catch |e| e));
             continue;

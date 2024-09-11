@@ -25,3 +25,7 @@ pub fn requestHeaderFieldsTooLarge(conn: net.Stream) anyerror!void {
 pub fn resHead(conn: net.Stream) anyerror!void {
     _ = try conn.write("HTTP/1.1 200 OK\r\n\r\n");
 }
+
+pub fn badRequest(conn: net.Stream) anyerror!void {
+    _ = try conn.write("HTTP/1.1 400 Bad Request\r\nContent-Type: text/html\r\n\r\n<h1>Bad Request</h1>");
+}

@@ -31,8 +31,8 @@ methods: []const std.http.Method = &[_]std.http.Method{
 },
 
 allocator: Allocator = page_allocator,
-routes: std.ArrayList(Route) = undefined,
-middlewares: std.ArrayList(HandlerFn) = undefined,
+routes: std.ArrayList(Route) = std.ArrayList(Route).init(page_allocator),
+middlewares: std.ArrayList(HandlerFn) = std.ArrayList(HandlerFn).init(page_allocator),
 
 route_tree: *RouteTree = undefined,
 
@@ -75,29 +75,43 @@ pub fn getRoutes(self: *Self) std.ArrayList(Route) {
 }
 
 pub fn add(self: *Self, method: std.http.Method, path: []const u8, handler: anytype) anyerror!void {
-    if (self.routes.items.len != 0) {
-        for (self.routes.items) |*route| {
-            if (std.mem.eql(u8, route.path, path) and route.method == method) {
-                for (self.middlewares.items) |middleware| {
-                    if (!route.isHandlerExists(middleware)) {
-                        try route.handlers_chain.append(middleware);
-                        return;
-                    }
-                }
+    // if (self.routes.items.len != 0) {
+    //     for (self.routes.items) |*route| {
+    //         if (std.mem.eql(u8, route.path, path) and route.method == method) {
+    //             for (self.middlewares.items) |middleware| {
+    //                 if (!route.isHandlerExists(middleware)) {
+    //                     try route.handlers_chain.append(middleware);
+    //                     return;
+    //                 }
+    //             }
 
-                if (!route.isHandlerExists(handler)) {
-                    try route.handlers_chain.append(handler);
-                    return;
-                }
+    //             if (!route.isHandlerExists(handler)) {
+    //                 try route.handlers_chain.append(handler);
+    //                 return;
+    //             }
 
-                return;
-            }
+    //             return;
+    //         }
+    //     }
+    // }
+
+    const rTreeRoute = self.getRoute(method, path) catch {
+        var route = Route.create(path, method, handler);
+        try route.use(self.middlewares.items);
+        try self.addRoute(route);
+        return;
+    };
+
+    for (self.middlewares.items) |middleware| {
+        if (!rTreeRoute.isHandlerExists(middleware)) {
+            try rTreeRoute.handlers_chain.append(middleware);
+            return;
         }
     }
-
-    var route = Route.create(path, method, handler);
-    try route.use(self.middlewares.items);
-    try self.addRoute(route);
+    if (!rTreeRoute.isHandlerExists(handler)) {
+        try rTreeRoute.handlers_chain.append(handler);
+        return;
+    }
 }
 
 pub fn addAny(self: *Self, http_methods: []const std.http.Method, path: []const u8, handler: HandlerFn) anyerror!void {
@@ -185,7 +199,7 @@ pub fn getRoute(self: *Self, method: std.http.Method, target: []const u8) anyerr
     return Route.RouteError.MethodNotAllowed;
 }
 
-pub fn use(self: *Self, handler: anytype) anyerror!void {
+pub fn use(self: *Self, handler: []const HandlerFn) anyerror!void {
     for (self.routes.items) |*route| {
         try route.use(handler);
     }

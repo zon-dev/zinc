@@ -59,9 +59,15 @@ pub const Engine = struct {
 
     allocator: Allocator = page_allocator,
 
-    read_buffer_len: usize = 1024,
+    read_buffer_len: usize = 10 * 1024,
     header_buffer_len: usize = 1024,
-    body_buffer_len: usize = 10 * 1024,
+    body_buffer_len: usize = 8 * 1024,
+
+    // 1GB stack size for the every server thread.
+    stack_size: usize = 2 << 29,
+
+    // theads count
+    threads: u8 = 8,
 };
 
 /// HTTP server configuration.
