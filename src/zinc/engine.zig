@@ -99,7 +99,7 @@ pub fn init(comptime conf: config.Engine) !Engine {
     var listener = try address.listen(.{ .reuse_address = true });
     errdefer listener.deinit();
 
-    return Engine{
+    var engine = Engine{
         .allocator = conf.allocator,
         .net_server = listener,
         .threads = undefined,
@@ -109,8 +109,25 @@ pub fn init(comptime conf: config.Engine) !Engine {
         .catchers = Catchers.init(conf.allocator),
         .router = Router.init(.{ .allocator = conf.allocator }),
         .middlewares = std.ArrayList(HandlerFn).init(conf.allocator),
-        // .server_thread = try std.Thread.spawn(.{}, Engine.run, .{createFromConfig(conf)}),
     };
+
+    var threads = std.ArrayList(std.Thread).init(engine.allocator);
+    errdefer engine.allocator.free(threads.items);
+
+    for (conf.threads) |_| {
+        const thread = try std.Thread.spawn(.{
+            .stack_size = conf.stack_size,
+            .allocator = conf.allocator,
+        }, Engine.run, .{&engine});
+
+        try threads.append(thread);
+    }
+    engine.threads = threads;
+    return engine;
+}
+
+pub fn getTheadCount(self: *Self) usize {
+    return self.threads.items.len;
 }
 
 pub fn default() !Engine {
@@ -153,7 +170,7 @@ pub fn run(self: *Self) anyerror!void {
     accept: while (true) {
         const conn = net_server.accept() catch |err| switch (err) {
             error.ConnectionAborted => continue :accept,
-            else => |e| return e,
+            else => return,
         };
 
         defer conn.stream.close();
@@ -189,7 +206,7 @@ pub fn run(self: *Self) anyerror!void {
         }
         // closing
         while (http_server.state == .closing) {
-            std.debug.print("The connection is closing\n", .{});
+            // std.debug.print("The connection is closing\n", .{});
             continue :accept;
         }
     }

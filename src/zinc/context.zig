@@ -108,9 +108,11 @@ pub fn file(
     // Read the file into a buffer.
     const stat = try f.stat();
     const buffer = try f.readToEndAlloc(self.allocator, stat.size);
-    defer self.allocator.free(buffer);
+
+    // defer self.allocator.free(buffer);
 
     try self.setBody(buffer);
+
     try self.setStatus(conf.status);
 }
 
@@ -132,6 +134,7 @@ pub fn dir(self: *Self, dir_name: []const u8, conf: Config.Context) anyerror!voi
     } else {
         sub_path = try std.fmt.allocPrint(self.allocator, "{s}/{s}", .{ dir_name, target_file });
     }
+    defer self.allocator.free(sub_path);
 
     var f = std.fs.cwd().openFile(sub_path, .{}) catch |err| {
         return err;
@@ -141,8 +144,8 @@ pub fn dir(self: *Self, dir_name: []const u8, conf: Config.Context) anyerror!voi
     // Read the file into a buffer.
     const stat = try f.stat();
     const buffer = try f.readToEndAlloc(self.allocator, stat.size);
-    defer self.allocator.free(buffer);
 
+    // defer self.allocator.free(buffer);
     try self.setBody(buffer);
     try self.setStatus(conf.status);
 }

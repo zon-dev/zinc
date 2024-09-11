@@ -63,8 +63,7 @@ pub const Engine = struct {
     header_buffer_len: usize = 1024,
     body_buffer_len: usize = 8 * 1024,
 
-    // 1GB stack size for the every server thread.
-    stack_size: usize = 2 << 29,
+    stack_size: usize = 10 * 1024 * 1024,
 
     // theads count
     threads: u8 = 8,
