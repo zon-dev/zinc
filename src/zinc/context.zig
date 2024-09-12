@@ -35,9 +35,8 @@ query_map: ?std.StringHashMap(std.ArrayList([]const u8)) = null,
 
 // Slice of optional function pointers
 handlers: std.ArrayList(handlerFn) = undefined,
-index: u8 = 0, // Adjust the type based on your specific needs
 
-// writer: std.io.AnyWriter = std.net.Stream.writer(),
+index: u8 = 0, // Adjust the type based on your specific needs
 
 pub fn destroy(self: *Self) void {
     self.headers.deinit();
@@ -45,10 +44,12 @@ pub fn destroy(self: *Self) void {
     if (self.query_map != null) {
         self.query_map.?.deinit();
     }
+    self.handlers.deinit();
+    // self.allocator.free(self);
 }
 
 pub fn init(self: Self) ?Context {
-    return Context{
+    return .{
         .allocator = self.allocator,
         .request = self.request,
         .response = self.response,
@@ -75,15 +76,16 @@ pub fn text(self: *Self, content: []const u8, conf: Config.Context) anyerror!voi
 
 pub fn json(self: *Self, value: anytype, conf: Config.Context) anyerror!void {
     var string = std.ArrayList(u8).init(self.allocator);
+    defer self.allocator.free(string.items);
+
     try std.json.stringify(value, .{}, string.writer());
     try self.headers.add("Content-Type", "application/json");
-    try self.setBody(string.items);
+    try self.setBody(try string.toOwnedSlice());
     try self.setStatus(conf.status);
 }
 
 pub fn send(self: *Self, content: []const u8, options: RespondOptions) anyerror!void {
-    // try self.response.send(content, options);
-    try self.request.send(content, options);
+    try self.response.send(content, options);
 }
 
 pub fn file(
@@ -179,7 +181,12 @@ pub fn next(self: *Context) anyerror!void {
 
 pub fn redirect(self: *Self, http_status: std.http.Status, url: []const u8) anyerror!void {
     try self.headers.add("Location", url);
-    try self.request.req.respond("", .{ .status = http_status, .reason = http_status.phrase(), .extra_headers = self.headers.items(), .keep_alive = false });
+    try self.send("", .{
+        .status = http_status,
+        .reason = http_status.phrase(),
+        .extra_headers = self.headers.items(),
+        .keep_alive = false,
+    });
 }
 
 pub const queryError = error{
@@ -267,6 +274,7 @@ pub fn queryArray(self: *Self, name: []const u8) anyerror![][]const u8 {
     return values.items;
 }
 
+/// Get the post form values as a map.
 pub fn getPostFormMap(self: *Self) ?std.StringHashMap([]const u8) {
     const req = self.request.req;
 
@@ -319,7 +327,7 @@ pub fn postFormMap(self: *Self, map_key: []const u8) ?std.StringHashMap([]const 
     return inner_map;
 }
 
-pub fn handle(self: *Self) anyerror!void {
+pub fn handlersProcess(self: *Self) anyerror!void {
     if (self.handlers.items.len == 0) return;
 
     for (self.handlers.items, 0..) |handler, index| {
@@ -328,16 +336,20 @@ pub fn handle(self: *Self) anyerror!void {
         }
         try handler(self);
     }
+}
+
+pub fn handle(self: *Self) anyerror!void {
+    try self.handlersProcess();
     // Send the response after all handlers are executed.
     try self.doRequest();
 }
 
 pub fn doRequest(self: *Self) anyerror!void {
     // TODO: handle the case where the request is not fully received.
-
     if (self.request.req.head_end == 0) return;
+    const body = self.response.body orelse "";
 
-    try self.send(self.response.body.?, .{
+    try self.send(body, .{
         .status = self.response.status,
         .extra_headers = self.headers.items(),
         .keep_alive = false,

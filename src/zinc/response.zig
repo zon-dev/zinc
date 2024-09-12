@@ -53,7 +53,14 @@ pub fn setHeader(self: *Self, key: []const u8, value: []const u8) anyerror!void 
 }
 
 pub fn setBody(self: *Self, body: []const u8) anyerror!void {
-    self.body = body;
+    var new_body = std.ArrayList(u8).init(self.allocator);
+    self.allocator.free(new_body.items);
+    const old_body = self.body orelse "";
+    try new_body.appendSlice(old_body);
+    try new_body.appendSlice(body);
+    const slice = try new_body.toOwnedSlice();
+
+    self.body = slice;
 }
 
 pub fn sendStatus(self: *Self, status: Status) server_response.WriteError!void {

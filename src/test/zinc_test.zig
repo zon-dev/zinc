@@ -29,8 +29,8 @@ test "Zinc Server" {
     var router = z.getRouter();
     try router.get("/test", testHanle);
 
-    try std.testing.expectEqual(1, router.routes.items.len);
-    try std.testing.expectEqual(1, router.routes.getLast().handlers_chain.items.len);
+    try std.testing.expectEqual(1, router.getRoutes().items.len);
+    try std.testing.expectEqual(1, router.getRoutes().items[0].handlers.items.len);
 
     // Create an HTTP client.
     var client = std.http.Client{ .allocator = z.allocator };
@@ -43,11 +43,10 @@ test "Zinc Server" {
 
     try std.testing.expectEqualStrings("Hello, World!", body_buffer);
 
-    // z.shutdown();
-
     // test use middleware
     try router.use(&.{zinc.Middleware.cors()});
-    try std.testing.expectEqual(2, router.routes.getLast().handlers_chain.items.len);
+    try std.testing.expectEqual(1, router.getRoutes().items.len);
+    try std.testing.expectEqual(2, router.getRoutes().items[0].handlers.items.len);
 
     // Create an HTTP client.
     var req2 = try fetch(&client, .{ .method = .GET, .location = .{ .url = url } });

@@ -139,6 +139,7 @@ fn worker(self: *Engine) anyerror!void {
 
     accept: while (self.accept()) |conn| {
         var http_server = http.Server.init(conn, read_buffer);
+
         ready: while (http_server.state == .ready) {
             var request = http_server.receiveHead() catch |err| switch (err) {
                 error.HttpConnectionClosing => continue :ready,
@@ -157,11 +158,9 @@ fn worker(self: *Engine) anyerror!void {
                 try catchRouteError(@constCast(&catchers), err, conn.stream, &ctx);
                 continue :accept;
             };
-            ctx.handlers = match_route.handlers_chain;
-            ctx.handle() catch {
-                try default_response.internalServerError(conn.stream);
-            };
+            match_route.handle(&ctx) catch try default_response.internalServerError(conn.stream);
         }
+
         // closing
         while (http_server.state == .closing) {
             continue :accept;
@@ -209,7 +208,7 @@ pub fn destroy(self: *Self) void {
 
     self.allocator.free(self.threads.items);
 
-    self.router.routes.deinit();
+    self.router.deinit();
     self.catchers.catchers.deinit();
     self.middlewares.deinit();
 
@@ -266,12 +265,11 @@ fn getCatcher(self: *Self, status: http.Status) ?HandlerFn {
 /// use middleware to match any route
 pub fn use(self: *Self, handlers: []const HandlerFn) anyerror!void {
     try self.middlewares.appendSlice(handlers);
-    try self.routeRebuild();
+    try self.router.use(handlers);
 }
 
 fn routeRebuild(self: *Self) anyerror!void {
-    try self.router.middlewares.appendSlice(self.middlewares.items);
-    try self.router.rebuild();
+    self.router.use(self.middlewares.items);
 }
 
 // Serve a static file.

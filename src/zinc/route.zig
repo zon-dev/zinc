@@ -18,14 +18,14 @@ method: Method = undefined,
 
 path: []const u8 = "*",
 
-handlers_chain: std.ArrayList(HandlerFn) = undefined,
+handlers: std.ArrayList(HandlerFn) = undefined,
 
 pub fn init(self: Self) Route {
     return .{
         .allocator = self.allocator,
         .method = self.method,
         .path = self.path,
-        .handlers_chain = std.ArrayList(HandlerFn).init(self.allocator),
+        .handlers = std.ArrayList(HandlerFn).init(self.allocator),
     };
 }
 
@@ -36,11 +36,14 @@ pub const RouteError = error{
     NotFound,
     // 405 Method Not Allowed
     MethodNotAllowed,
+
+    // Handlers is empty
+    HandlersEmpty,
 };
 
 pub fn create(path: []const u8, http_method: Method, handler: HandlerFn) Route {
     var r = Route.init(.{ .method = http_method, .path = path });
-    r.handlers_chain.append(handler) catch |err| {
+    r.handlers.append(handler) catch |err| {
         std.debug.print("failed to append handler to route: {any}", .{err});
     };
     return r;
@@ -54,7 +57,7 @@ pub fn any(path: []const u8, handler: anytype) Route {
 }
 
 pub fn isHandlerExists(self: *Route, handler: HandlerFn) bool {
-    for (self.handlers_chain.items) |h| {
+    for (self.handlers.items) |h| {
         if (h == handler) {
             return true;
         }
@@ -99,17 +102,22 @@ pub fn getHandler(self: *Route) HandlerFn {
     return &self.handler;
 }
 
-pub fn handle(self: *Route, ctx: *Context) anyerror!void {
-    if (self.handlers_chain.items.len == 0) {
+fn handlersProcess(self: *Route, ctx: *Context) anyerror!void {
+    if (self.handlers.items.len == 0) {
         return;
     }
 
-    for (self.handlers_chain.items) |handler| {
+    for (self.handlers.items) |handler| {
         handler(ctx) catch |err| {
             std.log.err("handler error: {any}", .{err});
             return err;
         };
     }
+}
+
+pub fn handle(self: *Route, ctx: *Context) anyerror!void {
+    try self.handlersProcess(ctx);
+    try ctx.doRequest();
 }
 
 pub fn isMethodAllowed(self: *Route, method: Method) bool {
@@ -168,7 +176,10 @@ pub fn isMatch(self: *Route, method: Method, path: []const u8) bool {
 }
 
 pub fn use(self: *Route, handlers: []const HandlerFn) anyerror!void {
-    const old_chain = try self.handlers_chain.toOwnedSlice();
-    try self.handlers_chain.appendSlice(handlers);
-    try self.handlers_chain.appendSlice(old_chain);
+    if (self.handlers.items.len == 0) return try self.handlers.appendSlice(handlers);
+
+    const old_chain = try self.handlers.toOwnedSlice();
+    self.handlers.clearAndFree();
+    try self.handlers.appendSlice(handlers);
+    try self.handlers.appendSlice(old_chain);
 }

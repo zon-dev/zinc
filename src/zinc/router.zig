@@ -31,7 +31,7 @@ methods: []const std.http.Method = &[_]std.http.Method{
 },
 
 allocator: Allocator = page_allocator,
-routes: std.ArrayList(Route) = std.ArrayList(Route).init(page_allocator),
+
 middlewares: std.ArrayList(HandlerFn) = std.ArrayList(HandlerFn).init(page_allocator),
 
 route_tree: *RouteTree = undefined,
@@ -40,47 +40,46 @@ pub fn init(self: Self) Router {
     const root = RouteTree.create(.{ .allocator = self.allocator }) catch unreachable;
     return .{
         .allocator = self.allocator,
-        .routes = std.ArrayList(Route).init(self.allocator),
         .middlewares = std.ArrayList(HandlerFn).init(self.allocator),
         .route_tree = root,
     };
 }
 
 pub fn deinit(self: *Self) void {
-    self.routes.deinit();
+    self.middlewares.deinit();
+    self.route_tree.destroy();
 }
 
 pub fn handleContext(self: *Self, ctx: *Context) anyerror!void {
-    const route = try self.getRoute(ctx.request.method, ctx.request.target);
-    try route.handle(ctx);
+    try self.prepareContext(ctx);
+    try ctx.doRequest();
+}
 
-    // TODO
-    // try ctx.doRequest();
+pub fn prepareContext(self: *Self, ctx: *Context) anyerror!void {
+    const route = try self.getRoute(ctx.request.method, ctx.request.target);
+    var items: []const HandlerFn = undefined;
+    items = try route.handlers.toOwnedSlice();
+    try ctx.handlers.appendSlice(items);
+    try ctx.handlersProcess();
 }
 
 /// Return routes.
 pub fn getRoutes(self: *Self) std.ArrayList(Route) {
-    return self.routes;
+    const rootTree = self.route_tree.getRoot().?;
+    return rootTree.getCurrentTreeRoutes();
+}
+
+pub fn getRootTree(self: *Self) *RouteTree {
+    return self.route_tree.getRoot().?;
 }
 
 pub fn add(self: *Self, method: std.http.Method, path: []const u8, handler: anytype) anyerror!void {
-    const rTreeRoute = self.getRoute(method, path) catch {
-        var route = Route.create(path, method, handler);
-        try route.use(self.middlewares.items);
+    _ = self.getRoute(method, path) catch {
+        const route = Route.create(path, method, handler);
         try self.addRoute(route);
-        return;
     };
 
-    for (self.middlewares.items) |middleware| {
-        if (!rTreeRoute.isHandlerExists(middleware)) {
-            try rTreeRoute.handlers_chain.append(middleware);
-            return;
-        }
-    }
-    if (!rTreeRoute.isHandlerExists(handler)) {
-        try rTreeRoute.handlers_chain.append(handler);
-        return;
-    }
+    try self.rebuild();
 }
 
 pub fn addAny(self: *Self, http_methods: []const std.http.Method, path: []const u8, handler: HandlerFn) anyerror!void {
@@ -98,7 +97,7 @@ pub fn any(self: *Self, path: []const u8, handler: anytype) anyerror!void {
 fn insertRouteToRouteTree(self: *Self, route: Route) anyerror!void {
     var url = URL.init(.{});
     const url_target = try url.parseUrl(route.path);
-    const path = url_target.path;
+    const path: []const u8 = url_target.path;
 
     const rTree = try self.route_tree.insert(path);
     try rTree.routes.append(route);
@@ -106,7 +105,7 @@ fn insertRouteToRouteTree(self: *Self, route: Route) anyerror!void {
 
 pub fn addRoute(self: *Self, route: Route) anyerror!void {
     try self.insertRouteToRouteTree(route);
-    try self.routes.append(route);
+    // try self.routes.append(route);
 }
 
 pub fn get(self: *Self, path: []const u8, handler: anytype) anyerror!void {
@@ -155,8 +154,12 @@ pub fn getRoute(self: *Self, method: std.http.Method, target: []const u8) anyerr
     const rTree = try self.getRouteTree(path);
 
     if (rTree.routes.items.len == 0) return Route.RouteError.NotFound;
-
-    for (rTree.routes.items) |*route| if (route.isMethodAllowed(method)) return route;
+    for (rTree.routes.items) |*route| {
+        if (route.isMethodAllowed(method)) {
+            // if (route.handlers.items.len == 0) return Route.RouteError.HandlersEmpty;
+            return route;
+        }
+    }
 
     return Route.RouteError.MethodNotAllowed;
 }
@@ -167,12 +170,9 @@ pub fn use(self: *Self, handler: []const HandlerFn) anyerror!void {
 }
 
 /// Rebuild all routes.
-pub fn rebuild(self: *Self) !void {
-    for (self.routes.items) |*route| {
-        const old_chain = try route.handlers_chain.toOwnedSlice();
-        try route.handlers_chain.appendSlice(self.middlewares.items);
-        try route.handlers_chain.appendSlice(old_chain);
-    }
+pub fn rebuild(self: *Self) anyerror!void {
+    const rootTree = self.route_tree.getRoot().?;
+    try rootTree.use(self.middlewares.items);
 }
 
 pub fn group(self: *Self, prefix: []const u8) anyerror!RouterGroup {
@@ -232,4 +232,9 @@ fn checkPath(path: []const u8) anyerror!void {
             return error.Unreachable;
         }
     }
+}
+
+pub fn printRouter(self: *Self) void {
+    const rootTree = self.getRootTree();
+    rootTree.print(1);
 }

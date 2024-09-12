@@ -24,25 +24,3 @@ pub fn cors() HandlerFn {
     };
     return H.handle;
 }
-
-// pub const cors = struct {
-//     // "Access-Control-Allow-Origin"
-//     const Origin: []const u8 = "*";
-//     // "Access-Control-Allow-Methods"
-//     const Methods: []std.http.Method = &[_]std.http.Method{ .GET, .POST, .PUT, .DELETE, .OPTIONS };
-//     // "Access-Control-Allow-Headers"
-//     const Headers: []const u8 = "Content-Type";
-//     // "Access-Control-Allow-Private-Network"
-//     const Private: bool = true;
-//     // "Access-Control-Max-Age"
-//     const MaxAge: usize = 3600;
-//     pub fn init(self: cors) cors {
-//         return .{
-//             .Origin = self.Origin,
-//             .Methods = self.Methods,
-//             .Headers = self.Headers,
-//             .Private = self.Private,
-//             .MaxAge = self.MaxAge,
-//         };
-//     }
-// };

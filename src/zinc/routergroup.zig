@@ -17,40 +17,33 @@ const Router = zinc.Router;
 pub const RouterGroup = @This();
 const Self = @This();
 
+const RouteTree = zinc.RouteTree;
+
 allocator: Allocator = page_allocator,
 prefix: []const u8 = "",
 root: bool = false,
-Handlers: ArrayList(HandlerFn) = ArrayList(HandlerFn).init(page_allocator),
+
 router: *Router = undefined,
 
 fn relativePath(self: *RouterGroup, path: []const u8) anyerror![]const u8 {
-    if (self.root) {
-        return self.prefix;
-    }
+    // if (self.root) {
+    //     return self.prefix;
+    // }
     const prefix_path = try std.fmt.allocPrint(self.allocator, "{s}{s}", .{ self.prefix, path });
     var slice = std.ArrayList(u8).init(self.allocator);
+    self.allocator.free(slice.items);
     try slice.appendSlice(prefix_path);
     return try slice.toOwnedSlice();
 }
 
 /// Create a new RouterGroup.
 pub fn add(self: *RouterGroup, method: std.http.Method, target: []const u8, handler: HandlerFn) anyerror!void {
-    if (self.root) {
-        try self.router.add(method, target, handler);
-        return;
-    }
     try self.router.add(method, try self.relativePath(target), handler);
 }
 
 /// Add a route with all HTTP methods.
 pub fn any(self: *RouterGroup, target: []const u8, handler: HandlerFn) anyerror!void {
     const methods = &[_]std.http.Method{ .GET, .POST, .PUT, .DELETE, .OPTIONS, .HEAD, .PATCH, .CONNECT, .TRACE };
-    if (self.root) {
-        for (methods) |method| {
-            try self.router.add(method, target, handler);
-        }
-        return;
-    }
     for (methods) |method| {
         try self.router.add(method, try self.relativePath(target), handler);
     }
@@ -58,12 +51,6 @@ pub fn any(self: *RouterGroup, target: []const u8, handler: HandlerFn) anyerror!
 
 /// Add a route with any method.
 pub fn addAny(self: *RouterGroup, methods: []const std.http.Method, target: []const u8, handler: HandlerFn) anyerror!void {
-    if (self.root) {
-        for (methods) |method| {
-            try self.router.add(method, target, handler);
-        }
-        return;
-    }
     for (methods) |method| {
         try self.router.add(method, try self.relativePath(target), handler);
     }
@@ -116,15 +103,19 @@ pub fn trace(self: *RouterGroup, target: []const u8, handler: HandlerFn) anyerro
 
 /// Add middleware to the route.
 pub fn use(self: *RouterGroup, handler: HandlerFn) anyerror!void {
+    // TODO: add middleware to the route.
     if (self.root) {
         try self.router.use(handler);
         return;
     }
-    try self.router.use(handler);
+    // try self.router.use(handler);
 }
 
 /// Return routes.
 pub fn getRoutes(self: *RouterGroup) std.ArrayList(Route) {
-    // return self.routes;
     return self.router.getRoutes();
+}
+
+pub fn getRootTree(self: *Self) *RouteTree {
+    return self.router.route_tree.getRoot().?;
 }
