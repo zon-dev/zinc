@@ -247,7 +247,11 @@ pub const RouteTree = struct {
         // print the node. Example: "ZINC|   /  [GET, POST]"
         // if (self.value.len != 0 and methods.items.len != 0) {
         // }
-        stdout.print("ZINC| {s}/{s}  {s}\n", .{ indentString, self.value, methods.items }) catch {};
+        if (methods.items.len == 0) {
+            stdout.print("|{s}/{s}\n", .{ indentString, self.value }) catch {};
+        } else {
+            stdout.print("|{s}/{s}  {s}\n", .{ indentString, self.value, methods.items }) catch {};
+        }
 
         // Recursively print each child
         var iter = self.children.valueIterator();

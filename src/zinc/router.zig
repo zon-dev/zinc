@@ -236,5 +236,5 @@ fn checkPath(path: []const u8) anyerror!void {
 
 pub fn printRouter(self: *Self) void {
     const rootTree = self.getRootTree();
-    rootTree.print(1);
+    rootTree.print(0);
 }

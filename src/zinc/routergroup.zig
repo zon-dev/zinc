@@ -36,6 +36,10 @@ fn relativePath(self: *RouterGroup, path: []const u8) anyerror![]const u8 {
     return try slice.toOwnedSlice();
 }
 
+pub fn group(self: *Self, prefix: []const u8) anyerror!RouterGroup {
+    return self.router.group(try self.relativePath(prefix));
+}
+
 /// Create a new RouterGroup.
 pub fn add(self: *RouterGroup, method: std.http.Method, target: []const u8, handler: HandlerFn) anyerror!void {
     try self.router.add(method, try self.relativePath(target), handler);
