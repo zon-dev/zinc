@@ -207,7 +207,6 @@ pub const RouteTree = struct {
 
     pub fn getCurrentTreeRoutes(self: *RouteTree) std.ArrayList(Route) {
         var routes = std.ArrayList(Route).init(self.allocator);
-
         var childStack = std.ArrayList(*RouteTree).init(self.allocator);
         childStack.append(self) catch unreachable;
 

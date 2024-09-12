@@ -3,7 +3,11 @@ const zinc = @import("../zinc.zig");
 const expect = std.testing.expect;
 
 test "Middleware" {
+    // const allocator = std.testing.allocator;
+    // var router = zinc.Router.init(.{ .allocator = allocator });
     var router = zinc.Router.init(.{});
+    // defer router.deinit();
+
     const mid1 = struct {
         fn middle(ctx: *zinc.Context) anyerror!void {
             try ctx.text("Hello ", .{});
@@ -28,25 +32,29 @@ test "Middleware" {
     try router.get("/test", handle);
 
     try router.use(&.{ mid1, mid2 });
-    try std.testing.expectEqual(1, router.getRoutes().items.len);
-    try std.testing.expectEqual(3, router.getRoutes().items[0].handlers.items.len);
+    const routes = router.getRoutes();
+
+    try std.testing.expectEqual(1, routes.items.len);
+    try std.testing.expectEqual(3, routes.items[0].handlers.items.len);
 
     var ctx_get = try createContext(.GET, "/test");
     defer ctx_get.destroy();
 
-    try router.prepareContext(&ctx_get);
+    const route = try router.getRoute(ctx_get.request.method, ctx_get.request.target);
+    ctx_get.handlers = route.handlers;
+
+    // TODO
+    // try ctx_get.handlersProcess();
 
     try std.testing.expectEqual(.ok, ctx_get.response.status);
     try std.testing.expectEqual(3, ctx_get.handlers.items.len);
 
-    // TODO
+    // // TODO
     // try std.testing.expectEqualStrings("Hello world!", ctx_get.response.body orelse "");
 }
 
 fn createContext(method: std.http.Method, target: []const u8) anyerror!zinc.Context {
-    const allocator = std.testing.allocator;
-    var req = zinc.Request.init(.{ .method = method, .target = target, .allocator = allocator });
-    var res = zinc.Response.init(.{ .allocator = allocator });
-    const ctx = zinc.Context.init(.{ .request = &req, .response = &res, .allocator = allocator }).?;
-    return ctx;
+    var req = zinc.Request.init(.{ .method = method, .target = target });
+    var res = zinc.Response.init(.{});
+    return zinc.Context.init(.{ .request = &req, .response = &res }).?;
 }

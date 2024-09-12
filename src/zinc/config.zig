@@ -63,9 +63,10 @@ pub const Engine = struct {
     header_buffer_len: usize = 1024,
     body_buffer_len: usize = 8 * 1024,
 
+    // The thread stack size
     stack_size: usize = 10 * 1024 * 1024,
 
-    // theads count
+    // Thread count
     threads_len: u8 = 8,
 };
 

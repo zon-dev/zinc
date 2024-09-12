@@ -48,6 +48,11 @@ pub fn init(self: Self) Router {
 pub fn deinit(self: *Self) void {
     self.middlewares.deinit();
     self.route_tree.destroy();
+    // const rootTree = self.getRouteTree("/") catch return;
+    // rootTree.destroy();
+
+    const routes = self.getRoutes();
+    self.allocator.free(routes.items);
 }
 
 pub fn handleContext(self: *Self, ctx: *Context) anyerror!void {
@@ -57,9 +62,10 @@ pub fn handleContext(self: *Self, ctx: *Context) anyerror!void {
 
 pub fn prepareContext(self: *Self, ctx: *Context) anyerror!void {
     const route = try self.getRoute(ctx.request.method, ctx.request.target);
-    var items: []const HandlerFn = undefined;
-    items = try route.handlers.toOwnedSlice();
-    try ctx.handlers.appendSlice(items);
+
+    // TODO, COPY HANDLERS TO CTX
+    ctx.handlers = route.handlers;
+
     try ctx.handlersProcess();
 }
 

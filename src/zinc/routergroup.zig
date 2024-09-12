@@ -26,13 +26,10 @@ root: bool = false,
 router: *Router = undefined,
 
 fn relativePath(self: *RouterGroup, path: []const u8) anyerror![]const u8 {
-    // if (self.root) {
-    //     return self.prefix;
-    // }
-    const prefix_path = try std.fmt.allocPrint(self.allocator, "{s}{s}", .{ self.prefix, path });
     var slice = std.ArrayList(u8).init(self.allocator);
     self.allocator.free(slice.items);
-    try slice.appendSlice(prefix_path);
+    try slice.appendSlice(self.prefix);
+    try slice.appendSlice(path);
     return try slice.toOwnedSlice();
 }
 

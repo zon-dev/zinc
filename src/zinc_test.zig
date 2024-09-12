@@ -7,5 +7,6 @@ test {
     _ = @import("test/router_test.zig");
     _ = @import("test/middleware_test.zig");
     _ = @import("test/routetree_test.zig");
+
     _ = @import("test/zinc_test.zig");
 }

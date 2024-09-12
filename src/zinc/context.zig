@@ -44,8 +44,9 @@ pub fn destroy(self: *Self) void {
     if (self.query_map != null) {
         self.query_map.?.deinit();
     }
+
     self.handlers.deinit();
-    // self.allocator.free(self);
+    // self.allocator.destroy(self);
 }
 
 pub fn init(self: Self) ?Context {
@@ -168,8 +169,8 @@ pub fn getHeaders(self: *Self) *Headers {
 }
 
 /// Run the next middleware or handler in the chain.
-// pub inline fn next(self: *Context) anyerror!void {
 pub fn next(self: *Context) anyerror!void {
+    // std.debug.print("next index:{d} handlers.items.len:{d}\n", .{ self.index, self.handlers.items.len });
     self.index += 1;
 
     if (self.index >= self.handlers.items.len) return;

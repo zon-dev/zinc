@@ -23,7 +23,9 @@ fn handleRequest(request: *http.Server.Request) void {
 }
 
 test "Zinc Server" {
-    var z = try zinc.init(.{ .addr = "127.0.0.1", .port = 0, .threads_len = 1 });
+    // const allocator = std.testing.allocator;
+    const allocator = std.heap.page_allocator;
+    var z = try zinc.init(.{ .addr = "127.0.0.1", .port = 0, .threads_len = 1, .allocator = allocator });
     defer z.destroy();
 
     var router = z.getRouter();
@@ -83,7 +85,8 @@ fn fetch(client: *std.http.Client, options: std.http.Client.FetchOptions) !std.h
         .headers = options.headers,
         .extra_headers = options.extra_headers,
         .privileged_headers = options.privileged_headers,
-        .keep_alive = options.keep_alive,
+        // .keep_alive = options.keep_alive,
+        .keep_alive = false,
     });
 
     if (options.payload) |payload| req.transfer_encoding = .{ .content_length = payload.len };

@@ -76,6 +76,7 @@ fn create(comptime conf: config.Engine) !*Engine {
 pub fn init(comptime conf: config.Engine) anyerror!*Engine {
     var engine = try create(conf);
     errdefer conf.allocator.destroy(engine);
+    if (conf.threads_len == 0) return engine;
 
     var threads = std.ArrayList(std.Thread).init(conf.allocator);
     errdefer conf.allocator.free(threads.items);
@@ -158,7 +159,11 @@ fn worker(self: *Engine) anyerror!void {
                 try catchRouteError(@constCast(&catchers), err, conn.stream, &ctx);
                 continue :accept;
             };
-            match_route.handle(&ctx) catch try default_response.internalServerError(conn.stream);
+            // TODO ??
+            // match_route.handle(&ctx) catch try default_response.internalServerError(conn.stream);
+
+            ctx.handlers = match_route.handlers;
+            ctx.handle() catch try default_response.internalServerError(conn.stream);
         }
 
         // closing
@@ -203,17 +208,18 @@ pub fn destroy(self: *Self) void {
 
     for (self.threads.items, 1..) |t, i| {
         t.join();
-        std.debug.print("\n thread {d} is closed\n", .{i});
+        std.debug.print("\nthread {d} is closed", .{i});
     }
 
-    self.allocator.free(self.threads.items);
-
-    self.router.deinit();
-    self.catchers.catchers.deinit();
-    self.middlewares.deinit();
+    // TODO
+    // self.allocator.free(self.threads.items);
+    // self.router.deinit();
+    // self.catchers.catchers.deinit();
+    // self.middlewares.deinit();
 
     self.stopped.set();
     self.allocator.destroy(self);
+    std.debug.print("\nengine is stopped", .{});
 }
 
 // create a default engine
