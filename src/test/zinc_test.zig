@@ -72,7 +72,7 @@ fn fetch(client: *std.http.Client, options: std.http.Client.FetchOptions) !std.h
         .uri => |u| u,
     };
     // var server_header_buffer = options.server_header_buffer orelse (16 * 1024);
-    var server_header_buffer: [16 * 1024]u8 = undefined;
+    var server_header_buffer: [1024]u8 = undefined;
 
     const method: std.http.Method = options.method orelse
         if (options.payload != null) .POST else .GET;

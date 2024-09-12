@@ -22,22 +22,27 @@ prefix: []const u8 = "",
 root: bool = false,
 Handlers: ArrayList(HandlerFn) = ArrayList(HandlerFn).init(page_allocator),
 router: *Router = undefined,
-fn relativePath(self: RouterGroup, path: []const u8) []const u8 {
+
+fn relativePath(self: *RouterGroup, path: []const u8) anyerror![]const u8 {
     if (self.root) {
         return self.prefix;
     }
     const prefix_path = try std.fmt.allocPrint(self.allocator, "{s}{s}", .{ self.prefix, path });
-    return prefix_path;
+    var slice = std.ArrayList(u8).init(self.allocator);
+    try slice.appendSlice(prefix_path);
+    return try slice.toOwnedSlice();
 }
 
+/// Create a new RouterGroup.
 pub fn add(self: *RouterGroup, method: std.http.Method, target: []const u8, handler: HandlerFn) anyerror!void {
     if (self.root) {
         try self.router.add(method, target, handler);
         return;
     }
-    try self.router.add(method, try std.fmt.allocPrint(self.allocator, "{s}{s}", .{ self.prefix, target }), handler);
+    try self.router.add(method, try self.relativePath(target), handler);
 }
 
+/// Add a route with all HTTP methods.
 pub fn any(self: *RouterGroup, target: []const u8, handler: HandlerFn) anyerror!void {
     const methods = &[_]std.http.Method{ .GET, .POST, .PUT, .DELETE, .OPTIONS, .HEAD, .PATCH, .CONNECT, .TRACE };
     if (self.root) {
@@ -47,10 +52,11 @@ pub fn any(self: *RouterGroup, target: []const u8, handler: HandlerFn) anyerror!
         return;
     }
     for (methods) |method| {
-        try self.router.add(method, try std.fmt.allocPrint(self.allocator, "{s}{s}", .{ self.prefix, target }), handler);
+        try self.router.add(method, try self.relativePath(target), handler);
     }
 }
 
+/// Add a route with any method.
 pub fn addAny(self: *RouterGroup, methods: []const std.http.Method, target: []const u8, handler: HandlerFn) anyerror!void {
     if (self.root) {
         for (methods) |method| {
@@ -59,46 +65,56 @@ pub fn addAny(self: *RouterGroup, methods: []const std.http.Method, target: []co
         return;
     }
     for (methods) |method| {
-        try self.router.add(method, try std.fmt.allocPrint(self.allocator, "{s}{s}", .{ self.prefix, target }), handler);
+        try self.router.add(method, try self.relativePath(target), handler);
     }
 }
 
+/// Add a route with the GET method.
 pub fn get(self: *RouterGroup, target: []const u8, handler: HandlerFn) anyerror!void {
-    try self.router.get(try std.fmt.allocPrint(self.allocator, "{s}{s}", .{ self.prefix, target }), handler);
+    try self.router.get(try self.relativePath(target), handler);
 }
 
+/// Add a route with the POST method.
 pub fn post(self: *RouterGroup, target: []const u8, handler: HandlerFn) anyerror!void {
-    try self.router.post(try std.fmt.allocPrint(self.allocator, "{s}{s}", .{ self.prefix, target }), handler);
+    try self.router.post(try self.relativePath(target), handler);
 }
 
+/// Add a route with the PUT method.
 pub fn put(self: *RouterGroup, target: []const u8, handler: HandlerFn) anyerror!void {
-    try self.router.put(try std.fmt.allocPrint(self.allocator, "{s}{s}", .{ self.prefix, target }), handler);
+    try self.router.put(try self.relativePath(target), handler);
 }
 
+/// Add a route with DELETE method.
 pub fn delete(self: *RouterGroup, target: []const u8, handler: HandlerFn) anyerror!void {
-    try self.router.delete(try std.fmt.allocPrint(self.allocator, "{s}{s}", .{ self.prefix, target }), handler);
+    try self.router.delete(try self.relativePath(target), handler);
 }
 
+/// Add a route that matches all HTTP methods.
 pub fn patch(self: *RouterGroup, target: []const u8, handler: HandlerFn) anyerror!void {
-    try self.router.patch(try std.fmt.allocPrint(self.allocator, "{s}{s}", .{ self.prefix, target }), handler);
+    try self.router.patch(try self.relativePath(target), handler);
 }
 
+/// Add a route with the OPTIONS method.
 pub fn options(self: *RouterGroup, target: []const u8, handler: HandlerFn) anyerror!void {
-    try self.router.options(try std.fmt.allocPrint(self.allocator, "{s}{s}", .{ self.prefix, target }), handler);
+    try self.router.options(try self.relativePath(target), handler);
 }
 
+/// Add a route for the HEAD method.
 pub fn head(self: *RouterGroup, target: []const u8, handler: HandlerFn) anyerror!void {
-    try self.router.head(try std.fmt.allocPrint(self.allocator, "{s}{s}", .{ self.prefix, target }), handler);
+    try self.router.head(try self.relativePath(target), handler);
 }
 
+/// Add a route for the CONNECT method.
 pub fn connect(self: *RouterGroup, target: []const u8, handler: HandlerFn) anyerror!void {
-    try self.router.connect(try std.fmt.allocPrint(self.allocator, "{s}{s}", .{ self.prefix, target }), handler);
+    try self.router.connect(try self.relativePath(target), handler);
 }
 
+/// Add a route for the TRACE method.
 pub fn trace(self: *RouterGroup, target: []const u8, handler: HandlerFn) anyerror!void {
-    try self.router.trace(try std.fmt.allocPrint(self.allocator, "{s}{s}", .{ self.prefix, target }), handler);
+    try self.router.trace(try self.relativePath(target), handler);
 }
 
+/// Add middleware to the route.
 pub fn use(self: *RouterGroup, handler: HandlerFn) anyerror!void {
     if (self.root) {
         try self.router.use(handler);
@@ -106,10 +122,6 @@ pub fn use(self: *RouterGroup, handler: HandlerFn) anyerror!void {
     }
     try self.router.use(handler);
 }
-
-// pub fn getRoutes(self: *RouterGroup) []Route {
-//     return self.router.getRoutes();
-// }
 
 /// Return routes.
 pub fn getRoutes(self: *RouterGroup) std.ArrayList(Route) {

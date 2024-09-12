@@ -163,7 +163,6 @@ pub fn getRoute(self: *Self, method: std.http.Method, target: []const u8) anyerr
 
 pub fn use(self: *Self, handler: []const HandlerFn) anyerror!void {
     try self.middlewares.appendSlice(handler);
-    // for (self.routes.items) |*route| try route.use(handler);
     try self.rebuild();
 }
 
@@ -173,11 +172,6 @@ pub fn rebuild(self: *Self) !void {
         const old_chain = try route.handlers_chain.toOwnedSlice();
         try route.handlers_chain.appendSlice(self.middlewares.items);
         try route.handlers_chain.appendSlice(old_chain);
-        // var chain = std.ArrayList(HandlerFn).init(self.allocator);
-        // try chain.appendSlice(self.middlewares.items);
-        // try chain.appendSlice(route.handlers_chain.items);
-        // route.handlers_chain.clearAndFree();
-        // route.handlers_chain = chain;
     }
 }
 

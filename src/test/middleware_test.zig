@@ -44,7 +44,6 @@ test "Middleware" {
     try std.testing.expectEqual(.ok, ctx_get.response.status);
     // TODO
     // try std.testing.expectEqualStrings("Hello ! world", ctx_get.response.body.?[0.."Hello ! world".len]);
-
 }
 
 fn createContext(method: std.http.Method, target: []const u8) anyerror!zinc.Context {

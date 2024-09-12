@@ -117,8 +117,7 @@ test "router, routeTree and router.getRoute" {
         .{ .reqMethod = .GET, .reqPath = "/foo/static/hello.css", .expected = RouteError.NotFound },
     };
 
-    for (testCases, 0..) |tc, i| {
-        std.debug.print("\n routeTree test case {d}, path: {s} ", .{ i, tc.reqPath });
+    for (testCases) |tc| {
         const rTree_route = router.getRoute(tc.reqMethod, tc.reqPath) catch |err| {
             try testing.expect(err == (tc.expected catch |e| e));
             continue;

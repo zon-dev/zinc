@@ -38,22 +38,6 @@ pub const RouteError = error{
     MethodNotAllowed,
 };
 
-pub fn match(self: *Route, method: Method, target: []const u8) anyerror!*Route {
-    var url = URL.init(.{});
-    const url_target = try url.parseUrl(target);
-    const path = url_target.path;
-
-    if (self.isPathMatch(path)) {
-        if (self.isMethodAllowed(method)) {
-            return self;
-        }
-        // found route but method not allowed
-        return RouteError.MethodNotAllowed;
-    }
-
-    return RouteError.NotFound;
-}
-
 pub fn create(path: []const u8, http_method: Method, handler: HandlerFn) Route {
     var r = Route.init(.{ .method = http_method, .path = path });
     r.handlers_chain.append(handler) catch |err| {
