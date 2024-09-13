@@ -17,4 +17,11 @@ zig-out/
 /build-*/
 /docgen_tmp/
 
-ping
+libzinc.a
+libzinc.a.o
+zinc
+zinc.o
+zinc.o.o
+
+# Ignore the generated documentation befor it is published
+/docs
