@@ -22,6 +22,17 @@ fn helloWorld(ctx: *zinc.Context) anyerror!void {
 }
 ```
 
+### Some features are:
+- **Fast**
+- **Custom allocator**
+- **Multithreading**
+- **Middleware**
+- **Routes grouping**
+- **Rendering built-in**
+- **Extensible**
+- **Suite of unit tests**
+- **Usability**
+
 
 ### Documentation
 See more at https://zinc.zon.dev/
