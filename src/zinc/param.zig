@@ -3,7 +3,3 @@ const std = @import("std");
 pub const Param = @This();
 name: []const u8 = "",
 value: []const u8 = "",
-
-const page_allocator = std.heap.page_allocator;
-
-pub const params: std.StringHashMap(u8) = std.StringHashMap(u8).init(page_allocator);

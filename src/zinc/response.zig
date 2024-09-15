@@ -2,7 +2,6 @@ const std = @import("std");
 const http = std.http;
 const Server = http.Server;
 const Status = http.Status;
-const page_allocator = std.heap.page_allocator;
 
 const server_request = Server.Request;
 const server_response = Server.Response;
@@ -13,7 +12,7 @@ const Config = @import("config.zig").Config;
 pub const Response = @This();
 const Self = @This();
 
-allocator: std.mem.Allocator = page_allocator,
+allocator: std.mem.Allocator,
 req: *server_request = undefined,
 res: *server_response = undefined,
 

@@ -7,7 +7,7 @@ const RespondOptions = server_request.RespondOptions;
 pub const Request = @This();
 const Self = @This();
 
-allocator: std.mem.Allocator = std.heap.page_allocator,
+allocator: std.mem.Allocator,
 req: *server_request = undefined,
 
 header: std.StringArrayHashMap([]u8) = undefined,

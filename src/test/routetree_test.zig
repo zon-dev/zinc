@@ -6,14 +6,14 @@ const RouteTree = zinc.RouteTree;
 const RootTree = zinc.RootTree;
 
 test "RouteTree /" {
-    const allocator = std.heap.page_allocator;
-
     // Create the root of the Route Tree
+    const allocator = std.testing.allocator;
     var root = try RouteTree.init(.{
         .allocator = allocator,
         .children = std.StringHashMap(*RouteTree).init(allocator),
         .routes = std.ArrayList(*Route).init(allocator),
     });
+
     defer root.destoryRootTree();
 
     // Insert values into the Route Tree
@@ -44,6 +44,7 @@ test "RouteTree /" {
     try std.testing.expectEqualStrings(search_value, found_node.?.value);
 
     const four_path = found_node.?.getPath().?;
+    defer found_node.?.allocator.free(four_path); // Free the memory
     try std.testing.expectEqualStrings("/root/route/two/subroute/four", four_path);
 
     const route_node = root.findByValue("route");

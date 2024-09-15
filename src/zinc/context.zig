@@ -2,7 +2,6 @@ const std = @import("std");
 const URL = @import("url");
 const RespondOptions = std.http.Server.Request.RespondOptions;
 const Header = std.http.Header;
-const page_allocator = std.heap.page_allocator;
 
 const zinc = @import("../zinc.zig");
 const Request = zinc.Request;
@@ -17,7 +16,7 @@ const Self = @This();
 // const HandlerFn = zinc.HandlerFn;
 const handlerFn = *const fn (*Context) anyerror!void;
 
-allocator: std.mem.Allocator = page_allocator,
+allocator: std.mem.Allocator,
 
 server_request: *std.http.Server.Request = undefined,
 
@@ -239,8 +238,12 @@ pub fn queryValues(self: *Self, name: []const u8) anyerror!std.ArrayList([]const
 /// queryMap("ids") => {"a": ["1234"], "b": ["hello", "world"]}
 pub fn queryMap(self: *Self, map_key: []const u8) ?std.StringHashMap(std.ArrayList([]const u8)) {
     var qm: std.StringHashMap(std.ArrayList([]const u8)) = self.getQueryMap() orelse return null;
+    // defer qm.deinit();
+
     var qit = qm.iterator();
     var inner_map: std.StringHashMap(std.ArrayList([]const u8)) = std.StringHashMap(std.ArrayList([]const u8)).init(self.allocator);
+
+    // defer inner_map.deinit();
 
     while (qit.next()) |kv| {
         const key = kv.key_ptr.*;

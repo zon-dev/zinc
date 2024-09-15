@@ -6,7 +6,6 @@ const net = std.net;
 const proto = http.protocol;
 const Server = http.Server;
 const Allocator = std.mem.Allocator;
-const page_allocator = std.heap.page_allocator;
 
 const zinc = @import("../zinc.zig");
 const HandlerFn = zinc.HandlerFn;
