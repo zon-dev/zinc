@@ -3,10 +3,11 @@ const zinc = @import("../zinc.zig");
 const expect = std.testing.expect;
 
 test "Middleware" {
-    // const allocator = std.testing.allocator;
-    // var router = zinc.Router.init(.{ .allocator = allocator });
-    var router = zinc.Router.init(.{});
-    // defer router.deinit();
+    const allocator = std.testing.allocator;
+    var router = try zinc.Router.init(.{
+        .allocator = allocator,
+    });
+    defer router.deinit();
 
     const mid1 = struct {
         fn middle(ctx: *zinc.Context) anyerror!void {
@@ -28,33 +29,37 @@ test "Middleware" {
         }
     }.anyHandle;
 
-    // create a route
+    try router.use(&.{ mid1, mid2 });
     try router.get("/test", handle);
 
-    try router.use(&.{ mid1, mid2 });
     const routes = router.getRoutes();
+    defer routes.deinit();
+    // std.debug.print("\nmid1 Address {*}\n", .{&mid1});
+    // std.debug.print("mid2 Address {*}\n", .{&mid2});
+    // std.debug.print("handle Address {*}\n", .{&handle});
 
     try std.testing.expectEqual(1, routes.items.len);
     try std.testing.expectEqual(3, routes.items[0].handlers.items.len);
 
-    var ctx_get = try createContext(.GET, "/test");
+    var ctx_get = try createContext(allocator, .GET, "/test");
     defer ctx_get.destroy();
 
     const route = try router.getRoute(ctx_get.request.method, ctx_get.request.target);
-    ctx_get.handlers = route.handlers;
+    try ctx_get.handlers.appendSlice(route.handlers.items);
+    for (route.handlers.items, ctx_get.handlers.items) |handler, ctx_handler| {
+        try std.testing.expectEqual(handler, ctx_handler);
+    }
 
     // TODO
     // try ctx_get.handlersProcess();
-
-    try std.testing.expectEqual(.ok, ctx_get.response.status);
-    try std.testing.expectEqual(3, ctx_get.handlers.items.len);
-
+    // try std.testing.expectEqual(.ok, ctx_get.response.status);
+    // try std.testing.expectEqual(3, ctx_get.handlers.items.len);
     // // TODO
     // try std.testing.expectEqualStrings("Hello world!", ctx_get.response.body orelse "");
 }
 
-fn createContext(method: std.http.Method, target: []const u8) anyerror!zinc.Context {
-    var req = zinc.Request.init(.{ .method = method, .target = target });
-    var res = zinc.Response.init(.{});
-    return zinc.Context.init(.{ .request = &req, .response = &res }).?;
+fn createContext(allocator: std.mem.Allocator, method: std.http.Method, target: []const u8) anyerror!*zinc.Context {
+    var req = zinc.Request.init(.{ .method = method, .target = target, .allocator = allocator });
+    var res = zinc.Response.init(.{ .allocator = allocator });
+    return try zinc.Context.init(.{ .request = &req, .response = &res, .allocator = allocator });
 }

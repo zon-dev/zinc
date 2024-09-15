@@ -11,10 +11,10 @@ const Route = zinc.Route;
 const Router = zinc.Router;
 const RouteError = Route.RouteError;
 
-fn createContext(method: std.http.Method, target: []const u8) anyerror!Context {
+fn createContext(method: std.http.Method, target: []const u8) anyerror!*Context {
     var req = zinc.Request.init(.{ .method = method, .target = target });
     var res = zinc.Response.init(.{});
-    const ctx = zinc.Context.init(.{ .request = &req, .response = &res }).?;
+    const ctx = try zinc.Context.init(.{ .request = &req, .response = &res });
     return ctx;
 }
 

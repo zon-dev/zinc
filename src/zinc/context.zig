@@ -44,23 +44,31 @@ pub fn destroy(self: *Self) void {
     if (self.query_map != null) {
         self.query_map.?.deinit();
     }
+    if (self.handlers.items.len > 0) {
+        self.handlers.clearAndFree();
+        self.handlers.deinit();
+    }
 
-    self.handlers.deinit();
-    // self.allocator.destroy(self);
+    self.allocator.destroy(self);
 }
 
-pub fn init(self: Self) ?Context {
-    return .{
+pub fn init(self: Self) anyerror!*Context {
+    const ctx = try self.allocator.create(Context);
+    errdefer self.allocator.destroy(ctx);
+
+    ctx.* = .{
         .allocator = self.allocator,
         .request = self.request,
         .response = self.response,
-        .headers = self.headers,
+        .headers = Headers.init(.{ .allocator = self.allocator }),
         .params = std.StringHashMap(Param).init(self.allocator),
         .query = self.request.query,
         .query_map = self.query_map,
         .handlers = std.ArrayList(handlerFn).init(self.allocator),
         .index = self.index,
     };
+
+    return ctx;
 }
 
 pub fn html(self: *Self, content: []const u8, conf: Config.Context) anyerror!void {
@@ -334,6 +342,7 @@ pub fn handlersProcess(self: *Self) anyerror!void {
     if (self.handlers.items.len == 0) return;
 
     for (self.handlers.items, 0..) |handler, index| {
+        // Ignore handlers that have already been processed.
         if (index < self.index) {
             continue;
         }

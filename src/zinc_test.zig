@@ -9,6 +9,5 @@ test {
 
     // _ = @import("test/engine_test.zig");
 
-    // _ = @import("test/middleware_test.zig");
-
+    _ = @import("test/middleware_test.zig");
 }

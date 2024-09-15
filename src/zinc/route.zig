@@ -34,23 +34,27 @@ pub fn init(self: Self) anyerror!*Route {
     return route;
 }
 
-pub fn create(allocator: std.mem.Allocator, path: []const u8, http_method: Method, handler: HandlerFn) anyerror!*Route {
+pub fn create(allocator: std.mem.Allocator, path: []const u8, http_method: Method, handlers: []const HandlerFn) anyerror!*Route {
     var r = try Route.init(.{
         .method = http_method,
         .path = path,
         .allocator = allocator,
         .handlers = std.ArrayList(HandlerFn).init(allocator),
     });
-
-    r.handlers.append(handler) catch |err| {
-        std.debug.print("failed to append handler to route: {any}", .{err});
-    };
+    try r.handlers.appendSlice(handlers);
+    // r.handlers.append(handler) catch |err| {
+    //     std.debug.print("failed to append handler to route: {any}", .{err});
+    // };
 
     return r;
 }
 
 pub fn deinit(self: *Self) void {
-    self.handlers.deinit();
+    if (self.handlers.items.len > 0) {
+        self.handlers.clearAndFree();
+        self.handlers.deinit();
+    }
+    // self.handlers.deinit();
     self.allocator.destroy(self);
 }
 
@@ -195,10 +199,13 @@ pub fn isMatch(self: *Route, method: Method, path: []const u8) bool {
 pub fn use(self: *Route, handlers: []const HandlerFn) anyerror!void {
     if (self.handlers.items.len == 0) return try self.handlers.appendSlice(handlers);
 
-    const old_chain = try self.handlers.toOwnedSlice();
+    // const old_chain = try self.handlers.toOwnedSlice();
+    // const old_chain = try self.handlers.toOwnedSlice();
+    // self.allocator.free(old_chain);
 
     // const capacity = old_chain.len + handlers.len;
-    self.handlers.clearAndFree();
+    // try self.handlers.ensureTotalCapacity(capacity);
+
     try self.handlers.appendSlice(handlers);
-    try self.handlers.appendSlice(old_chain);
+    // try self.handlers.appendSlice(old_chain);
 }

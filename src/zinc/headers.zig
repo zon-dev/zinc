@@ -11,8 +11,8 @@ headers: std.ArrayList(Header) = std.ArrayList(Header).init(heap.page_allocator)
 
 pub fn init(self: Self) Headers {
     return .{
-        .headers = self.headers,
         .allocator = self.allocator,
+        .headers = std.ArrayList(Header).init(self.allocator),
     };
 }
 

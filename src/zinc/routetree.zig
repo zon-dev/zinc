@@ -143,20 +143,30 @@ pub const RouteTree = struct {
     // use middleware for this route and all its children
     pub fn use(self: *RouteTree, handlers: []const HandlerFn) anyerror!void {
         var stack = std.ArrayList(*RouteTree).init(self.allocator);
-
         defer stack.deinit();
 
         stack.append(self) catch unreachable;
 
         while (stack.items.len > 0) {
             const node: *RouteTree = stack.pop();
+
             if (node.routes != null) {
-                for (node.routes.?.items) |route| try route.use(handlers);
+                for (node.routes.?.items) |route| {
+                    route.use(handlers) catch {};
+                }
+            }
+
+            if (node.children == null) {
+                continue;
+            }
+
+            if (node.children.?.count() == 0) {
+                continue;
             }
 
             var iter = node.children.?.valueIterator();
             while (iter.next()) |child| {
-                stack.append(child.*) catch unreachable;
+                stack.append(child.*) catch {};
             }
         }
     }
@@ -260,11 +270,13 @@ pub const RouteTree = struct {
 
                 routes.appendSlice(node_routes) catch continue;
 
-                var iter = node.children.?.valueIterator();
+                if (node.children != null) {
+                    var iter = node.children.?.valueIterator();
 
-                while (iter.next()) |child| {
-                    const c: *RouteTree = child.*;
-                    childStack.append(c) catch unreachable;
+                    while (iter.next()) |child| {
+                        const c: *RouteTree = child.*;
+                        childStack.append(c) catch unreachable;
+                    }
                 }
             }
         }

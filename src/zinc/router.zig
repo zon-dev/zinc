@@ -50,12 +50,6 @@ pub fn init(self: Self) anyerror!*Router {
 pub fn deinit(self: *Self) void {
     self.middlewares.deinit();
 
-    // const routes = self.getRoutes();
-    // for (routes.items) |route| {
-    //     route.deinit();
-    // }
-    // routes.deinit();
-
     if (self.route_tree) |t| {
         t.destoryRootTree();
     }
@@ -78,6 +72,7 @@ pub fn prepareContext(self: *Self, ctx: *Context) anyerror!void {
 }
 
 /// Return routes.
+/// Make sure to call `routes.deinit()` after using it.
 pub fn getRoutes(self: *Self) std.ArrayList(*Route) {
     const rootTree = self.route_tree.?.getRoot().?;
     return rootTree.getCurrentTreeRoutes();
@@ -87,13 +82,18 @@ pub fn getRootTree(self: *Self) *RouteTree {
     return self.route_tree.?.getRoot().?;
 }
 
-pub fn add(self: *Self, method: std.http.Method, path: []const u8, handler: anytype) anyerror!void {
+pub fn add(self: *Self, method: std.http.Method, path: []const u8, handler: HandlerFn) anyerror!void {
     _ = self.getRoute(method, path) catch {
-        const route = try Route.create(self.allocator, path, method, handler);
+        var handlers = std.ArrayList(HandlerFn).init(self.allocator);
+        defer handlers.deinit();
+        try handlers.appendSlice(self.middlewares.items);
+        try handlers.append(handler);
+
+        const route = try Route.create(self.allocator, path, method, handlers.items);
         try self.addRoute(route);
     };
 
-    try self.rebuild();
+    // try self.rebuild();
 }
 
 pub fn addAny(self: *Self, http_methods: []const std.http.Method, path: []const u8, handler: HandlerFn) anyerror!void {
@@ -102,7 +102,7 @@ pub fn addAny(self: *Self, http_methods: []const std.http.Method, path: []const 
     }
 }
 
-pub fn any(self: *Self, path: []const u8, handler: anytype) anyerror!void {
+pub fn any(self: *Self, path: []const u8, handler: HandlerFn) anyerror!void {
     for (self.methods) |method| {
         try self.add(method, path, handler);
     }
@@ -123,31 +123,31 @@ pub fn addRoute(self: *Self, route: *Route) anyerror!void {
     try self.insertRouteToRouteTree(route);
 }
 
-pub fn get(self: *Self, path: []const u8, handler: anytype) anyerror!void {
+pub fn get(self: *Self, path: []const u8, handler: HandlerFn) anyerror!void {
     try self.add(.GET, path, handler);
 }
-pub fn post(self: *Self, path: []const u8, handler: anytype) anyerror!void {
+pub fn post(self: *Self, path: []const u8, handler: HandlerFn) anyerror!void {
     try self.add(.POST, path, handler);
 }
-pub fn put(self: *Self, path: []const u8, handler: anytype) anyerror!void {
+pub fn put(self: *Self, path: []const u8, handler: HandlerFn) anyerror!void {
     try self.add(.PUT, path, handler);
 }
-pub fn delete(self: *Self, path: []const u8, handler: anytype) anyerror!void {
+pub fn delete(self: *Self, path: []const u8, handler: HandlerFn) anyerror!void {
     try self.add(.DELETE, path, handler);
 }
-pub fn patch(self: *Self, path: []const u8, handler: anytype) anyerror!void {
+pub fn patch(self: *Self, path: []const u8, handler: HandlerFn) anyerror!void {
     try self.add(.PATCH, path, handler);
 }
-pub fn options(self: *Self, path: []const u8, handler: anytype) anyerror!void {
+pub fn options(self: *Self, path: []const u8, handler: HandlerFn) anyerror!void {
     try self.add(.OPTIONS, path, handler);
 }
-pub fn head(self: *Self, path: []const u8, handler: anytype) anyerror!void {
+pub fn head(self: *Self, path: []const u8, handler: HandlerFn) anyerror!void {
     try self.add(.HEAD, path, handler);
 }
-pub fn connect(self: *Self, path: []const u8, handler: anytype) anyerror!void {
+pub fn connect(self: *Self, path: []const u8, handler: HandlerFn) anyerror!void {
     try self.add(.CONNECT, path, handler);
 }
-pub fn trace(self: *Self, path: []const u8, handler: anytype) anyerror!void {
+pub fn trace(self: *Self, path: []const u8, handler: HandlerFn) anyerror!void {
     try self.add(.TRACE, path, handler);
 }
 
@@ -188,8 +188,10 @@ pub fn use(self: *Self, handler: []const HandlerFn) anyerror!void {
 
 /// Rebuild all routes.
 pub fn rebuild(self: *Self) anyerror!void {
-    const rootTree = self.route_tree.?.getRoot().?;
+    // Nothing to rebuild if there are no middlewares.
+    if (self.middlewares.items.len == 0) return;
 
+    const rootTree = self.route_tree.?.getRoot().?;
     try rootTree.use(self.middlewares.items);
 }
 

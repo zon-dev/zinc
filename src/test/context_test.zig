@@ -17,7 +17,7 @@ test "context query" {
         .target = "/query?id=1234&message=hello&message=world&ids[a]=1234&ids[b]=hello&ids[b]=world",
     });
 
-    var ctx = Context.init(.{ .request = &req }).?;
+    var ctx = try Context.init(.{ .request = &req });
 
     var qm = ctx.getQueryMap() orelse {
         return try std.testing.expect(false);
@@ -45,7 +45,7 @@ test "context query map" {
         .target = "/query?ids[a]=1234&ids[b]=hello&ids[b]=world",
     });
 
-    var ctx = Context.init(.{ .request = &req }).?;
+    var ctx = try Context.init(.{ .request = &req });
 
     var ids: std.StringHashMap(std.ArrayList([]const u8)) = ctx.queryMap("ids") orelse return try std.testing.expect(false);
     try std.testing.expectEqualStrings(ids.get("a").?.items[0], "1234");
