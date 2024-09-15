@@ -37,86 +37,91 @@ test "Zinc with custom Allocator" {
     z.shutdown(0);
 }
 
-// test "Zinc Server" {
-//     var gpa = std.heap.GeneralPurposeAllocator(.{
-//         .verbose_log = true,
-//         .thread_safe = true,
-//         .safety = true,
-//     }){};
-//     defer _ = gpa.deinit();
-//     const allocator = gpa.allocator();
+test "Zinc Server" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{
+        // .verbose_log = true,
+        // TODO
+        // .thread_safe = true,
+        // .safety = true,
+    }){};
+    // defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
 
-//     var z = try zinc.init(.{ .num_threads = 1, .allocator = allocator });
-//     defer z.deinit();
+    var z = try zinc.init(.{ .num_threads = 100, .allocator = allocator });
+    defer z.deinit();
 
-//     var router = z.getRouter();
-//     try router.get("/test", testHanle);
+    defer z.shutdown(0);
 
-//     try std.testing.expectEqual(1, router.getRoutes().items.len);
-//     try std.testing.expectEqual(1, router.getRoutes().items[0].handlers.items.len);
+    var router = z.getRouter();
+    try router.get("/test", testHanle);
+    const routes = router.getRoutes();
+    defer routes.deinit();
 
-//     // Create an HTTP client.
-//     var client = std.http.Client{ .allocator = z.allocator };
-//     defer client.deinit();
-//     const url = try std.fmt.allocPrint(z.allocator, "http://127.0.0.1:{any}/test", .{z.getPort()});
-//     var req = try fetch(&client, .{ .method = .GET, .location = .{ .url = url } });
-//     defer req.deinit();
+    try std.testing.expectEqual(1, routes.items.len);
+    try std.testing.expectEqual(1, routes.items[0].handlers.items.len);
 
-//     const body_buffer = req.reader().readAllAlloc(z.allocator, req.response.content_length orelse 8 * 1024) catch unreachable;
+    // Create an HTTP client.
+    var client = std.http.Client{ .allocator = z.allocator };
+    defer client.deinit();
+    const url = try std.fmt.allocPrint(z.allocator, "http://127.0.0.1:{any}/test", .{z.getPort()});
+    var req = try fetch(&client, .{ .method = .GET, .location = .{ .url = url } });
+    defer req.deinit();
 
-//     try std.testing.expectEqualStrings("Hello, World!", body_buffer);
+    const body_buffer = req.reader().readAllAlloc(z.allocator, req.response.content_length.?) catch unreachable;
 
-//     // test use middleware
-//     try router.use(&.{zinc.Middleware.cors()});
-//     try std.testing.expectEqual(1, router.getRoutes().items.len);
-//     try std.testing.expectEqual(2, router.getRoutes().items[0].handlers.items.len);
+    try std.testing.expectEqualStrings("Hello, World!", body_buffer);
 
-//     // Create an HTTP client.
-//     var req2 = try fetch(&client, .{ .method = .GET, .location = .{ .url = url } });
-//     defer req2.deinit();
+    // test use middleware
+    try router.use(&.{zinc.Middleware.cors()});
+    try std.testing.expectEqual(1, router.getRoutes().items.len);
+    try std.testing.expectEqual(2, router.getRoutes().items[0].handlers.items.len);
 
-//     // var header_buffer: []u8 = undefined;
-//     // header_buffer = try z.allocator.alloc(u8, 1024);
-//     // header_buffer = req.response.parser.get();
+    // Create an HTTP client.
+    var req2 = try fetch(&client, .{ .method = .GET, .location = .{ .url = url } });
+    defer req2.deinit();
 
-//     // TODO
-//     // Access-Control-Allow-Origin
-// }
+    var header_buffer: []u8 = undefined;
+    header_buffer = try z.allocator.alloc(u8, 1024);
+    header_buffer = req.response.parser.get();
 
-// fn testHanle(ctx: *Context) anyerror!void {
-//     try ctx.text("Hello, World!", .{});
-// }
+    // TODO
+    // Access-Control-Allow-Origin
+}
 
-// /// see  std.http.Client.fetch
-// fn fetch(client: *std.http.Client, options: std.http.Client.FetchOptions) !std.http.Client.Request {
-//     const uri = switch (options.location) {
-//         .url => |u| try std.Uri.parse(u),
-//         .uri => |u| u,
-//     };
-//     // var server_header_buffer = options.server_header_buffer orelse (16 * 1024);
-//     var server_header_buffer: [1024]u8 = undefined;
+fn testHanle(ctx: *Context) anyerror!void {
+    try ctx.text("Hello, World!", .{});
+}
 
-//     const method: std.http.Method = options.method orelse
-//         if (options.payload != null) .POST else .GET;
+/// see  std.http.Client.fetch
+fn fetch(client: *std.http.Client, options: std.http.Client.FetchOptions) !std.http.Client.Request {
+    const uri = switch (options.location) {
+        .url => |u| try std.Uri.parse(u),
+        .uri => |u| u,
+    };
+    // var server_header_buffer = options.server_header_buffer orelse (16 * 1024);
+    var server_header_buffer: [1024]u8 = undefined;
 
-//     var req = try std.http.Client.open(client, method, uri, .{
-//         .server_header_buffer = options.server_header_buffer orelse &server_header_buffer,
-//         .redirect_behavior = options.redirect_behavior orelse
-//             if (options.payload == null) @enumFromInt(3) else .unhandled,
-//         .headers = options.headers,
-//         .extra_headers = options.extra_headers,
-//         .privileged_headers = options.privileged_headers,
-//         // .keep_alive = options.keep_alive,
-//         .keep_alive = false,
-//     });
+    const method: std.http.Method = options.method orelse
+        if (options.payload != null) .POST else .GET;
 
-//     if (options.payload) |payload| req.transfer_encoding = .{ .content_length = payload.len };
+    var req = try std.http.Client.open(client, method, uri, .{
+        .server_header_buffer = options.server_header_buffer orelse &server_header_buffer,
+        .redirect_behavior = options.redirect_behavior orelse
+            if (options.payload == null) @enumFromInt(3) else .unhandled,
+        .headers = options.headers,
+        .extra_headers = options.extra_headers,
+        .privileged_headers = options.privileged_headers,
+        // .keep_alive = options.keep_alive,
+        .keep_alive = false,
+    });
 
-//     try req.send();
+    if (options.payload) |payload| req.transfer_encoding = .{ .content_length = payload.len };
 
-//     if (options.payload) |payload| try req.writeAll(payload);
+    try req.send();
 
-//     try req.finish();
-//     try req.wait();
-//     return req;
-// }
+    if (options.payload) |payload| try req.writeAll(payload);
+
+    try req.finish();
+    try req.wait();
+    return req;
+}

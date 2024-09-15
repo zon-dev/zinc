@@ -113,6 +113,11 @@ pub fn init(conf: Config.Engine) anyerror!*Engine {
 pub fn deinit(self: *Self) void {
     std.debug.print("\nEngine is stopping", .{});
 
+    if (!self.stopping.isSet()) self.stopping.set();
+
+    // Broadcast to all threads to stop.
+    self.cond.broadcast();
+
     if (std.net.tcpConnectToAddress(self.net_server.listen_address)) |c| c.close() else |_| {}
     self.net_server.deinit();
 
@@ -122,7 +127,7 @@ pub fn deinit(self: *Self) void {
             // std.debug.print("\nThread is closed. {d}", .{i});
             t.join();
         }
-        std.debug.print("\nAll threads have been shut down. {d}", .{self.threads.items.len});
+        std.debug.print("\nAll threads have been release. Threads count: {d}", .{self.threads.items.len});
         self.threads.deinit();
         std.debug.print("\nThreads deinit", .{});
     }
