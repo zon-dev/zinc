@@ -66,7 +66,8 @@ pub fn setBody(self: *Self, body: []const u8) anyerror!void {
 
 pub fn sendStatus(self: *Self, status: Status) server_response.WriteError!void {
     self.status = status;
-    return try self.req.respond(self.body.?, .{
+    const body = self.body orelse "";
+    return try self.req.respond(body, .{
         .status = self.status,
         .extra_headers = self.header.items,
     });

@@ -39,10 +39,9 @@ test "Zinc with custom Allocator" {
 
 test "Zinc Server" {
     var gpa = std.heap.GeneralPurposeAllocator(.{
-        // .verbose_log = true,
-        // TODO
-        // .thread_safe = true,
-        // .safety = true,
+        .verbose_log = true,
+        .thread_safe = true,
+        .safety = true,
     }){};
     // defer _ = gpa.deinit();
     const allocator = gpa.allocator();
@@ -76,16 +75,55 @@ test "Zinc Server" {
     try std.testing.expectEqual(1, router.getRoutes().items.len);
     try std.testing.expectEqual(2, router.getRoutes().items[0].handlers.items.len);
 
+    // Add OPTIONS method to the route
+    try router.options("/test", testHanle);
     // Create an HTTP client.
-    var req2 = try fetch(&client, .{ .method = .GET, .location = .{ .url = url } });
+    var req2 = try fetch(&client, .{ .method = .OPTIONS, .location = .{ .url = url } });
     defer req2.deinit();
 
     var header_buffer: []u8 = undefined;
     header_buffer = try z.allocator.alloc(u8, 1024);
-    header_buffer = req.response.parser.get();
+    header_buffer = req2.response.parser.get();
 
-    // TODO
-    // Access-Control-Allow-Origin
+    std.debug.print("header_buffer: \n{s}\n", .{header_buffer});
+    // HTTP/1.1 204 No Content
+    // connection: close
+    // content-length: 0
+    // Access-Control-Allow-Origin: *
+    // Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS
+    // Access-Control-Allow-Headers: Content-Type
+    // Access-Control-Allow-Private-Network: true
+
+    var it = std.http.HeaderIterator.init(header_buffer);
+    try std.testing.expect(!it.is_trailer);
+
+    {
+        const header = it.next().?;
+        try std.testing.expect(!it.is_trailer);
+        try std.testing.expectEqualStrings("connection", header.name);
+        try std.testing.expectEqualStrings("close", header.value);
+    }
+
+    {
+        const header = it.next().?;
+        try std.testing.expect(!it.is_trailer);
+        try std.testing.expectEqualStrings("content-length", header.name);
+        try std.testing.expectEqualStrings("0", header.value);
+    }
+
+    {
+        const header = it.next().?;
+        try std.testing.expect(!it.is_trailer);
+        try std.testing.expectEqualStrings("Access-Control-Allow-Origin", header.name);
+        try std.testing.expectEqualStrings("*", header.value);
+    }
+
+    {
+        const header = it.next().?;
+        try std.testing.expect(!it.is_trailer);
+        try std.testing.expectEqualStrings("Access-Control-Allow-Methods", header.name);
+        try std.testing.expectEqualStrings("GET, POST, PUT, DELETE, OPTIONS", header.value);
+    }
 }
 
 fn testHanle(ctx: *Context) anyerror!void {
