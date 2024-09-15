@@ -5,7 +5,7 @@ const net = std.net;
 const proto = http.protocol;
 const Server = http.Server;
 const Allocator = std.mem.Allocator;
-const page_allocator = std.heap.page_allocator;
+const Condition = std.Thread.Condition;
 
 const URL = @import("url");
 
@@ -13,10 +13,11 @@ const zinc = @import("../zinc.zig");
 const Router = zinc.Router;
 const Route = zinc.Route;
 const RouterGroup = zinc.RouterGroup;
+const RouteTree = zinc.RouteTree;
 const Context = zinc.Context;
 const Request = zinc.Request;
 const Response = zinc.Response;
-const config = zinc.Config;
+const Config = zinc.Config;
 const HandlerFn = zinc.HandlerFn;
 const Catchers = zinc.Catchers;
 
@@ -25,7 +26,7 @@ const default_response = @import("default_response.zig");
 pub const Engine = @This();
 const Self = @This();
 
-allocator: Allocator = page_allocator,
+allocator: Allocator = undefined,
 
 net_server: std.net.Server,
 
@@ -35,18 +36,26 @@ stopping: std.Thread.ResetEvent = .{},
 stopped: std.Thread.ResetEvent = .{},
 mutex: std.Thread.Mutex = .{},
 
+/// see at https://github.com/ziglang/zig/blob/master/lib/std/Thread/Condition.zig
+cond: Condition = .{},
+completed: Condition = .{},
+num_threads: usize = 0,
+spawn_count: usize = 0,
+
+stack_size: usize = undefined,
+
 // buffer len
 read_buffer_len: usize = undefined,
 header_buffer_len: usize = undefined,
 body_buffer_len: usize = undefined,
 
 // options
-router: Router = undefined,
-catchers: Catchers = undefined,
-middlewares: std.ArrayList(HandlerFn) = undefined,
+router: ?*Router = undefined,
+catchers: ?*Catchers = undefined,
+middlewares: ?std.ArrayList(HandlerFn) = undefined,
 
 /// Create a new engine.
-fn create(comptime conf: config.Engine) !*Engine {
+fn create(conf: Config.Engine) anyerror!*Engine {
     const engine = try conf.allocator.create(Engine);
     errdefer conf.allocator.destroy(engine);
 
@@ -54,44 +63,85 @@ fn create(comptime conf: config.Engine) !*Engine {
     var listener = try address.listen(.{ .reuse_address = true });
     errdefer listener.deinit();
 
-    engine.* = .{
+    const route_tree = try RouteTree.init(.{
+        .allocator = conf.allocator,
+        .children = std.StringHashMap(*RouteTree).init(conf.allocator),
+        .routes = std.ArrayList(*Route).init(conf.allocator),
+    });
+    errdefer route_tree.destroy();
+
+    engine.* = Engine{
         .allocator = conf.allocator,
         .net_server = listener,
 
-        // buffer len
         .read_buffer_len = conf.read_buffer_len,
         .header_buffer_len = conf.header_buffer_len,
         .body_buffer_len = conf.body_buffer_len,
 
-        // options
-        .catchers = Catchers.init(conf.allocator),
-        .router = Router.init(.{ .allocator = conf.allocator }),
+        .router = try Router.init(.{
+            .allocator = conf.allocator,
+            .middlewares = std.ArrayList(HandlerFn).init(conf.allocator),
+        }),
+        .catchers = try Catchers.init(conf.allocator),
         .middlewares = std.ArrayList(HandlerFn).init(conf.allocator),
+        .threads = std.ArrayList(std.Thread).init(conf.allocator),
+
+        .num_threads = conf.num_threads,
+        .stack_size = conf.stack_size,
     };
+
+    if (engine.num_threads > 0) {
+        for (engine.num_threads) |_| {
+            const thread = try std.Thread.spawn(.{
+                .stack_size = engine.stack_size,
+                .allocator = engine.allocator,
+            }, Engine.worker, .{engine});
+
+            std.debug.print("\nCreate worker thread", .{});
+            try engine.threads.append(thread);
+        }
+    }
 
     return engine;
 }
 
 /// Initialize the engine.
-pub fn init(comptime conf: config.Engine) anyerror!*Engine {
-    var engine = try create(conf);
-    errdefer conf.allocator.destroy(engine);
-    if (conf.threads_len == 0) return engine;
+pub fn init(conf: Config.Engine) anyerror!*Engine {
+    return try create(conf);
+}
 
-    var threads = std.ArrayList(std.Thread).init(conf.allocator);
-    errdefer conf.allocator.free(threads.items);
-    for (conf.threads_len) |_| {
-        const thread = try std.Thread.spawn(.{
-            .stack_size = conf.stack_size,
-            .allocator = conf.allocator,
-        }, Engine.worker, .{engine});
+pub fn deinit(self: *Self) void {
+    std.debug.print("\nEngine is stopping", .{});
 
-        try threads.append(thread);
+    if (std.net.tcpConnectToAddress(self.net_server.listen_address)) |c| c.close() else |_| {}
+    self.net_server.deinit();
+
+    if (self.threads.items.len > 0) {
+        for (self.threads.items, 0..) |*t, i| {
+            std.debug.print("\nThread is closed. {d}", .{i});
+            t.join();
+        }
+        std.debug.print("\nAll threads have been shut down. {d}", .{self.threads.items.len});
+        self.threads.deinit();
+        std.debug.print("\nThreads deinit", .{});
     }
 
-    engine.threads = threads;
+    std.debug.print("\nMiddlewares deinit", .{});
+    if (self.middlewares) |m| m.deinit();
 
-    return engine;
+    std.debug.print("\nCatchers deinit", .{});
+    if (self.catchers) |c| c.deinit();
+
+    std.debug.print("\nRouter deinit", .{});
+    if (self.router) |r| r.deinit();
+
+    std.debug.print("\nEngine is stopped", .{});
+    if (!self.stopped.isSet()) self.stopped.set();
+
+    std.debug.print("\nDestroy engine.", .{});
+    self.allocator.destroy(self);
+
+    std.debug.print("\n-------------- All Done. --------------\r\n", .{});
 }
 
 /// Accept a new connection.
@@ -103,45 +153,57 @@ fn accept(self: *Engine) ?std.net.Server.Connection {
 
     const conn = self.net_server.accept() catch |e| {
         if (self.stopping.isSet()) return null;
+
         switch (e) {
             error.ConnectionAborted => {
-                // try again
-                return self.accept();
+                // return self.accept();
+                return null;
             },
-            else => return null,
+            else => return {
+                return null;
+            },
         }
     };
-
-    // const timeout = std.posix.timeval{
-    //     .sec = @as(i32, 10),
-    //     .usec = @as(i32, 0),
-    // };
-    // std.posix.setsockopt(conn.stream.handle, std.posix.SOL.SOCKET, std.posix.SO.RCVTIMEO, std.mem.asBytes(&timeout)) catch {};
 
     return conn;
 }
 
 /// Run the server. This function will block the current thread.
 pub fn run(self: *Engine) !void {
-    defer self.destroy();
+    // defer self.deinit();
     self.wait();
 }
 
 /// Allocate server worker threads
 fn worker(self: *Engine) anyerror!void {
+    self.spawn_count += 1;
+    std.debug.print("\nworker is running. {d}", .{self.spawn_count});
+
+    // var arena = std.heap.ArenaAllocator.init(self.allocator);
+    // defer arena.deinit();
+    // const engine_allocator = arena.allocator();
+
     const engine_allocator = self.allocator;
-    var router = self.router;
-    const catchers = self.catchers;
-    var read_buffer: []u8 = undefined;
+
+    var router = self.getRouter();
+    const catchers = self.getCatchers();
 
     const read_buffer_len = self.read_buffer_len;
+    var read_buffer: []u8 = undefined;
     read_buffer = try engine_allocator.alloc(u8, read_buffer_len);
     defer engine_allocator.free(read_buffer);
 
+    // Engine is stopping.
+    if (self.stopping.isSet()) return;
+
     accept: while (self.accept()) |conn| {
+        if (self.stopping.isSet()) return;
+
         var http_server = http.Server.init(conn, read_buffer);
 
         ready: while (http_server.state == .ready) {
+            // defer _ = arena.reset(.{ .retain_with_limit = read_buffer_len });
+
             var request = http_server.receiveHead() catch |err| switch (err) {
                 error.HttpConnectionClosing => continue :ready,
                 error.HttpHeadersOversize => return default_response.requestHeaderFieldsTooLarge(conn.stream),
@@ -156,12 +218,11 @@ fn worker(self: *Engine) anyerror!void {
             var ctx = Context.init(.{ .request = &req, .response = &res, .server_request = &request, .allocator = engine_allocator }).?;
 
             const match_route = router.getRoute(request.head.method, request.head.target) catch |err| {
-                try catchRouteError(@constCast(&catchers), err, conn.stream, &ctx);
+                try catchRouteError(@constCast(catchers), err, conn.stream, &ctx);
                 continue :accept;
             };
-            // TODO ??
-            // match_route.handle(&ctx) catch try default_response.internalServerError(conn.stream);
 
+            // TODO ??
             ctx.handlers = match_route.handlers;
             ctx.handle() catch try default_response.internalServerError(conn.stream);
         }
@@ -200,34 +261,36 @@ fn catchRouteError(self: *Catchers, err: anyerror, stream: net.Stream, ctx: *Con
     }
 }
 
-pub fn destroy(self: *Self) void {
-    self.stopping.set();
+/// Create a new engine with default options.
+/// The default options are:
+/// - addr: "127.0.0.1" (default address)
+/// - port: 0 (random port)
+/// - allocator: arena.allocator (std.heap.ArenaAllocator with std.heap.GeneralPurposeAllocator)
+/// - read_buffer_len: 10240 (10KB)
+/// - header_buffer_len: 1024 (1KB)
+/// - body_buffer_len: 8192 (8KB)
+/// - stack_size: 10485760 (10MB)
+/// - num_threads: 8 (8 threads)
+pub fn default() anyerror!*Engine {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var arena = std.heap.ArenaAllocator.init(gpa.allocator());
 
-    if (std.net.tcpConnectToAddress(self.net_server.listen_address)) |c| c.close() else |_| {}
-    self.net_server.deinit();
-
-    for (self.threads.items, 1..) |t, i| {
-        t.join();
-        std.debug.print("\nthread {d} is closed", .{i});
+    defer {
+        arena.deinit();
+        const deinit_status = gpa.deinit();
+        if (deinit_status == .leak) {
+            std.debug.print("memory leak detected", .{});
+        }
     }
 
-    // TODO
-    // self.allocator.free(self.threads.items);
-    // self.router.deinit();
-    // self.catchers.catchers.deinit();
-    // self.middlewares.deinit();
+    const allocator = arena.allocator();
 
-    self.stopped.set();
-    self.allocator.destroy(self);
-    std.debug.print("\nengine is stopped", .{});
-}
-
-// create a default engine
-pub fn default() anyerror!*Engine {
-    return init(.{
+    var engine = try init(.{
         .addr = "127.0.0.1",
         .port = 0,
     });
+    engine.allocator = allocator;
+    return engine;
 }
 
 pub fn getPort(self: *Self) u16 {
@@ -244,8 +307,14 @@ pub fn wait(self: *Self) void {
 }
 
 /// Shutdown the server.
-pub fn shutdown(self: *Self) void {
-    self.stopping.set();
+pub fn shutdown(self: *Self, timeout_ns: u64) void {
+    std.time.sleep(timeout_ns);
+    std.debug.print("\nEngine is shutting down", .{});
+    if (!self.stopping.isSet()) self.stopping.set();
+
+    if (!self.stopped.isSet()) {
+        self.stopped.set();
+    }
 }
 
 /// Add custom router to engine.s
@@ -255,12 +324,12 @@ pub fn addRouter(self: *Self, r: Router) void {
 
 /// Get the router.
 pub fn getRouter(self: *Self) *Router {
-    return &self.router;
+    return self.router.?;
 }
 
 /// Get the catchers.
 pub fn getCatchers(self: *Self) *Catchers {
-    return &self.catchers;
+    return self.catchers.?;
 }
 
 /// Get the catcher by status.
@@ -270,22 +339,22 @@ fn getCatcher(self: *Self, status: http.Status) ?HandlerFn {
 
 /// use middleware to match any route
 pub fn use(self: *Self, handlers: []const HandlerFn) anyerror!void {
-    try self.middlewares.appendSlice(handlers);
-    try self.router.use(handlers);
+    try self.middlewares.?.appendSlice(handlers);
+    try self.router.?.use(handlers);
 }
 
 fn routeRebuild(self: *Self) anyerror!void {
-    self.router.use(self.middlewares.items);
+    self.router.?.use(self.middlewares.items);
 }
 
 // Serve a static file.
 pub fn StaticFile(self: *Self, path: []const u8, file_name: []const u8) anyerror!void {
-    try self.router.staticFile(path, file_name);
+    try self.router.?.staticFile(path, file_name);
 }
 
 /// Serve a static directory.
 pub fn static(self: *Self, path: []const u8, dir_name: []const u8) anyerror!void {
-    try self.router.static(path, dir_name);
+    try self.router.?.static(path, dir_name);
 }
 
 /// Engine error.

@@ -30,29 +30,37 @@ methods: []const std.http.Method = &[_]std.http.Method{
     .TRACE,
 },
 
-allocator: Allocator = page_allocator,
+allocator: Allocator = undefined,
 
-middlewares: std.ArrayList(HandlerFn) = std.ArrayList(HandlerFn).init(page_allocator),
+middlewares: std.ArrayList(HandlerFn) = undefined,
 
-route_tree: *RouteTree = undefined,
+route_tree: ?*RouteTree = undefined,
 
-pub fn init(self: Self) Router {
-    const root = RouteTree.create(.{ .allocator = self.allocator }) catch unreachable;
-    return .{
+pub fn init(self: Self) anyerror!*Router {
+    const r = try self.allocator.create(Router);
+    errdefer self.allocator.destroy(r);
+    r.* = .{
         .allocator = self.allocator,
         .middlewares = std.ArrayList(HandlerFn).init(self.allocator),
-        .route_tree = root,
+        .route_tree = try RouteTree.init(.{ .allocator = self.allocator }),
     };
+    return r;
 }
 
 pub fn deinit(self: *Self) void {
     self.middlewares.deinit();
-    self.route_tree.destroy();
-    // const rootTree = self.getRouteTree("/") catch return;
-    // rootTree.destroy();
 
-    const routes = self.getRoutes();
-    self.allocator.free(routes.items);
+    // const routes = self.getRoutes();
+    // for (routes.items) |route| {
+    //     route.deinit();
+    // }
+    // routes.deinit();
+
+    if (self.route_tree) |t| {
+        t.destoryRootTree();
+    }
+
+    self.allocator.destroy(self);
 }
 
 pub fn handleContext(self: *Self, ctx: *Context) anyerror!void {
@@ -70,18 +78,18 @@ pub fn prepareContext(self: *Self, ctx: *Context) anyerror!void {
 }
 
 /// Return routes.
-pub fn getRoutes(self: *Self) std.ArrayList(Route) {
-    const rootTree = self.route_tree.getRoot().?;
+pub fn getRoutes(self: *Self) std.ArrayList(*Route) {
+    const rootTree = self.route_tree.?.getRoot().?;
     return rootTree.getCurrentTreeRoutes();
 }
 
 pub fn getRootTree(self: *Self) *RouteTree {
-    return self.route_tree.getRoot().?;
+    return self.route_tree.?.getRoot().?;
 }
 
 pub fn add(self: *Self, method: std.http.Method, path: []const u8, handler: anytype) anyerror!void {
     _ = self.getRoute(method, path) catch {
-        const route = Route.create(path, method, handler);
+        const route = try Route.create(self.allocator, path, method, handler);
         try self.addRoute(route);
     };
 
@@ -100,18 +108,19 @@ pub fn any(self: *Self, path: []const u8, handler: anytype) anyerror!void {
     }
 }
 
-fn insertRouteToRouteTree(self: *Self, route: Route) anyerror!void {
+fn insertRouteToRouteTree(self: *Self, route: *Route) anyerror!void {
     var url = URL.init(.{});
     const url_target = try url.parseUrl(route.path);
     const path: []const u8 = url_target.path;
 
-    const rTree = try self.route_tree.insert(path);
-    try rTree.routes.append(route);
+    var rTree = try self.route_tree.?.insert(path);
+    if (!rTree.isRouteExist(route)) {
+        try rTree.routes.?.append(route);
+    }
 }
 
-pub fn addRoute(self: *Self, route: Route) anyerror!void {
+pub fn addRoute(self: *Self, route: *Route) anyerror!void {
     try self.insertRouteToRouteTree(route);
-    // try self.routes.append(route);
 }
 
 pub fn get(self: *Self, path: []const u8, handler: anytype) anyerror!void {
@@ -147,9 +156,10 @@ fn getRouteTree(self: *Self, target: []const u8) anyerror!*RouteTree {
     const url_target = try url.parseUrl(target);
     const path = url_target.path;
 
-    const rTree = self.route_tree.find(path);
-    if (rTree == null) return Route.RouteError.NotFound;
-    return rTree.?;
+    if (self.route_tree) |t| {
+        if (t.find(path)) |f| return f;
+    }
+    return error.NotFound;
 }
 
 pub fn getRoute(self: *Self, method: std.http.Method, target: []const u8) anyerror!*Route {
@@ -159,15 +169,16 @@ pub fn getRoute(self: *Self, method: std.http.Method, target: []const u8) anyerr
 
     const rTree = try self.getRouteTree(path);
 
-    if (rTree.routes.items.len == 0) return Route.RouteError.NotFound;
-    for (rTree.routes.items) |*route| {
-        if (route.isMethodAllowed(method)) {
-            // if (route.handlers.items.len == 0) return Route.RouteError.HandlersEmpty;
-            return route;
+    if (rTree.routes) |*routes| {
+        for (routes.items) |r| {
+            if (r.method == method) {
+                return r;
+            }
         }
+        return Route.RouteError.MethodNotAllowed;
     }
 
-    return Route.RouteError.MethodNotAllowed;
+    return Route.RouteError.NotFound;
 }
 
 pub fn use(self: *Self, handler: []const HandlerFn) anyerror!void {
@@ -177,7 +188,8 @@ pub fn use(self: *Self, handler: []const HandlerFn) anyerror!void {
 
 /// Rebuild all routes.
 pub fn rebuild(self: *Self) anyerror!void {
-    const rootTree = self.route_tree.getRoot().?;
+    const rootTree = self.route_tree.?.getRoot().?;
+
     try rootTree.use(self.middlewares.items);
 }
 

@@ -12,21 +12,46 @@ const HandlerFn = zinc.HandlerFn;
 pub const Route = @This();
 const Self = @This();
 
-allocator: std.mem.Allocator = std.heap.page_allocator,
+allocator: std.mem.Allocator,
 
-method: Method = undefined,
+method: Method,
 
-path: []const u8 = "*",
+path: []const u8,
 
-handlers: std.ArrayList(HandlerFn) = undefined,
+handlers: std.ArrayList(HandlerFn),
 
-pub fn init(self: Self) Route {
-    return .{
+pub fn init(self: Self) anyerror!*Route {
+    const route = try self.allocator.create(Route);
+    errdefer self.allocator.destroy(route);
+
+    route.* = .{
         .allocator = self.allocator,
         .method = self.method,
         .path = self.path,
         .handlers = std.ArrayList(HandlerFn).init(self.allocator),
     };
+
+    return route;
+}
+
+pub fn create(allocator: std.mem.Allocator, path: []const u8, http_method: Method, handler: HandlerFn) anyerror!*Route {
+    var r = try Route.init(.{
+        .method = http_method,
+        .path = path,
+        .allocator = allocator,
+        .handlers = std.ArrayList(HandlerFn).init(allocator),
+    });
+
+    r.handlers.append(handler) catch |err| {
+        std.debug.print("failed to append handler to route: {any}", .{err});
+    };
+
+    return r;
+}
+
+pub fn deinit(self: *Self) void {
+    self.handlers.deinit();
+    self.allocator.destroy(self);
 }
 
 pub const RouteError = error{
@@ -40,14 +65,6 @@ pub const RouteError = error{
     // Handlers is empty
     HandlersEmpty,
 };
-
-pub fn create(path: []const u8, http_method: Method, handler: HandlerFn) Route {
-    var r = Route.init(.{ .method = http_method, .path = path });
-    r.handlers.append(handler) catch |err| {
-        std.debug.print("failed to append handler to route: {any}", .{err});
-    };
-    return r;
-}
 
 pub fn any(path: []const u8, handler: anytype) Route {
     const ms = [_]Method{ .GET, .POST, .PUT, .DELETE, .PATCH, .OPTIONS, .HEAD, .CONNECT, .TRACE };
@@ -179,6 +196,8 @@ pub fn use(self: *Route, handlers: []const HandlerFn) anyerror!void {
     if (self.handlers.items.len == 0) return try self.handlers.appendSlice(handlers);
 
     const old_chain = try self.handlers.toOwnedSlice();
+
+    // const capacity = old_chain.len + handlers.len;
     self.handlers.clearAndFree();
     try self.handlers.appendSlice(handlers);
     try self.handlers.appendSlice(old_chain);

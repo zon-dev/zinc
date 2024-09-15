@@ -11,16 +11,27 @@ const page_allocator = std.heap.page_allocator;
 const zinc = @import("../zinc.zig");
 const HandlerFn = zinc.HandlerFn;
 
-pub const Self = @This();
+pub const Catchers = @This();
+const Self = @This();
 
-allocator: Allocator = page_allocator,
-catchers: std.AutoHashMap(Status, HandlerFn) = undefined,
+allocator: Allocator,
+catchers: std.AutoHashMap(Status, HandlerFn),
 
-pub fn init(allocator: Allocator) Self {
-    return .{
+pub fn init(allocator: std.mem.Allocator) anyerror!*Catchers {
+    const c = try allocator.create(Catchers);
+    errdefer allocator.destroy(c);
+
+    c.* = .{
         .allocator = allocator,
         .catchers = std.AutoHashMap(Status, HandlerFn).init(allocator),
     };
+
+    return c;
+}
+
+pub fn deinit(self: *Self) void {
+    self.catchers.deinit();
+    self.allocator.destroy(self);
 }
 
 pub fn get(self: *Self, status: Status) ?HandlerFn {

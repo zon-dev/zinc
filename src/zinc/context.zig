@@ -81,7 +81,9 @@ pub fn json(self: *Self, value: anytype, conf: Config.Context) anyerror!void {
 
     try std.json.stringify(value, .{}, string.writer());
     try self.headers.add("Content-Type", "application/json");
-    try self.setBody(try string.toOwnedSlice());
+    const slice = try string.toOwnedSlice();
+
+    try self.setBody(slice);
     try self.setStatus(conf.status);
 }
 

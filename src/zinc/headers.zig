@@ -21,7 +21,7 @@ pub fn add(self: *Headers, name: []const u8, value: []const u8) anyerror!void {
     try self.headers.append(header);
 }
 
-pub fn get(self: *Headers, comptime name: []const u8) ?Header {
+pub fn get(self: *Headers, name: []const u8) ?Header {
     const headers = self.headers.items;
     for (headers) |header| {
         if (std.ascii.eqlIgnoreCase(header.name, name)) {
@@ -35,14 +35,14 @@ pub fn getHeaders(self: *Headers) []Header {
     return self.headers.items;
 }
 
-pub fn set(self: *Headers, comptime name: []const u8, comptime value: []const u8) anyerror!void {
+pub fn set(self: *Headers, name: []const u8, value: []const u8) anyerror!void {
     if (self.get(name) != null) {
         try self.remove(name);
     }
     try self.add(name, value);
 }
 
-pub fn remove(self: *Headers, comptime name: []const u8) anyerror!void {
+pub fn remove(self: *Headers, name: []const u8) anyerror!void {
     const headers = self.headers.items;
     for (headers, 0..) |header, index| {
         if (std.ascii.eqlIgnoreCase(header.name, name)) {

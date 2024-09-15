@@ -3,6 +3,7 @@ const testing = std.testing;
 const http = std.http;
 
 const zinc = @import("../zinc.zig");
+const HandlerFn = zinc.HandlerFn;
 const Request = zinc.Request;
 const Response = zinc.Response;
 const Context = zinc.Context;
@@ -49,68 +50,117 @@ fn createTestServer(S: type) !*TestServer {
     return test_server;
 }
 
-// test "Router. Handle Request" {
-//     var router = Router.init(.{});
+test "Router. Handle Request" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{
+        .verbose_log = true,
+        .thread_safe = true,
+        .safety = true,
+    }){};
+    defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
+    // const allocator = std.testing.allocator;
 
-//     const handle = struct {
-//         fn anyHandle(ctx: *Context) anyerror!void {
-//             try ctx.text("Hello Zinc!", .{});
-//         }
-//     }.anyHandle;
-//     try router.get("/", handle);
-//     try router.post("/", handle);
+    var router = try Router.init(.{
+        .allocator = allocator,
+    });
+    defer router.deinit();
 
-//     // GET Request.
-//     var ctx_get = try createContext(.GET, "/");
-//     try router.prepareContext(&ctx_get);
-//     // TODO
-//     // try testing.expectEqual(.ok, ctx_get.response.status);
-//     try testing.expectEqualStrings("Hello Zinc!", ctx_get.response.body.?);
-//     defer ctx_get.destroy();
-//     std.debug.print("\r\n Done handle GET request test", .{});
+    // const handle = struct {
+    //     fn anyHandle(ctx: *Context) anyerror!void {
+    //         try ctx.text("Hello Zinc!", .{});
+    //     }
+    // }.anyHandle;
+    // try router.get("/", handle);
 
-//     // POST Request.
-//     var ctx_post = try createContext(.POST, "/");
-//     try router.prepareContext(&ctx_post);
-//     // TODO
-//     // try testing.expectEqual(.ok, ctx_post.response.status);
-//     try testing.expectEqualStrings("Hello Zinc!", ctx_post.response.body.?);
-//     defer ctx_post.destroy();
-//     std.debug.print("\r\n Done handle POST request test", .{});
+    // // _ = try router.getRoute(.GET, "/");
+    // // defer route.deinit();
 
-//     // Not found
-//     var ctx_not_found = try createContext(.GET, "/not-found");
-//     router.prepareContext(&ctx_not_found) catch |err| {
-//         try testing.expect(err == RouteError.NotFound);
-//     };
-//     defer ctx_not_found.destroy();
-//     std.debug.print("\r\n Done not found test", .{});
+    // const routes = router.getRoutes();
+    // defer routes.deinit();
+    // for (routes.items) |route| {
+    //     route.deinit();
+    // }
+    // defer routes.items[0].deinit();
+    // std.debug.print("\r\n Routes: {d}", .{routes.items.len});
+    // defer routes.deinit();
 
-//     // Method not allowed
-//     var ctx_not_allowed = try createContext(.PUT, "/");
-//     router.prepareContext(&ctx_not_allowed) catch |err| {
-//         try testing.expect(err == RouteError.MethodNotAllowed);
-//     };
-//     defer ctx_not_allowed.destroy();
-//     std.debug.print("\r\n Done method not allowed test", .{});
-// }
+    // const routes = router.getRoutes();
+    // std.debug.print("\r\n Routes: {d}", .{routes.items.len});
+    // // routes.items[0].deinit();
+
+    // try router.post("/", handle);
+
+    // // GET Request.
+    // var ctx_get = try createContext(.GET, "/");
+    // try router.prepareContext(&ctx_get);
+    // // TODO
+    // // try testing.expectEqual(.ok, ctx_get.response.status);
+    // try testing.expectEqualStrings("Hello Zinc!", ctx_get.response.body.?);
+    // defer ctx_get.destroy();
+    // std.debug.print("\r\n Done handle GET request test", .{});
+
+    // // POST Request.
+    // var ctx_post = try createContext(.POST, "/");
+    // try router.prepareContext(&ctx_post);
+    // // TODO
+    // // try testing.expectEqual(.ok, ctx_post.response.status);
+    // try testing.expectEqualStrings("Hello Zinc!", ctx_post.response.body.?);
+    // defer ctx_post.destroy();
+    // std.debug.print("\r\n Done handle POST request test", .{});
+
+    // // Not found
+    // var ctx_not_found = try createContext(.GET, "/not-found");
+    // router.prepareContext(&ctx_not_found) catch |err| {
+    //     try testing.expect(err == RouteError.NotFound);
+    // };
+    // defer ctx_not_found.destroy();
+    // std.debug.print("\r\n Done not found test", .{});
+
+    // // Method not allowed
+    // var ctx_not_allowed = try createContext(.PUT, "/");
+    // router.prepareContext(&ctx_not_allowed) catch |err| {
+    //     try testing.expect(err == RouteError.MethodNotAllowed);
+    // };
+    // defer ctx_not_allowed.destroy();
+    // std.debug.print("\r\n Done method not allowed test", .{});
+}
 
 test "router, routeTree and router.getRoute" {
-    var router = Router.init(.{});
+    var gpa = std.heap.GeneralPurposeAllocator(.{
+        .verbose_log = true,
+        .thread_safe = true,
+        .safety = true,
+    }){};
+    defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
+    // const allocator = std.testing.allocator;
+
+    var router = try Router.init(.{
+        .allocator = allocator,
+    });
+    defer router.deinit();
+
     const handler = struct {
         fn anyHandle(ctx: *Context) anyerror!void {
             try ctx.text("Hello Zinc!", .{});
         }
     }.anyHandle;
 
-    var static_route = Route.init(.{ .method = .GET, .path = "/static" });
+    var static_route = try Route.init(.{
+        .method = .GET,
+        .path = "/static",
+        .allocator = allocator,
+        .handlers = std.ArrayList(HandlerFn).init(allocator),
+    });
+    // defer static_route.deinit();
+
     try static_route.handlers.append(handler);
     try router.addRoute(static_route);
 
     const TestCase = struct {
         reqMethod: std.http.Method,
         reqPath: []const u8,
-        expected: anyerror!Route,
+        expected: anyerror!*Route,
     };
     const testCases = [_]TestCase{
         .{ .reqMethod = .GET, .reqPath = "/static", .expected = static_route },
@@ -125,12 +175,13 @@ test "router, routeTree and router.getRoute" {
         .{ .reqMethod = .GET, .reqPath = "/foo/static/hello.css", .expected = RouteError.NotFound },
     };
 
-    for (testCases) |tc| {
+    for (testCases, 0..) |tc, i| {
         const rTree_route = router.getRoute(tc.reqMethod, tc.reqPath) catch |err| {
             try testing.expect(err == (tc.expected catch |e| e));
+            std.debug.print("\r\n Done router_test case: {d} ", .{i});
             continue;
         };
 
-        try testing.expectEqual(rTree_route.*, (try tc.expected));
+        try testing.expectEqual(rTree_route, (try tc.expected));
     }
 }
