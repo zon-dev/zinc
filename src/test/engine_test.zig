@@ -85,7 +85,6 @@ test "Zinc Server" {
     header_buffer = try z.allocator.alloc(u8, 1024);
     header_buffer = req2.response.parser.get();
 
-    std.debug.print("header_buffer: \n{s}\n", .{header_buffer});
     // HTTP/1.1 204 No Content
     // connection: close
     // content-length: 0
@@ -93,7 +92,6 @@ test "Zinc Server" {
     // Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS
     // Access-Control-Allow-Headers: Content-Type
     // Access-Control-Allow-Private-Network: true
-
     var it = std.http.HeaderIterator.init(header_buffer);
     try std.testing.expect(!it.is_trailer);
 

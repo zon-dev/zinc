@@ -97,7 +97,6 @@ fn create(conf: Config.Engine) anyerror!*Engine {
                 .allocator = engine.allocator,
             }, Engine.worker, .{engine});
 
-            // std.debug.print("\nCreate worker thread", .{});
             try engine.threads.append(thread);
         }
     }
@@ -111,8 +110,6 @@ pub fn init(conf: Config.Engine) anyerror!*Engine {
 }
 
 pub fn deinit(self: *Self) void {
-    std.debug.print("\nEngine is stopping", .{});
-
     if (!self.stopping.isSet()) self.stopping.set();
 
     // Broadcast to all threads to stop.
@@ -124,30 +121,20 @@ pub fn deinit(self: *Self) void {
     if (self.threads.items.len > 0) {
         for (self.threads.items, 0..) |*t, i| {
             _ = i;
-            // std.debug.print("\nThread is closed. {d}", .{i});
             t.join();
         }
-        std.debug.print("\nAll threads have been release. Threads count: {d}", .{self.threads.items.len});
         self.threads.deinit();
-        std.debug.print("\nThreads deinit", .{});
     }
 
-    std.debug.print("\nMiddlewares deinit", .{});
     if (self.middlewares) |m| m.deinit();
 
-    std.debug.print("\nCatchers deinit", .{});
     if (self.catchers) |c| c.deinit();
 
-    std.debug.print("\nRouter deinit", .{});
     if (self.router) |r| r.deinit();
 
-    std.debug.print("\nEngine is stopped", .{});
     if (!self.stopped.isSet()) self.stopped.set();
 
-    std.debug.print("\nDestroy engine.", .{});
     self.allocator.destroy(self);
-
-    std.debug.print("\n-------------- All Done. --------------\r\n", .{});
 }
 
 /// Accept a new connection.
@@ -183,11 +170,6 @@ pub fn run(self: *Engine) !void {
 /// Allocate server worker threads
 fn worker(self: *Engine) anyerror!void {
     self.spawn_count += 1;
-    // std.debug.print("\nworker is running. {d}", .{self.spawn_count});
-
-    // var arena = std.heap.ArenaAllocator.init(self.allocator);
-    // defer arena.deinit();
-    // const engine_allocator = arena.allocator();
 
     const engine_allocator = self.allocator;
 
@@ -271,32 +253,14 @@ fn catchRouteError(self: *Catchers, err: anyerror, stream: net.Stream, ctx: *Con
 /// The default options are:
 /// - addr: "127.0.0.1" (default address)
 /// - port: 0 (random port)
-/// - allocator: arena.allocator (std.heap.ArenaAllocator with std.heap.GeneralPurposeAllocator)
+/// - allocator: std.heap.GeneralPurposeAllocator{}.allocator
 /// - read_buffer_len: 10240 (10KB)
 /// - header_buffer_len: 1024 (1KB)
 /// - body_buffer_len: 8192 (8KB)
 /// - stack_size: 10485760 (10MB)
 /// - num_threads: 8 (8 threads)
 pub fn default() anyerror!*Engine {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    var arena = std.heap.ArenaAllocator.init(gpa.allocator());
-
-    defer {
-        arena.deinit();
-        const deinit_status = gpa.deinit();
-        if (deinit_status == .leak) {
-            std.debug.print("memory leak detected", .{});
-        }
-    }
-
-    const allocator = arena.allocator();
-
-    var engine = try init(.{
-        .addr = "127.0.0.1",
-        .port = 0,
-    });
-    engine.allocator = allocator;
-    return engine;
+    return try init(.{});
 }
 
 pub fn getPort(self: *Self) u16 {
@@ -315,7 +279,7 @@ pub fn wait(self: *Self) void {
 /// Shutdown the server.
 pub fn shutdown(self: *Self, timeout_ns: u64) void {
     std.time.sleep(timeout_ns);
-    std.debug.print("\nEngine is shutting down", .{});
+
     if (!self.stopping.isSet()) self.stopping.set();
 
     if (!self.stopped.isSet()) {

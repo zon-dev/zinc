@@ -3,7 +3,6 @@ const heap = std.heap;
 const page_allocator = heap.page_allocator;
 const Allocator = std.mem.Allocator;
 const ArrayList = std.ArrayList;
-const print = std.debug.print;
 
 const zinc = @import("../zinc.zig");
 

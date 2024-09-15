@@ -42,10 +42,6 @@ pub fn create(allocator: std.mem.Allocator, path: []const u8, http_method: Metho
         .handlers = std.ArrayList(HandlerFn).init(allocator),
     });
     try r.handlers.appendSlice(handlers);
-    // r.handlers.append(handler) catch |err| {
-    //     std.debug.print("failed to append handler to route: {any}", .{err});
-    // };
-
     return r;
 }
 

@@ -180,7 +180,6 @@ pub fn getHeaders(self: *Self) *Headers {
 
 /// Run the next middleware or handler in the chain.
 pub fn next(self: *Context) anyerror!void {
-    // std.debug.print("next index:{d} handlers.items.len:{d}\n", .{ self.index, self.handlers.items.len });
     self.index += 1;
 
     if (self.index >= self.handlers.items.len) return;

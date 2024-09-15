@@ -2,7 +2,6 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 const heap = std.heap;
 const page_allocator = heap.page_allocator;
-const print = std.debug.print;
 const URL = @import("url");
 
 const zinc = @import("../zinc.zig");

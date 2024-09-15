@@ -34,9 +34,6 @@ test "Middleware" {
 
     const routes = router.getRoutes();
     defer routes.deinit();
-    // std.debug.print("\nmid1 Address {*}\n", .{&mid1});
-    // std.debug.print("mid2 Address {*}\n", .{&mid2});
-    // std.debug.print("handle Address {*}\n", .{&handle});
 
     try std.testing.expectEqual(1, routes.items.len);
     try std.testing.expectEqual(3, routes.items[0].handlers.items.len);
