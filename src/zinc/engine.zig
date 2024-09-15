@@ -97,7 +97,7 @@ fn create(conf: Config.Engine) anyerror!*Engine {
                 .allocator = engine.allocator,
             }, Engine.worker, .{engine});
 
-            std.debug.print("\nCreate worker thread", .{});
+            // std.debug.print("\nCreate worker thread", .{});
             try engine.threads.append(thread);
         }
     }
@@ -118,7 +118,8 @@ pub fn deinit(self: *Self) void {
 
     if (self.threads.items.len > 0) {
         for (self.threads.items, 0..) |*t, i| {
-            std.debug.print("\nThread is closed. {d}", .{i});
+            _ = i;
+            // std.debug.print("\nThread is closed. {d}", .{i});
             t.join();
         }
         std.debug.print("\nAll threads have been shut down. {d}", .{self.threads.items.len});
@@ -177,7 +178,7 @@ pub fn run(self: *Engine) !void {
 /// Allocate server worker threads
 fn worker(self: *Engine) anyerror!void {
     self.spawn_count += 1;
-    std.debug.print("\nworker is running. {d}", .{self.spawn_count});
+    // std.debug.print("\nworker is running. {d}", .{self.spawn_count});
 
     // var arena = std.heap.ArenaAllocator.init(self.allocator);
     // defer arena.deinit();
@@ -313,6 +314,7 @@ pub fn shutdown(self: *Self, timeout_ns: u64) void {
     if (!self.stopping.isSet()) self.stopping.set();
 
     if (!self.stopped.isSet()) {
+        self.cond.broadcast();
         self.stopped.set();
     }
 }

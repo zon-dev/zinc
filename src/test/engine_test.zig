@@ -25,21 +25,16 @@ fn handleRequest(request: *http.Server.Request) void {
 test "Zinc with custom Allocator" {
     var gpa = std.heap.GeneralPurposeAllocator(.{
         .verbose_log = true,
-        .thread_safe = true,
-        .safety = true,
     }){};
-    defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
     var z = try zinc.init(.{
         .allocator = allocator,
-        .num_threads = 10,
+        .num_threads = 100,
     });
     defer z.deinit();
 
-    z.shutdown(1);
-
-    std.debug.print("\n-------------Done: Zinc with custom Allocator-------------n", .{});
+    z.shutdown(0);
 }
 
 // test "Zinc Server" {

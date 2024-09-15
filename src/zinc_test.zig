@@ -7,7 +7,7 @@ test {
     _ = @import("test/router_test.zig");
     _ = @import("test/routetree_test.zig");
 
-    // _ = @import("test/engine_test.zig");
+    _ = @import("test/engine_test.zig");
 
     _ = @import("test/middleware_test.zig");
 }
