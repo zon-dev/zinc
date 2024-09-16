@@ -47,10 +47,10 @@ pub fn create(allocator: std.mem.Allocator, path: []const u8, http_method: Metho
 
 pub fn deinit(self: *Self) void {
     if (self.handlers.items.len > 0) {
-        self.handlers.clearAndFree();
         self.handlers.deinit();
     }
-    // self.handlers.deinit();
+    // self.allocator.free(self.path);
+
     self.allocator.destroy(self);
 }
 

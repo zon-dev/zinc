@@ -21,10 +21,9 @@ allocator: std.mem.Allocator,
 server_request: *std.http.Server.Request = undefined,
 
 connection: std.net.Server.Connection = undefined,
+headers: Headers = undefined,
 request: *Request = undefined,
 response: *Response = undefined,
-
-headers: Headers = Headers.init(.{}),
 
 query: ?std.Uri.Component = null,
 

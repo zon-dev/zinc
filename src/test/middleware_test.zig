@@ -42,6 +42,7 @@ test "Middleware" {
     defer ctx_get.destroy();
 
     const route = try router.getRoute(ctx_get.request.method, ctx_get.request.target);
+
     try ctx_get.handlers.appendSlice(route.handlers.items);
     for (route.handlers.items, ctx_get.handlers.items) |handler, ctx_handler| {
         try std.testing.expectEqual(handler, ctx_handler);
@@ -49,6 +50,7 @@ test "Middleware" {
 
     // TODO
     // try ctx_get.handlersProcess();
+    // try route.handle(ctx_get);
     // try std.testing.expectEqual(.ok, ctx_get.response.status);
     // try std.testing.expectEqual(3, ctx_get.handlers.items.len);
     // // TODO

@@ -6,8 +6,8 @@ const heap = std.heap;
 pub const Headers = @This();
 const Self = @This();
 
-allocator: Allocator = heap.page_allocator,
-headers: std.ArrayList(Header) = std.ArrayList(Header).init(heap.page_allocator),
+allocator: Allocator,
+headers: std.ArrayList(Header) = undefined,
 
 pub fn init(self: Self) Headers {
     return .{

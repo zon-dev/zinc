@@ -53,7 +53,9 @@ pub const RouteTree = struct {
 
         // deinit all routes
         const routes = root.getCurrentTreeRoutes();
+
         for (routes.items) |route| route.deinit();
+
         routes.deinit();
 
         stack.append(root) catch unreachable;
@@ -254,6 +256,7 @@ pub const RouteTree = struct {
     /// routes.deinit();
     pub fn getCurrentTreeRoutes(self: *RouteTree) std.ArrayList(*Route) {
         var routes = std.ArrayList(*Route).init(self.allocator);
+
         var childStack = std.ArrayList(*RouteTree).init(self.allocator);
         defer {
             childStack.deinit();

@@ -18,11 +18,7 @@ fn createContext(method: std.http.Method, target: []const u8) anyerror!*Context 
     return ctx;
 }
 
-fn handleRequest(request: *http.Server.Request) void {
-    _ = request;
-}
-
-test "Zinc with custom Allocator" {
+test "Zinc with std.heap.GeneralPurposeAllocator" {
     var gpa = std.heap.GeneralPurposeAllocator(.{
         .verbose_log = true,
     }){};
@@ -30,10 +26,54 @@ test "Zinc with custom Allocator" {
 
     var z = try zinc.init(.{
         .allocator = allocator,
-        .num_threads = 100,
+        .num_threads = 255,
     });
     defer z.deinit();
 
+    z.shutdown(0);
+}
+
+// test "Zinc with std.testing.allocator" {
+//     const allocator = std.testing.allocator;
+//     var z = try zinc.init(.{
+//         .allocator = allocator,
+//         .num_threads = 100,
+//     });
+//     defer z.deinit();
+
+//     z.shutdown(0);
+// }
+
+test "Zinc with std.heap.ArenaAllocator" {
+    const page_allocator = std.heap.page_allocator;
+    var arena = std.heap.ArenaAllocator.init(page_allocator);
+    const allocator = arena.allocator();
+
+    var z = try zinc.init(.{
+        .allocator = allocator,
+        .num_threads = 255,
+    });
+    defer z.deinit();
+    z.shutdown(0);
+}
+
+test "Zinc with LoggingAllocator" {
+    var allocator = std.heap.LoggingAllocator(.info, .debug).init(std.heap.page_allocator);
+    var z = try zinc.init(.{
+        .allocator = allocator.allocator(),
+        .num_threads = 255,
+    });
+    defer z.deinit();
+    z.shutdown(0);
+}
+
+test "Zinc with std.heap.page_allocator" {
+    const allocator = std.heap.page_allocator;
+    var z = try zinc.init(.{
+        .allocator = allocator,
+        .num_threads = 255,
+    });
+    defer z.deinit();
     z.shutdown(0);
 }
 
@@ -43,8 +83,8 @@ test "Zinc Server" {
         .thread_safe = true,
         .safety = true,
     }){};
-    // defer _ = gpa.deinit();
     const allocator = gpa.allocator();
+    // defer _ = gpa.deinit();
 
     var z = try zinc.init(.{ .num_threads = 100, .allocator = allocator });
     defer z.deinit();

@@ -1,7 +1,5 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
-const heap = std.heap;
-const page_allocator = heap.page_allocator;
 const URL = @import("url");
 
 const zinc = @import("../zinc.zig");
@@ -63,11 +61,11 @@ pub fn handleContext(self: *Self, ctx: *Context) anyerror!void {
 
 pub fn prepareContext(self: *Self, ctx: *Context) anyerror!void {
     const route = try self.getRoute(ctx.request.method, ctx.request.target);
+    try route.handle(ctx);
 
-    // TODO, COPY HANDLERS TO CTX
-    ctx.handlers = route.handlers;
-
-    try ctx.handlersProcess();
+    // // TODO, COPY HANDLERS TO CTX
+    // ctx.handlers = route.handlers;
+    // try ctx.handlersProcess();
 }
 
 /// Return routes.
@@ -109,6 +107,8 @@ pub fn any(self: *Self, path: []const u8, handler: HandlerFn) anyerror!void {
 
 fn insertRouteToRouteTree(self: *Self, route: *Route) anyerror!void {
     var url = URL.init(.{ .allocator = self.allocator });
+    defer url.deinit();
+
     const url_target = try url.parseUrl(route.path);
     const path: []const u8 = url_target.path;
 
@@ -152,6 +152,8 @@ pub fn trace(self: *Self, path: []const u8, handler: HandlerFn) anyerror!void {
 
 fn getRouteTree(self: *Self, target: []const u8) anyerror!*RouteTree {
     var url = URL.init(.{ .allocator = self.allocator });
+    defer url.deinit();
+
     const url_target = try url.parseUrl(target);
     const path = url_target.path;
 
@@ -163,13 +165,23 @@ fn getRouteTree(self: *Self, target: []const u8) anyerror!*RouteTree {
 
 pub fn getRoute(self: *Self, method: std.http.Method, target: []const u8) anyerror!*Route {
     var url = URL.init(.{ .allocator = self.allocator });
+    defer url.deinit();
+
     const url_target = try url.parseUrl(target);
-    defer url_target.deinit();
-    const path = url_target.path;
+
+    const path: []const u8 = url_target.path;
 
     const rTree = try self.getRouteTree(path);
 
     if (rTree.routes) |*routes| {
+
+        // If there is only one route and the path is empty, return NotFound.
+        if (routes.items.len == 1) {
+            if (std.mem.eql(u8, routes.items[0].path, "")) {
+                return Route.RouteError.NotFound;
+            }
+        }
+
         for (routes.items) |r| {
             if (r.method == method) {
                 return r;
@@ -195,12 +207,17 @@ pub fn rebuild(self: *Self) anyerror!void {
     try rootTree.use(self.middlewares.items);
 }
 
-pub fn group(self: *Self, prefix: []const u8) anyerror!RouterGroup {
-    return RouterGroup{
+pub fn group(self: *Self, prefix: []const u8) anyerror!*RouterGroup {
+    const router_group = try self.allocator.create(RouterGroup);
+    router_group.* = .{
+        .allocator = self.allocator,
         .router = self,
         .prefix = prefix,
         .root = true,
     };
+    errdefer self.allocator.destroy(router_group);
+
+    return router_group;
 }
 
 pub inline fn static(self: *Self, relativePath: []const u8, filepath: []const u8) anyerror!void {

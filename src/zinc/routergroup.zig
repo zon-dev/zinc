@@ -1,6 +1,5 @@
 const std = @import("std");
-const heap = std.heap;
-const page_allocator = heap.page_allocator;
+
 const Allocator = std.mem.Allocator;
 const ArrayList = std.ArrayList;
 
@@ -18,22 +17,33 @@ const Self = @This();
 
 const RouteTree = zinc.RouteTree;
 
-allocator: Allocator = page_allocator,
-prefix: []const u8 = "",
-root: bool = false,
+allocator: Allocator,
+router: *Router,
 
-router: *Router = undefined,
+prefix: []const u8,
+
+root: bool = false,
 
 fn relativePath(self: *RouterGroup, path: []const u8) anyerror![]const u8 {
     var slice = std.ArrayList(u8).init(self.allocator);
-    self.allocator.free(slice.items);
+    defer slice.deinit();
+
     try slice.appendSlice(self.prefix);
     try slice.appendSlice(path);
+
     return try slice.toOwnedSlice();
 }
 
-pub fn group(self: *Self, prefix: []const u8) anyerror!RouterGroup {
-    return self.router.group(try self.relativePath(prefix));
+/// Create a new RouterGroup.
+pub fn group(self: *Self, prefix: []const u8) anyerror!*RouterGroup {
+    const group_path = try self.relativePath(prefix);
+
+    return self.router.group(group_path);
+}
+
+pub fn deinit(self: *Self) void {
+    // _ = self;
+    self.allocator.destroy(self);
 }
 
 /// Create a new RouterGroup.
@@ -58,7 +68,8 @@ pub fn addAny(self: *RouterGroup, methods: []const std.http.Method, target: []co
 
 /// Add a route with the GET method.
 pub fn get(self: *RouterGroup, target: []const u8, handler: HandlerFn) anyerror!void {
-    try self.router.get(try self.relativePath(target), handler);
+    const group_path = try self.relativePath(target);
+    try self.router.get(group_path, handler);
 }
 
 /// Add a route with the POST method.
@@ -103,12 +114,7 @@ pub fn trace(self: *RouterGroup, target: []const u8, handler: HandlerFn) anyerro
 
 /// Add middleware to the route.
 pub fn use(self: *RouterGroup, handler: HandlerFn) anyerror!void {
-    // TODO: add middleware to the route.
-    if (self.root) {
-        try self.router.use(handler);
-        return;
-    }
-    // try self.router.use(handler);
+    try self.router.use(handler);
 }
 
 /// Return routes.

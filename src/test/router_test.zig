@@ -21,42 +21,8 @@ fn createContext(method: std.http.Method, target: []const u8) anyerror!*Context 
     return ctx;
 }
 
-const TestServer = struct {
-    server_thread: std.Thread,
-    net_server: std.net.Server,
-
-    fn destroy(self: *@This()) void {
-        self.server_thread.join();
-        self.net_server.deinit();
-        std.testing.allocator.destroy(self);
-    }
-
-    fn port(self: @This()) u16 {
-        return self.net_server.listen_address.in.getPort();
-    }
-};
-
-fn createTestServer(S: type) !*TestServer {
-    // if (std.builtin.single_threaded) return error.SkipZigTest;
-    // if (builtin.zig_backend == .stage2_llvm and native_endian == .big) {
-    //     // https://github.com/ziglang/zig/issues/13782
-    //     return error.SkipZigTest;
-    // }
-
-    const address = try std.net.Address.parseIp("127.0.0.1", 0);
-    const test_server = try std.testing.allocator.create(TestServer);
-    test_server.net_server = try address.listen(.{ .reuse_address = true });
-    test_server.server_thread = try std.Thread.spawn(.{}, S.run, .{&test_server.net_server});
-    return test_server;
-}
-
 test "Router. Handle Request" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    const allocator = gpa.allocator();
-
-    var router = try Router.init(.{
-        .allocator = allocator,
-    });
+    var router = try Router.init(.{ .allocator = std.testing.allocator });
     defer router.deinit();
 
     const handle = struct {
@@ -110,18 +76,9 @@ test "Router. Handle Request" {
 }
 
 test "router, routeTree and router.getRoute" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{
-        .verbose_log = true,
-        .thread_safe = true,
-        .safety = true,
-    }){};
-    defer _ = gpa.deinit();
-    const allocator = gpa.allocator();
-    // const allocator = std.testing.allocator;
+    const allocator = std.testing.allocator;
 
-    var router = try Router.init(.{
-        .allocator = allocator,
-    });
+    var router = try Router.init(.{ .allocator = allocator });
     defer router.deinit();
 
     const handler = struct {

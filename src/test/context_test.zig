@@ -23,10 +23,7 @@ test "context query" {
     var ctx = try Context.init(.{ .request = &req, .allocator = allocator });
     defer ctx.destroy();
 
-    var qm = ctx.getQueryMap() orelse {
-        return try std.testing.expect(false);
-    };
-    // defer qm.deinit();
+    var qm = ctx.getQueryMap() orelse return try std.testing.expect(false);
 
     try std.testing.expectEqualStrings(qm.get("id").?.items[0], "1234");
     try std.testing.expectEqualStrings(qm.get("message").?.items[0], "hello");

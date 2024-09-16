@@ -32,6 +32,4 @@ pub const Engine = struct {
 
 pub const Context = struct {
     status: std.http.Status = std.http.Status.ok,
-    // query: StringHashMap([]const u8) = StringHashMap([]const u8).init(page_allocator),
-    // params: ArrayList([]const u8) = ArrayList([]const u8).init(page_allocator),
 };
