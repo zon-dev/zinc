@@ -272,7 +272,7 @@ pub fn getQueryMap(self: *Self) ?std.StringHashMap(std.ArrayList([]const u8)) {
     if (self.query_map != null) {
         return self.query_map;
     }
-    var url = URL.init(.{});
+    var url = URL.init(.{ .allocator = self.allocator });
     _ = url.parseUrl(self.request.target) catch return null;
     self.query_map = url.values orelse return null;
     return self.query_map;

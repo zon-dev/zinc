@@ -108,7 +108,7 @@ pub fn any(self: *Self, path: []const u8, handler: HandlerFn) anyerror!void {
 }
 
 fn insertRouteToRouteTree(self: *Self, route: *Route) anyerror!void {
-    var url = URL.init(.{});
+    var url = URL.init(.{ .allocator = self.allocator });
     const url_target = try url.parseUrl(route.path);
     const path: []const u8 = url_target.path;
 
@@ -151,7 +151,7 @@ pub fn trace(self: *Self, path: []const u8, handler: HandlerFn) anyerror!void {
 }
 
 fn getRouteTree(self: *Self, target: []const u8) anyerror!*RouteTree {
-    var url = URL.init(.{});
+    var url = URL.init(.{ .allocator = self.allocator });
     const url_target = try url.parseUrl(target);
     const path = url_target.path;
 
@@ -162,8 +162,9 @@ fn getRouteTree(self: *Self, target: []const u8) anyerror!*RouteTree {
 }
 
 pub fn getRoute(self: *Self, method: std.http.Method, target: []const u8) anyerror!*Route {
-    var url = URL.init(.{});
+    var url = URL.init(.{ .allocator = self.allocator });
     const url_target = try url.parseUrl(target);
+    defer url_target.deinit();
     const path = url_target.path;
 
     const rTree = try self.getRouteTree(path);

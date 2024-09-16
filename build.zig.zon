@@ -3,8 +3,8 @@
     .version = "0.1.0-beta3",
     .dependencies = .{
         .url = .{
-            .url = "https://github.com/zon-dev/url/archive/refs/tags/v0.1.0-beta1.zip",
-            .hash = "12205be3bbec3c8f307497d5bc9521a3f1139cd92a2d94d9cab6d1a26f370a05b730",
+            .url = "https://github.com/zon-dev/url/archive/refs/tags/v0.1.0-beta2.zip",
+            .hash = "1220e9044149c6bd790b8fd7792b2aff71de8a7a337ba8288d88d0fe68d2fc665d13",
         },
     },
     .paths = .{
