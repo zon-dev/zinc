@@ -62,13 +62,13 @@ test "Zinc Server" {
     // Create an HTTP client.
     var client = std.http.Client{ .allocator = z.allocator };
     defer client.deinit();
+
     const url = try std.fmt.allocPrint(z.allocator, "http://127.0.0.1:{any}/test", .{z.getPort()});
     var req = try fetch(&client, .{ .method = .GET, .location = .{ .url = url } });
     defer req.deinit();
 
     const body_buffer = req.reader().readAllAlloc(z.allocator, req.response.content_length.?) catch unreachable;
-
-    try std.testing.expectEqualStrings("Hello, World!", body_buffer);
+    try std.testing.expectEqualStrings("Hello World!", body_buffer);
 
     // test use middleware
     try router.use(&.{zinc.Middleware.cors()});
@@ -122,10 +122,41 @@ test "Zinc Server" {
         try std.testing.expectEqualStrings("Access-Control-Allow-Methods", header.name);
         try std.testing.expectEqualStrings("GET, POST, PUT, DELETE, OPTIONS", header.value);
     }
+
+    // Test Middleware
+    const mid1 = struct {
+        fn middle(ctx: *zinc.Context) anyerror!void {
+            try ctx.text("Hello ", .{});
+            try ctx.next();
+        }
+    }.middle;
+
+    const mid2 = struct {
+        fn middle(ctx: *zinc.Context) anyerror!void {
+            try ctx.next();
+            try ctx.text("!", .{});
+        }
+    }.middle;
+
+    const handle = struct {
+        fn anyHandle(ctx: *zinc.Context) anyerror!void {
+            try ctx.text("Zinc", .{});
+        }
+    }.anyHandle;
+
+    try router.use(&.{ mid1, mid2 });
+    try router.get("/mid", handle);
+
+    const mid_url = try std.fmt.allocPrint(z.allocator, "http://127.0.0.1:{any}/mid", .{z.getPort()});
+    var req3 = try fetch(&client, .{ .method = .GET, .location = .{ .url = mid_url } });
+    defer req3.deinit();
+
+    const req3_body_buffer = req3.reader().readAllAlloc(z.allocator, req3.response.content_length.?) catch unreachable;
+    try std.testing.expectEqualStrings("Hello Zinc!", req3_body_buffer);
 }
 
 fn testHanle(ctx: *Context) anyerror!void {
-    try ctx.text("Hello, World!", .{});
+    try ctx.text("Hello World!", .{});
 }
 
 /// see  std.http.Client.fetch
