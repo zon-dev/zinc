@@ -64,3 +64,32 @@ test "context query map" {
     try std.testing.expectEqualStrings(ids.get("b").?.items[0], "hello");
     try std.testing.expectEqualStrings(ids.get("b").?.items[1], "world");
 }
+
+test "context response" {
+    const allocator = std.testing.allocator;
+
+    const req = try Request.init(.{
+        .req = undefined,
+        .target = "/",
+        .allocator = allocator,
+    });
+    const res = try Response.init(.{ .req = undefined, .allocator = allocator });
+    var ctx = try Context.init(.{ .request = req, .response = res, .allocator = allocator });
+    defer ctx.destroy();
+
+    // try ctx.text("Hello Zinc!", .{});
+    // try std.testing.expectEqual(res.body, "Hello Zinc!");
+    // try std.testing.expectEqual(res.status, std.http.Status.ok);
+
+    try ctx.setStatus(.not_found);
+    try std.testing.expectEqual(res.status, std.http.Status.not_found);
+
+    try ctx.setBody("Hello Zinc!");
+    try std.testing.expectEqualStrings(res.body.?, "Hello Zinc!");
+
+    try ctx.setHeader("Accept", "application/json");
+    try std.testing.expectEqualStrings(res.header.items[0].name, "Accept");
+
+    try ctx.setBody("Hi Zinc!");
+    try std.testing.expectEqualStrings(res.body.?, "Hello Zinc!Hi Zinc!");
+}

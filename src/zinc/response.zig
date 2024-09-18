@@ -37,6 +37,12 @@ pub fn init(self: Self) anyerror!*Response {
 }
 
 pub fn deinit(self: *Self) void {
+    if (self.body != null) {
+        self.allocator.free(self.body.?);
+    }
+    if (self.header.items.len > 0) {
+        self.header.deinit();
+    }
     self.allocator.destroy(self);
 }
 
@@ -55,13 +61,15 @@ pub fn setHeader(self: *Self, key: []const u8, value: []const u8) anyerror!void 
 
 pub fn setBody(self: *Self, body: []const u8) anyerror!void {
     var new_body = std.ArrayList(u8).init(self.allocator);
-    // defer self.allocator.free(new_body.items);
+    defer self.allocator.free(new_body.items);
 
-    const old_body = self.body orelse "";
-    try new_body.appendSlice(old_body);
+    if (self.body) |old_body| {
+        defer self.allocator.free(old_body);
+        try new_body.appendSlice(old_body);
+    }
+
     try new_body.appendSlice(body);
     const slice = try new_body.toOwnedSlice();
-
     self.body = slice;
 }
 

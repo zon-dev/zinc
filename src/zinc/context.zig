@@ -165,8 +165,9 @@ pub fn getParam(self: *Self, key: []const u8) ?Param {
 pub fn setStatus(self: *Self, status: std.http.Status) !void {
     self.response.setStatus(status);
 }
-pub fn setHeader(self: *Self, key: []const u8, value: []const u8) !void {
-    self.headers.add(key, value);
+pub fn setHeader(self: *Self, key: []const u8, value: []const u8) anyerror!void {
+    try self.headers.add(key, value);
+    try self.response.setHeader(key, value);
 }
 pub fn setBody(self: *Self, body: []const u8) !void {
     try self.response.setBody(body);
