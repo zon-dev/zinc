@@ -202,8 +202,8 @@ fn worker(self: *Engine) anyerror!void {
             };
 
             var req = Request.init(.{ .req = &request, .allocator = engine_allocator });
-            var res = Response.init(.{ .req = &request, .allocator = engine_allocator });
-            var ctx = try Context.init(.{ .request = &req, .response = &res, .server_request = &request, .allocator = engine_allocator });
+            const res = try Response.init(.{ .req = &request, .allocator = engine_allocator });
+            var ctx = try Context.init(.{ .request = &req, .response = res, .server_request = &request, .allocator = engine_allocator });
 
             const match_route = router.getRoute(request.head.method, request.head.target) catch |err| {
                 try catchRouteError(@constCast(catchers), err, conn.stream, ctx);

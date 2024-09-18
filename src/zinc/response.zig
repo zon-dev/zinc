@@ -25,17 +25,19 @@ body: ?[]const u8 = null,
 
 body_buffer_len: usize = 1024,
 
-pub fn init(self: Self) Response {
-    return .{
+pub fn init(self: Self) anyerror!*Response {
+    const response = try self.allocator.create(Response);
+    response.* = .{
         .allocator = self.allocator,
         .req = self.req,
         .res = self.res,
-        .version = self.version,
-        .status = self.status,
         .header = std.ArrayList(std.http.Header).init(self.allocator),
-        .body = self.body,
-        .body_buffer_len = self.body_buffer_len,
     };
+    return response;
+}
+
+pub fn deinit(self: *Self) void {
+    self.allocator.destroy(self);
 }
 
 pub fn send(self: *Self, content: []const u8, options: RespondOptions) anyerror!void {

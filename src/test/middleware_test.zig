@@ -59,6 +59,6 @@ test "Middleware" {
 
 fn createContext(allocator: std.mem.Allocator, method: std.http.Method, target: []const u8) anyerror!*zinc.Context {
     var req = zinc.Request.init(.{ .allocator = allocator, .req = undefined, .method = method, .target = target });
-    var res = zinc.Response.init(.{ .allocator = allocator, .req = undefined });
-    return try zinc.Context.init(.{ .allocator = allocator, .request = &req, .response = &res });
+    const res = try zinc.Response.init(.{ .allocator = allocator, .req = undefined });
+    return try zinc.Context.init(.{ .allocator = allocator, .request = &req, .response = res });
 }
