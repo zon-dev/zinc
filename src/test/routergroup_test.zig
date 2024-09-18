@@ -14,9 +14,9 @@ const RouterGroup = zinc.RouterGroup;
 const RouteError = Route.RouteError;
 
 fn createContext(allocator: std.mem.Allocator, method: std.http.Method, target: []const u8) anyerror!*zinc.Context {
-    var req = zinc.Request.init(.{ .allocator = allocator, .req = undefined, .method = method, .target = target });
-    var res = zinc.Response.init(.{ .allocator = allocator, .req = undefined, .res = undefined });
-    return try zinc.Context.init(.{ .allocator = allocator, .request = &req, .response = &res });
+    const req = try zinc.Request.init(.{ .allocator = allocator, .req = undefined, .method = method, .target = target });
+    const res = try zinc.Response.init(.{ .allocator = allocator, .req = undefined, .res = undefined });
+    return try zinc.Context.init(.{ .allocator = allocator, .request = req, .response = res });
 }
 
 test "RouterGroup" {

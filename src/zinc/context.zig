@@ -49,6 +49,8 @@ pub fn destroy(self: *Self) void {
 
     self.response.deinit();
 
+    self.request.deinit();
+
     self.allocator.destroy(self);
 }
 

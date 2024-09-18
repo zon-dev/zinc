@@ -15,13 +15,13 @@ const HandlerFn = zinc.HandlerFn;
 test "context query" {
     const allocator = std.testing.allocator;
 
-    var req = Request.init(.{
+    const req = try Request.init(.{
         .req = undefined,
         .target = "/query?id=1234&message=hello&message=world&ids[a]=1234&ids[b]=hello&ids[b]=world",
         .allocator = allocator,
     });
     const res = try Response.init(.{ .req = undefined, .allocator = allocator });
-    var ctx = try Context.init(.{ .request = &req, .response = res, .allocator = allocator });
+    var ctx = try Context.init(.{ .request = req, .response = res, .allocator = allocator });
     defer ctx.destroy();
 
     var qm = ctx.getQueryMap() orelse return try std.testing.expect(false);
@@ -48,13 +48,13 @@ test "context query" {
 test "context query map" {
     const allocator = std.testing.allocator;
 
-    var req = Request.init(.{
+    const req = try Request.init(.{
         .req = undefined,
         .target = "/query?ids[a]=1234&ids[b]=hello&ids[b]=world",
         .allocator = allocator,
     });
     const res = try Response.init(.{ .req = undefined, .allocator = allocator });
-    var ctx = try Context.init(.{ .request = &req, .response = res, .allocator = allocator });
+    var ctx = try Context.init(.{ .request = req, .response = res, .allocator = allocator });
     defer ctx.destroy();
 
     var ids: std.StringHashMap(std.ArrayList([]const u8)) = ctx.queryMap("ids") orelse return try std.testing.expect(false);
