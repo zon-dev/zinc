@@ -11,13 +11,6 @@ const Route = zinc.Route;
 const Router = zinc.Router;
 const RouteError = Route.RouteError;
 
-fn createContext(method: std.http.Method, target: []const u8) anyerror!*Context {
-    var req = zinc.Request.init(.{ .method = method, .target = target });
-    var res = zinc.Response.init(.{});
-    const ctx = try zinc.Context.init(.{ .request = &req, .response = &res });
-    return ctx;
-}
-
 test "Zinc with std.heap.GeneralPurposeAllocator" {
     var gpa = std.heap.GeneralPurposeAllocator(.{
         .verbose_log = true,
@@ -84,9 +77,8 @@ test "Zinc Server" {
         .safety = true,
     }){};
     const allocator = gpa.allocator();
-    // defer _ = gpa.deinit();
 
-    var z = try zinc.init(.{ .num_threads = 100, .allocator = allocator });
+    var z = try zinc.init(.{ .num_threads = 255, .allocator = allocator });
     defer z.deinit();
 
     defer z.shutdown(0);

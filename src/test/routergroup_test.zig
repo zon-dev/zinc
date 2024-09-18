@@ -13,22 +13,18 @@ const Router = zinc.Router;
 const RouterGroup = zinc.RouterGroup;
 const RouteError = Route.RouteError;
 
-fn createContext(allocator: std.mem.Allocator, method: std.http.Method, target: []const u8) anyerror!*Context {
-    var req = zinc.Request.init(.{ .method = method, .target = target, .allocator = allocator });
-    var res = zinc.Response.init(.{ .allocator = allocator });
-    const ctx = try zinc.Context.init(.{ .request = &req, .response = &res, .allocator = allocator });
-    return ctx;
+fn createContext(allocator: std.mem.Allocator, method: std.http.Method, target: []const u8) anyerror!*zinc.Context {
+    var req = zinc.Request.init(.{ .allocator = allocator, .req = undefined, .method = method, .target = target });
+    var res = zinc.Response.init(.{ .allocator = allocator, .req = undefined, .res = undefined });
+    return try zinc.Context.init(.{ .allocator = allocator, .request = &req, .response = &res });
 }
 
 test "RouterGroup" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{
-        .verbose_log = true,
-    }){};
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     const allocator = gpa.allocator();
     // const allocator = std.testing.allocator;
 
     var router = try Router.init(.{ .allocator = allocator });
-
     defer router.deinit();
 
     const handle = struct {
@@ -37,52 +33,22 @@ test "RouterGroup" {
         }
     }.anyHandle;
 
-    const group_path = "/test";
-    var router_group = try router.group(group_path);
-    defer router_group.deinit();
+    var test_group = try router.group("/test");
+    try test_group.get("/group", handle);
 
-    try router_group.get("/group", handle);
+    var group2 = try router.group("/test2");
+    try group2.get("/group2", handle);
+    var group_user = try group2.group("/user");
+    _ = try group_user.get("/login", handle);
 
     const routes = router.getRoutes();
     defer routes.deinit();
 
-    try std.testing.expectEqual(1, routes.items.len);
+    try std.testing.expectEqual(3, routes.items.len);
 
     const route = try router.getRoute(.GET, "/test/group");
     try std.testing.expectEqualStrings("/test/group", route.path);
 
-    // try router.post("/", handle);
-
-    // GET Request.
-    var ctx_get = try createContext(allocator, .GET, "/");
-    try ctx_get.handlers.appendSlice(route.handlers.items);
-    // TODO
-    // try ctx_get.handlersProcess();
-    // try testing.expectEqual(.ok, ctx_get.response.status);
-    // try testing.expectEqualStrings("Hello Zinc!", ctx_get.response.body.?);
-    // defer ctx_get.destroy();
-    // std.debug.print("\r\n Done handle GET request test", .{});
-
-    // POST Request.
-    // var ctx_post = try createContext(.POST, "/");
-    // TODO
-    // try router.prepareContext(ctx_post);
-    // try testing.expectEqual(.ok, ctx_post.response.status);
-    // try testing.expectEqualStrings("Hello Zinc!", ctx_post.response.body.?);
-    // defer ctx_post.destroy();
-    // std.debug.print("\r\n Done handle POST request test", .{});
-
-    // // Not found
-    // var ctx_not_found = try createContext(.GET, "/not-found");
-    // router.prepareContext(ctx_not_found) catch |err| {
-    //     try testing.expect(err == RouteError.NotFound);
-    // };
-    // defer ctx_not_found.destroy();
-
-    // // Method not allowed
-    // var ctx_not_allowed = try createContext(.PUT, "/");
-    // router.prepareContext(ctx_not_allowed) catch |err| {
-    //     try testing.expect(err == RouteError.MethodNotAllowed);
-    // };
-    // defer ctx_not_allowed.destroy();
+    const route_login = try router.getRoute(.GET, "/test2/user/login");
+    try std.testing.expectEqualStrings("/test2/user/login", route_login.getPath());
 }

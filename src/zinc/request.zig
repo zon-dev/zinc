@@ -21,14 +21,14 @@ pub fn init(self: Self) Request {
     if (self.target.len > 0) {
         return .{
             .allocator = self.allocator,
+            .method = self.method,
             .target = self.target,
             .header = std.StringArrayHashMap([]u8).init(self.allocator),
-            .method = self.method,
         };
     }
     return .{
-        .header = self.header,
         .allocator = self.allocator,
+        .header = self.header,
         .req = self.req,
         .target = self.req.head.target,
         .method = self.req.head.method,

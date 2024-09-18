@@ -16,6 +16,7 @@ test "context query" {
     const allocator = std.testing.allocator;
 
     var req = Request.init(.{
+        .req = undefined,
         .target = "/query?id=1234&message=hello&message=world&ids[a]=1234&ids[b]=hello&ids[b]=world",
         .allocator = allocator,
     });
@@ -48,6 +49,7 @@ test "context query map" {
     const allocator = std.testing.allocator;
 
     var req = Request.init(.{
+        .req = undefined,
         .target = "/query?ids[a]=1234&ids[b]=hello&ids[b]=world",
         .allocator = allocator,
     });

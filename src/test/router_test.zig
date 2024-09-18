@@ -15,7 +15,7 @@ const RouteError = Route.RouteError;
 fn createContext(method: std.http.Method, target: []const u8) anyerror!*Context {
     const allocator = std.testing.allocator;
 
-    var req = zinc.Request.init(.{ .method = method, .target = target, .allocator = allocator });
+    var req = zinc.Request.init(.{ .req = undefined, .method = method, .target = target, .allocator = allocator });
     var res = zinc.Response.init(.{ .allocator = allocator });
     const ctx = try zinc.Context.init(.{ .request = &req, .response = &res, .allocator = allocator });
     return ctx;
