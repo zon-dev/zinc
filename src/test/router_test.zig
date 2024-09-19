@@ -12,17 +12,16 @@ const Route = zinc.Route;
 const Router = zinc.Router;
 const RouteError = Route.RouteError;
 
-fn createContext(method: std.http.Method, target: []const u8) anyerror!*Context {
-    const allocator = std.testing.allocator;
-
-    const req = try zinc.Request.init(.{ .req = undefined, .method = method, .target = target, .allocator = allocator });
-    const res = try zinc.Response.init(.{ .allocator = allocator });
-    const ctx = try zinc.Context.init(.{ .request = req, .response = res, .allocator = allocator });
-    return ctx;
+fn createContext(allocator: std.mem.Allocator, method: std.http.Method, target: []const u8) anyerror!*Context {
+    const req = try Request.init(.{ .allocator = allocator, .req = undefined, .method = method, .target = target });
+    const res = try Response.init(.{ .allocator = allocator, .req = undefined, .res = undefined });
+    return try Context.init(.{ .allocator = allocator, .request = req, .response = res });
 }
 
 test "Router. Handle Request" {
-    var router = try Router.init(.{ .allocator = std.testing.allocator });
+    const allocator = std.testing.allocator;
+
+    var router = try Router.init(.{ .allocator = allocator });
     defer router.deinit();
 
     const handle = struct {
@@ -61,14 +60,14 @@ test "Router. Handle Request" {
     // std.debug.print("\r\n Done handle POST request test", .{});
 
     // Not found
-    var ctx_not_found = try createContext(.GET, "/not-found");
+    var ctx_not_found = try createContext(allocator, .GET, "/not-found");
     router.prepareContext(ctx_not_found) catch |err| {
         try testing.expect(err == RouteError.NotFound);
     };
     defer ctx_not_found.destroy();
 
     // Method not allowed
-    var ctx_not_allowed = try createContext(.PUT, "/");
+    var ctx_not_allowed = try createContext(allocator, .PUT, "/");
     router.prepareContext(ctx_not_allowed) catch |err| {
         try testing.expect(err == RouteError.MethodNotAllowed);
     };

@@ -2,6 +2,10 @@ const std = @import("std");
 const zinc = @import("../zinc.zig");
 const expect = std.testing.expect;
 
+const Context = zinc.Context;
+const Request = zinc.Request;
+const Response = zinc.Response;
+
 test "Middleware" {
     const allocator = std.testing.allocator;
     var router = try zinc.Router.init(.{
@@ -48,17 +52,14 @@ test "Middleware" {
         try std.testing.expectEqual(handler, ctx_handler);
     }
 
-    // TODO
-    // try ctx_get.handlersProcess();
-    // try route.handle(ctx_get);
-    // try std.testing.expectEqual(.ok, ctx_get.response.status);
-    // try std.testing.expectEqual(3, ctx_get.handlers.items.len);
-    // // TODO
-    // try std.testing.expectEqualStrings("Hello world!", ctx_get.response.body orelse "");
+    try ctx_get.handlersProcess();
+    try std.testing.expectEqual(.ok, ctx_get.response.status);
+    try std.testing.expectEqual(3, ctx_get.handlers.items.len);
+    try std.testing.expectEqualStrings("Hello world!", ctx_get.response.body orelse "");
 }
 
-fn createContext(allocator: std.mem.Allocator, method: std.http.Method, target: []const u8) anyerror!*zinc.Context {
-    const req = try zinc.Request.init(.{ .allocator = allocator, .req = undefined, .method = method, .target = target });
-    const res = try zinc.Response.init(.{ .allocator = allocator, .req = undefined });
-    return try zinc.Context.init(.{ .allocator = allocator, .request = req, .response = res });
+fn createContext(allocator: std.mem.Allocator, method: std.http.Method, target: []const u8) anyerror!*Context {
+    const req = try Request.init(.{ .allocator = allocator, .req = undefined, .method = method, .target = target });
+    const res = try Response.init(.{ .allocator = allocator, .req = undefined, .res = undefined });
+    return try Context.init(.{ .allocator = allocator, .request = req, .response = res });
 }
