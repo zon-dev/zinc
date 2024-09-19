@@ -42,22 +42,20 @@ test "Router. Handle Request" {
     try router.post("/", handle);
 
     // GET Request.
-    // var ctx_get = try createContext(.GET, "/");
-    // try ctx_get.handlers.appendSlice(route.handlers.items);
-    // try ctx_get.handlersProcess();
-    // try testing.expectEqual(.ok, ctx_get.response.status);
-    // try testing.expectEqualStrings("Hello Zinc!", ctx_get.response.body.?);
-    // defer ctx_get.destroy();
-    // std.debug.print("\r\n Done handle GET request test", .{});
+    var ctx_get = try createContext(allocator, .GET, "/");
+    defer ctx_get.destroy();
+    try ctx_get.handlers.appendSlice(route.handlers.items);
+    try ctx_get.handlersProcess();
+    try testing.expectEqual(.ok, ctx_get.response.status);
+    try testing.expectEqualStrings("Hello Zinc!", ctx_get.response.body.?);
 
     // POST Request.
-    // var ctx_post = try createContext(.POST, "/");
-    // try router.prepareContext(ctx_post);
-    // TODO
-    // try testing.expectEqual(.ok, ctx_post.response.status);
-    // try testing.expectEqualStrings("Hello Zinc!", ctx_post.response.body.?);
-    // defer ctx_post.destroy();
-    // std.debug.print("\r\n Done handle POST request test", .{});
+    var ctx_post = try createContext(allocator, .POST, "/");
+    defer ctx_post.destroy();
+    try ctx_post.handlers.appendSlice(route.handlers.items);
+    try ctx_post.handlersProcess();
+    try testing.expectEqual(.ok, ctx_post.response.status);
+    try testing.expectEqualStrings("Hello Zinc!", ctx_post.response.body.?);
 
     // Not found
     var ctx_not_found = try createContext(allocator, .GET, "/not-found");

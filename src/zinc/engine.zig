@@ -210,8 +210,7 @@ fn worker(self: *Engine) anyerror!void {
                 continue :accept;
             };
 
-            // TODO ??
-            ctx.handlers = match_route.handlers;
+            try ctx.handlers.appendSlice(match_route.handlers.items);
             ctx.handle() catch try default_response.internalServerError(conn.stream);
         }
 

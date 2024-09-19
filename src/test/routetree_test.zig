@@ -5,8 +5,7 @@ const Route = zinc.Route;
 const RouteTree = zinc.RouteTree;
 const RootTree = zinc.RootTree;
 
-test "RouteTree /" {
-    // Create the root of the Route Tree
+fn createTree() anyerror!*RouteTree {
     const allocator = std.testing.allocator;
     var root = try RouteTree.init(.{
         .allocator = allocator,
@@ -14,7 +13,7 @@ test "RouteTree /" {
         .routes = std.ArrayList(*Route).init(allocator),
     });
 
-    defer root.destoryRootTree();
+    // defer root.destoryRootTree();
 
     // Insert values into the Route Tree
     _ = try root.insert("/");
@@ -26,7 +25,12 @@ test "RouteTree /" {
     _ = try root.insert("/root/route/two");
     _ = try root.insert("/root/route/one/one_subroute");
 
-    // root.print(1);
+    return root;
+}
+
+test "RouteTree /" {
+    var root = try createTree();
+    defer root.destoryRootTree();
 
     const path_to_find = "/root/route/two/subroute/three";
     const node = root.find(path_to_find).?;
@@ -57,26 +61,8 @@ test "RouteTree /" {
 }
 
 test "RouteTree /root/route" {
-    // Create the root of the Route Tree
-    const allocator = std.testing.allocator;
-    var root = try RouteTree.init(.{
-        .allocator = allocator,
-        .children = std.StringHashMap(*RouteTree).init(allocator),
-        .routes = std.ArrayList(*Route).init(allocator),
-    });
-
+    var root = try createTree();
     defer root.destoryRootTree();
-
-    // Insert values into the Route Tree
-    _ = try root.insert("/root/route/one_subroute");
-    _ = try root.insert("/root/route/two_subroute");
-    _ = try root.insert("/root/route/one");
-    _ = try root.insert("/root/route");
-    _ = try root.insert("/root/route/two/subroute/three");
-    _ = try root.insert("/root/route/two/subroute/four");
-    _ = try root.insert("/root/route/two/subroute/five");
-    _ = try root.insert("/root/route/two");
-    _ = try root.insert("/root/route/one/one_subroute");
 
     // Find and print a specific node
     // const path_to_find = "/root/route/two/subroute/three";
@@ -93,8 +79,6 @@ test "RouteTree /root/route" {
     const node_path = node.getPath().?;
     defer node.allocator.free(node_path); // Free the memory
     try std.testing.expectEqualStrings(path_to_find, node_path);
-
-    // root.print(1);
 
     const search_value = "four";
     const found_node = root.findByValue(search_value);
