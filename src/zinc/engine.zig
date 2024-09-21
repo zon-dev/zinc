@@ -21,7 +21,7 @@ const Config = zinc.Config;
 const HandlerFn = zinc.HandlerFn;
 const Catchers = zinc.Catchers;
 
-const default_response = @import("default_response.zig");
+const utils = @import("utils.zig");
 
 pub const Engine = @This();
 const Self = @This();
@@ -194,9 +194,9 @@ fn worker(self: *Engine) anyerror!void {
 
             var request = http_server.receiveHead() catch |err| switch (err) {
                 error.HttpConnectionClosing => continue :ready,
-                error.HttpHeadersOversize => return default_response.requestHeaderFieldsTooLarge(conn.stream),
+                error.HttpHeadersOversize => return utils.response(.request_header_fields_too_large, conn.stream),
                 else => {
-                    try default_response.badRequest(conn.stream);
+                    try utils.response(.bad_request, conn.stream);
                     continue :accept;
                 },
             };
@@ -211,7 +211,7 @@ fn worker(self: *Engine) anyerror!void {
             };
 
             try ctx.handlers.appendSlice(match_route.handlers.items);
-            ctx.handle() catch try default_response.internalServerError(conn.stream);
+            ctx.handle() catch try utils.response(.internal_server_error, conn.stream);
         }
 
         // closing
@@ -233,7 +233,7 @@ fn catchRouteError(self: *Catchers, err: anyerror, stream: net.Stream, ctx: *Con
                 try notFoundHande(ctx);
                 return;
             }
-            try default_response.notFound(stream);
+            try utils.response(.not_found, stream);
             return;
         },
         Route.RouteError.MethodNotAllowed => {
@@ -241,7 +241,7 @@ fn catchRouteError(self: *Catchers, err: anyerror, stream: net.Stream, ctx: *Con
                 try methodNotAllowedHande(ctx);
                 return;
             }
-            try default_response.methodNotAllowed(stream);
+            try utils.response(.method_not_allowed, stream);
             return;
         },
         else => |e| return e,
