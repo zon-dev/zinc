@@ -2,7 +2,7 @@ const std = @import("std");
 const net = std.net;
 
 pub fn response(status: std.http.Status, conn: net.Stream) anyerror!void {
-    const text: []const u8 = undefined;
+    var text: []const u8 = undefined;
     switch (status) {
         .ok => {
             text = "HTTP/1.1 200 OK\r\nConnection: close\r\n";
