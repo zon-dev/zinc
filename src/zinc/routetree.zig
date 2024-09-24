@@ -433,9 +433,9 @@ pub const RouteTree = struct {
             std.debug.print("\n----------------\n", .{});
             std.debug.print("|{s}{s} \n", .{ indentString, self.value });
         } else if (methods.items.len == 0) {
-            std.debug.print("|{s}{s} \n", .{ indentString, self.value });
+            std.debug.print("|{s}{s}  | {s} \n", .{ indentString, self.value, self.full_path });
         } else {
-            std.debug.print("|{s}{s} |methods:{s}\n", .{ indentString, self.value, methods.items });
+            std.debug.print("|{s}{s} | {s} |methods:{s}\n", .{ indentString, self.value, self.full_path, methods.items });
         }
 
         if (self.children != null) {
