@@ -31,7 +31,7 @@ allocator: Allocator = undefined,
 
 middlewares: std.ArrayList(HandlerFn) = undefined,
 
-route_tree: ?*RouteTree = undefined,
+route_tree: *RouteTree = undefined,
 
 pub fn init(self: Self) anyerror!*Router {
     const r = try self.allocator.create(Router);
@@ -39,17 +39,20 @@ pub fn init(self: Self) anyerror!*Router {
     r.* = .{
         .allocator = self.allocator,
         .middlewares = std.ArrayList(HandlerFn).init(self.allocator),
-        .route_tree = try RouteTree.init(.{ .allocator = self.allocator }),
+        .route_tree = try RouteTree.init(.{
+            .value = "/",
+            .full_path = "/",
+            .allocator = self.allocator,
+            .children = std.StringHashMap(*RouteTree).init(self.allocator),
+            .routes = std.ArrayList(*Route).init(self.allocator),
+        }),
     };
     return r;
 }
 
 pub fn deinit(self: *Self) void {
     self.middlewares.deinit();
-
-    if (self.route_tree) |t| {
-        t.destoryRootTree();
-    }
+    self.route_tree.destroyTrieTree();
 
     self.allocator.destroy(self);
 }
@@ -71,12 +74,7 @@ pub fn prepareContext(self: *Self, ctx: *Context) anyerror!void {
 /// Return routes.
 /// Make sure to call `routes.deinit()` after using it.
 pub fn getRoutes(self: *Self) std.ArrayList(*Route) {
-    const rootTree = self.route_tree.?.getRoot().?;
-    return rootTree.getCurrentTreeRoutes();
-}
-
-pub fn getRootTree(self: *Self) *RouteTree {
-    return self.route_tree.?.getRoot().?;
+    return self.route_tree.getCurrentTreeRoutes();
 }
 
 pub fn add(self: *Self, method: std.http.Method, path: []const u8, handler: HandlerFn) anyerror!void {
@@ -112,7 +110,7 @@ fn insertRouteToRouteTree(self: *Self, route: *Route) anyerror!void {
     const url_target = try url.parseUrl(route.path);
     const path: []const u8 = url_target.path;
 
-    var rTree = try self.route_tree.?.insert(path);
+    var rTree = try self.route_tree.insert(path);
     if (!rTree.isRouteExist(route)) {
         try rTree.routes.?.append(route);
     }
@@ -157,9 +155,8 @@ fn getRouteTree(self: *Self, target: []const u8) anyerror!*RouteTree {
     const url_target = try url.parseUrl(target);
     const path = url_target.path;
 
-    if (self.route_tree) |t| {
-        if (t.find(path)) |f| return f;
-    }
+    if (self.route_tree.find(path)) |f| return f;
+
     return error.NotFound;
 }
 
@@ -203,8 +200,7 @@ pub fn rebuild(self: *Self) anyerror!void {
     // Nothing to rebuild if there are no middlewares.
     if (self.middlewares.items.len == 0) return;
 
-    const rootTree = self.route_tree.?.getRoot().?;
-    try rootTree.use(self.middlewares.items);
+    try self.route_tree.use(self.middlewares.items);
 }
 
 pub fn group(self: *Self, prefix: []const u8) anyerror!*RouterGroup {
@@ -272,6 +268,5 @@ fn checkPath(path: []const u8) anyerror!void {
 }
 
 pub fn printRouter(self: *Self) void {
-    const rootTree = self.getRootTree();
-    rootTree.print(0);
+    self.route_tree.print(0);
 }

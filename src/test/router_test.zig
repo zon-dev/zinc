@@ -30,46 +30,53 @@ test "Router. Handle Request" {
         }
     }.anyHandle;
     try router.get("/", handle);
-
     const route = try router.getRoute(.GET, "/");
-    try testing.expectEqualStrings("/", route.path);
 
-    const routes = router.getRoutes();
-    defer routes.deinit();
+    {
+        const routes = router.getRoutes();
+        defer routes.deinit();
+        try std.testing.expectEqual(1, routes.items.len);
+    }
+    {
+        try testing.expectEqualStrings("/", route.path);
+        // GET Request.
+        var ctx_get = try createContext(allocator, .GET, "/");
+        defer ctx_get.destroy();
 
-    try std.testing.expectEqual(1, routes.items.len);
+        try ctx_get.handlers.appendSlice(route.handlers.items);
+        try ctx_get.handlersProcess();
+        try testing.expectEqual(.ok, ctx_get.response.status);
+        try testing.expectEqualStrings("Hello Zinc!", ctx_get.response.body.?);
+    }
+    {
+        try router.post("/", handle);
+        // POST Request.
+        var ctx_post = try createContext(allocator, .POST, "/");
+        defer ctx_post.destroy();
+        try ctx_post.handlers.appendSlice(route.handlers.items);
+        try ctx_post.handlersProcess();
+        try testing.expectEqual(.ok, ctx_post.response.status);
+        try testing.expectEqualStrings("Hello Zinc!", ctx_post.response.body.?);
+    }
 
-    try router.post("/", handle);
+    {
+        // Not found
+        var ctx_not_found = try createContext(allocator, .GET, "/not-found");
+        router.prepareContext(ctx_not_found) catch |err| {
+            try testing.expect(err == RouteError.NotFound);
+        };
+        defer ctx_not_found.destroy();
+    }
+    {
 
-    // GET Request.
-    var ctx_get = try createContext(allocator, .GET, "/");
-    defer ctx_get.destroy();
-    try ctx_get.handlers.appendSlice(route.handlers.items);
-    try ctx_get.handlersProcess();
-    try testing.expectEqual(.ok, ctx_get.response.status);
-    try testing.expectEqualStrings("Hello Zinc!", ctx_get.response.body.?);
+        // Method not allowed
+        var ctx_not_allowed = try createContext(allocator, .PUT, "/");
+        router.prepareContext(ctx_not_allowed) catch |err| {
+            try testing.expect(err == RouteError.MethodNotAllowed);
+        };
 
-    // POST Request.
-    var ctx_post = try createContext(allocator, .POST, "/");
-    defer ctx_post.destroy();
-    try ctx_post.handlers.appendSlice(route.handlers.items);
-    try ctx_post.handlersProcess();
-    try testing.expectEqual(.ok, ctx_post.response.status);
-    try testing.expectEqualStrings("Hello Zinc!", ctx_post.response.body.?);
-
-    // Not found
-    var ctx_not_found = try createContext(allocator, .GET, "/not-found");
-    router.prepareContext(ctx_not_found) catch |err| {
-        try testing.expect(err == RouteError.NotFound);
-    };
-    defer ctx_not_found.destroy();
-
-    // Method not allowed
-    var ctx_not_allowed = try createContext(allocator, .PUT, "/");
-    router.prepareContext(ctx_not_allowed) catch |err| {
-        try testing.expect(err == RouteError.MethodNotAllowed);
-    };
-    defer ctx_not_allowed.destroy();
+        defer ctx_not_allowed.destroy();
+    }
 }
 
 test "router, routeTree and router.getRoute" {

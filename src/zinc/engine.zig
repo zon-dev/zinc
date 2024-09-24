@@ -64,6 +64,8 @@ fn create(conf: Config.Engine) anyerror!*Engine {
     errdefer listener.deinit();
 
     const route_tree = try RouteTree.init(.{
+        .value = "/",
+        .full_path = "/",
         .allocator = conf.allocator,
         .children = std.StringHashMap(*RouteTree).init(conf.allocator),
         .routes = std.ArrayList(*Route).init(conf.allocator),
