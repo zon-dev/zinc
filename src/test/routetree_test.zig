@@ -49,6 +49,10 @@ test "RouteTree /" {
     const node = root.findWithWildcard(path_to_find).?;
     try std.testing.expectEqualStrings(path_to_find, node.full_path);
     try std.testing.expectEqualStrings("three", node.value);
+
+    const find_two = "/root/route/two";
+    const find_two_node = root.findWithWildcard(find_two).?;
+    try std.testing.expectEqualStrings(find_two, find_two_node.full_path);
 }
 
 test "RouteTree wildcard insert and search" {
@@ -88,9 +92,11 @@ test "RouteTree complex wildcard match" {
     // routeTree.print(1);
 
     // Test for valid matches
-    try std.testing.expect(routeTree.findWithWildcard("/api/v1/users/123") != null);
-    const find = routeTree.findWithWildcard("/api/v1/users/123").?;
-    _ = find;
+    const path_to_find = "/api/v1/users/123";
+    try std.testing.expect(routeTree.findWithWildcard(path_to_find) != null);
+    // TODO
+    // const find = routeTree.findWithWildcard(path_to_find).?;
+    // try std.testing.expectEqualStrings(find.full_path, path_to_find);
 
     try std.testing.expect(routeTree.findWithWildcard("/api/v1/products/456") != null);
     try std.testing.expect(routeTree.findWithWildcard("/api/v2/users/789") != null);

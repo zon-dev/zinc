@@ -108,7 +108,8 @@ pub const RouteTree = struct {
                 }
 
                 const segment = value[start..i];
-                current = try current.handleSegment(segment, path);
+                const full_path = path[0 .. i + 1];
+                current = try current.handleSegment(segment, full_path);
                 start = i + 1;
             }
         }
@@ -116,7 +117,8 @@ pub const RouteTree = struct {
         // Handle the last segment after the loop
         if (start < value.len) {
             const last_segment = value[start..]; // Get the last segment
-            current = try current.handleSegment(last_segment, path); // Insert the last segment
+            const full_path = path[0 .. start + last_segment.len + 1]; // Get the full path
+            current = try current.handleSegment(last_segment, full_path); // Insert the last segment
         }
 
         return current; // Return the last node of the inserted value
