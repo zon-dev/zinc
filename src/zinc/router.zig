@@ -171,6 +171,9 @@ pub fn getRoute(self: *Self, method: std.http.Method, target: []const u8) anyerr
     const rTree = try self.getRouteTree(path);
 
     if (rTree.routes) |*routes| {
+        if (routes.items.len == 0) {
+            return Route.RouteError.NotFound;
+        }
 
         // If there is only one route and the path is empty, return NotFound.
         if (routes.items.len == 1) {
