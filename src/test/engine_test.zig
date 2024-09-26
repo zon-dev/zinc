@@ -84,7 +84,7 @@ test "Zinc Server" {
     defer z.shutdown(0);
 
     var router = z.getRouter();
-    try router.get("/test", testHanle);
+    try router.get("/test", testHandle);
     const routes = router.getRoutes();
     defer routes.deinit();
 
@@ -108,7 +108,7 @@ test "Zinc Server" {
     try std.testing.expectEqual(2, router.getRoutes().items[0].handlers.items.len);
 
     // Add OPTIONS method to the route
-    try router.options("/test", testHanle);
+    try router.options("/test", testHandle);
     // Create an HTTP client.
     var req2 = try fetch(&client, .{ .method = .OPTIONS, .location = .{ .url = url } });
     defer req2.deinit();
@@ -187,7 +187,7 @@ test "Zinc Server" {
     try std.testing.expectEqualStrings("Hello Zinc!", req3_body_buffer);
 }
 
-fn testHanle(ctx: *Context) anyerror!void {
+fn testHandle(ctx: *Context) anyerror!void {
     try ctx.text("Hello World!", .{});
 }
 

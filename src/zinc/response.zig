@@ -18,7 +18,6 @@ res: *server_response = undefined,
 
 version: []const u8 = "HTTP/1.1",
 status: std.http.Status = .ok,
-// header: std.StringArrayHashMap([]u8) = undefined,
 header: std.ArrayList(std.http.Header) = undefined,
 
 body: ?[]const u8 = null,
@@ -57,6 +56,10 @@ pub fn setStatus(self: *Self, status: std.http.Status) void {
 
 pub fn setHeader(self: *Self, key: []const u8, value: []const u8) anyerror!void {
     try self.header.append(.{ .name = key, .value = value });
+}
+
+pub fn getHeaders(self: *Self) []std.http.Header {
+    return self.header.items;
 }
 
 pub fn setBody(self: *Self, body: []const u8) anyerror!void {

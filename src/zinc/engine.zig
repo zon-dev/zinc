@@ -141,14 +141,12 @@ pub fn deinit(self: *Self) void {
 
 /// Accept a new connection.
 fn accept(self: *Engine) ?std.net.Server.Connection {
-    self.mutex.lock();
-    defer self.mutex.unlock();
+    // self.mutex.lock();
+    // defer self.mutex.unlock();
 
     if (self.stopping.isSet()) return null;
 
     const conn = self.net_server.accept() catch |e| {
-        if (self.stopping.isSet()) return null;
-
         switch (e) {
             error.ConnectionAborted => {
                 // return self.accept();
@@ -184,10 +182,10 @@ fn worker(self: *Engine) anyerror!void {
     defer engine_allocator.free(read_buffer);
 
     // Engine is stopping.
-    if (self.stopping.isSet()) return;
+    // if (self.stopping.isSet()) return;
 
     accept: while (self.accept()) |conn| {
-        if (self.stopping.isSet()) return;
+        // if (self.stopping.isSet()) return;
 
         var http_server = http.Server.init(conn, read_buffer);
 
@@ -205,7 +203,7 @@ fn worker(self: *Engine) anyerror!void {
 
             const req = try Request.init(.{ .req = &request, .allocator = engine_allocator });
             const res = try Response.init(.{ .req = &request, .allocator = engine_allocator });
-            var ctx = try Context.init(.{ .request = req, .response = res, .server_request = &request, .allocator = engine_allocator });
+            const ctx = try Context.init(.{ .request = req, .response = res, .server_request = &request, .allocator = engine_allocator });
 
             const match_route = router.getRoute(request.head.method, request.head.target) catch |err| {
                 try catchRouteError(@constCast(catchers), err, conn.stream, ctx);
@@ -214,6 +212,8 @@ fn worker(self: *Engine) anyerror!void {
 
             try ctx.handlers.appendSlice(match_route.handlers.items);
             ctx.handle() catch try utils.response(.internal_server_error, conn.stream);
+            // TODO
+            // match_route.handle(ctx) catch try utils.response(.internal_server_error, conn.stream);
         }
 
         // closing

@@ -7,21 +7,17 @@ const zinc = @import("../zinc.zig");
 const Request = zinc.Request;
 const Response = zinc.Response;
 const Config = zinc.Config;
-const Headers = zinc.Headers;
 const Param = zinc.Param;
 
 pub const Context = @This();
 const Self = @This();
 
-// const HandlerFn = zinc.HandlerFn;
 const handlerFn = *const fn (*Context) anyerror!void;
 
 allocator: std.mem.Allocator,
 
 server_request: *std.http.Server.Request = undefined,
 
-// connection: std.net.Server.Connection = undefined,
-headers: Headers = undefined,
 request: *Request = undefined,
 response: *Response = undefined,
 
@@ -37,7 +33,6 @@ handlers: std.ArrayList(handlerFn) = undefined,
 index: u8 = 0, // Adjust the type based on your specific needs
 
 pub fn destroy(self: *Self) void {
-    self.headers.deinit();
     self.params.deinit();
     if (self.query_map != null) {
         self.query_map.?.deinit();
@@ -62,7 +57,6 @@ pub fn init(self: Self) anyerror!*Context {
         .allocator = self.allocator,
         .request = self.request,
         .response = self.response,
-        .headers = Headers.init(.{ .allocator = self.allocator }),
         .params = std.StringHashMap(Param).init(self.allocator),
         .query = self.request.query,
         .query_map = self.query_map,
@@ -74,13 +68,13 @@ pub fn init(self: Self) anyerror!*Context {
 }
 
 pub fn html(self: *Self, content: []const u8, conf: Config.Context) anyerror!void {
-    try self.headers.add("Content-Type", "text/html");
+    try self.setHeader("Content-Type", "text/html");
     try self.setBody(content);
     try self.setStatus(conf.status);
 }
 
 pub fn text(self: *Self, content: []const u8, conf: Config.Context) anyerror!void {
-    try self.headers.add("Content-Type", "text/plain");
+    try self.setHeader("Content-Type", "text/plain");
     try self.setBody(content);
     try self.setStatus(conf.status);
 }
@@ -90,7 +84,7 @@ pub fn json(self: *Self, value: anytype, conf: Config.Context) anyerror!void {
     defer self.allocator.free(string.items);
 
     try std.json.stringify(value, .{}, string.writer());
-    try self.headers.add("Content-Type", "application/json");
+    try self.setHeader("Content-Type", "application/json");
     const slice = try string.toOwnedSlice();
 
     try self.setBody(slice);
@@ -165,19 +159,15 @@ pub fn setStatus(self: *Self, status: std.http.Status) !void {
     self.response.setStatus(status);
 }
 pub fn setHeader(self: *Self, key: []const u8, value: []const u8) anyerror!void {
-    try self.headers.add(key, value);
     try self.response.setHeader(key, value);
 }
+
 pub fn setBody(self: *Self, body: []const u8) !void {
     try self.response.setBody(body);
 }
 
-pub fn addHeader(self: *Self, name: []const u8, value: []const u8) anyerror!void {
-    try self.headers.add(name, value);
-}
-
-pub fn getHeaders(self: *Self) *Headers {
-    return &self.headers;
+pub fn getHeaders(self: *Self) []std.http.Header {
+    return self.response.header.items;
 }
 
 /// Run the next middleware or handler in the chain.
@@ -192,12 +182,12 @@ pub fn next(self: *Context) anyerror!void {
 }
 
 pub fn redirect(self: *Self, http_status: std.http.Status, url: []const u8) anyerror!void {
-    try self.headers.add("Location", url);
+    try self.response.setHeader("Location", url);
+
     try self.send("", .{
         .status = http_status,
         .reason = http_status.phrase(),
-        .extra_headers = self.headers.items(),
-        .keep_alive = false,
+        .extra_headers = self.response.getHeaders(),
     });
 }
 
@@ -368,7 +358,6 @@ pub fn doRequest(self: *Self) anyerror!void {
 
     try self.send(body, .{
         .status = self.response.status,
-        .extra_headers = self.headers.items(),
-        .keep_alive = false,
+        .extra_headers = self.response.getHeaders(),
     });
 }
