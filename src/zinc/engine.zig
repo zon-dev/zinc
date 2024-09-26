@@ -193,6 +193,7 @@ fn worker(self: *Engine) anyerror!void {
             // defer _ = arena.reset(.{ .retain_with_limit = read_buffer_len });
 
             var request = http_server.receiveHead() catch |err| switch (err) {
+                error.HttpHeadersUnreadable => continue :accept,
                 error.HttpConnectionClosing => continue :ready,
                 error.HttpHeadersOversize => return utils.response(.request_header_fields_too_large, conn.stream),
                 else => {
