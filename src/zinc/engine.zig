@@ -176,16 +176,14 @@ fn worker(self: *Engine) anyerror!void {
     var router = self.getRouter();
     const catchers = self.getCatchers();
 
-    const read_buffer_len = self.read_buffer_len;
-    var read_buffer: []u8 = undefined;
-    read_buffer = try engine_allocator.alloc(u8, read_buffer_len);
-    defer engine_allocator.free(read_buffer);
-
     // Engine is stopping.
     // if (self.stopping.isSet()) return;
 
     accept: while (self.accept()) |conn| {
-        // if (self.stopping.isSet()) return;
+        const read_buffer_len = self.read_buffer_len;
+        var read_buffer: []u8 = undefined;
+        read_buffer = try engine_allocator.alloc(u8, read_buffer_len);
+        defer engine_allocator.free(read_buffer);
 
         var http_server = http.Server.init(conn, read_buffer);
 
