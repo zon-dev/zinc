@@ -210,10 +210,7 @@ fn worker(self: *Engine) anyerror!void {
                 continue :accept;
             };
 
-            try ctx.handlers.appendSlice(match_route.handlers.items);
-            ctx.handle() catch try utils.response(.internal_server_error, conn.stream);
-            // TODO
-            // match_route.handle(ctx) catch try utils.response(.internal_server_error, conn.stream);
+            match_route.handle(ctx) catch try utils.response(.internal_server_error, conn.stream);
         }
 
         // closing

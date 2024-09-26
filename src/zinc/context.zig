@@ -8,6 +8,7 @@ const Request = zinc.Request;
 const Response = zinc.Response;
 const Config = zinc.Config;
 const Param = zinc.Param;
+const Route = zinc.Route;
 
 pub const Context = @This();
 const Self = @This();
@@ -344,6 +345,11 @@ pub fn handlersProcess(self: *Self) anyerror!void {
         try handler(self);
     }
 }
+
+// pub fn routeHanlde(self: *Self, route: *Route) anyerror!void {
+//     try self.handlers.appendSlice(route.handlers.items);
+//     try self.handle();
+// }
 
 pub fn handle(self: *Self) anyerror!void {
     try self.handlersProcess();

@@ -119,22 +119,9 @@ pub fn getHandler(self: *Route) HandlerFn {
     return &self.handler;
 }
 
-fn handlersProcess(self: *Route, ctx: *Context) anyerror!void {
-    if (self.handlers.items.len == 0) {
-        return;
-    }
-
-    for (self.handlers.items) |handler| {
-        handler(ctx) catch |err| {
-            std.log.err("handler error: {any}", .{err});
-            return err;
-        };
-    }
-}
-
 pub fn handle(self: *Route, ctx: *Context) anyerror!void {
-    try self.handlersProcess(ctx);
-    try ctx.doRequest();
+    ctx.handlers = self.handlers;
+    try ctx.handle();
 }
 
 pub fn isMethodAllowed(self: *Route, method: Method) bool {
