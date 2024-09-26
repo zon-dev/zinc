@@ -12,6 +12,8 @@ const RouterGroup = zinc.RouterGroup;
 
 const RouteTree = zinc.RouteTree;
 
+const Catchers = zinc.Catchers;
+
 pub const Router = @This();
 const Self = @This();
 
@@ -33,6 +35,8 @@ middlewares: std.ArrayList(HandlerFn) = undefined,
 
 route_tree: *RouteTree = undefined,
 
+catchers: ?*Catchers = undefined,
+
 pub fn init(self: Self) anyerror!*Router {
     const r = try self.allocator.create(Router);
     errdefer self.allocator.destroy(r);
@@ -46,6 +50,7 @@ pub fn init(self: Self) anyerror!*Router {
             .children = std.StringHashMap(*RouteTree).init(self.allocator),
             .routes = std.ArrayList(*Route).init(self.allocator),
         }),
+        .catchers = try Catchers.init(self.allocator),
     };
     return r;
 }
@@ -53,6 +58,7 @@ pub fn init(self: Self) anyerror!*Router {
 pub fn deinit(self: *Self) void {
     self.middlewares.deinit();
     self.route_tree.destroyTrieTree();
+    self.catchers.?.deinit();
 
     self.allocator.destroy(self);
 }
@@ -60,6 +66,34 @@ pub fn deinit(self: *Self) void {
 pub fn handleContext(self: *Self, ctx: *Context) anyerror!void {
     try self.prepareContext(ctx);
     try ctx.doRequest();
+}
+
+pub fn handleRequest(self: *Self, request: *std.http.Server.Request) anyerror!void {
+    const req = try Request.init(.{ .req = request, .allocator = self.allocator });
+    const res = try Response.init(.{ .req = request, .allocator = self.allocator });
+    const ctx = try Context.init(.{ .request = req, .response = res, .server_request = request, .allocator = self.allocator });
+
+    const match_route = self.getRoute(request.head.method, request.head.target) catch |err| {
+        try self.handleError(err, ctx);
+        return err;
+    };
+    try match_route.handle(ctx);
+}
+
+fn handleError(self: *Self, err: anyerror, ctx: *Context) anyerror!void {
+    switch (err) {
+        Route.RouteError.NotFound => {
+            if (self.catchers.?.get(.not_found)) |notFoundHande| {
+                return try notFoundHande(ctx);
+            }
+        },
+        Route.RouteError.MethodNotAllowed => {
+            if (self.catchers.?.get(.method_not_allowed)) |methodNotAllowedHande| {
+                return try methodNotAllowedHande(ctx);
+            }
+        },
+        else => return err,
+    }
 }
 
 pub fn prepareContext(self: *Self, ctx: *Context) anyerror!void {

@@ -61,6 +61,16 @@ pub fn setHeader(self: *Self, key: []const u8, value: []const u8) anyerror!void 
 pub fn getHeaders(self: *Self) []std.http.Header {
     return self.header.items;
 }
+pub fn isKeepAlive(self: *Self) bool {
+    for (self.header.items) |header| {
+        if (std.mem.eql(u8, header.name, "Connection")) {
+            if (std.mem.eql(u8, header.value, "keep-alive")) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
 
 pub fn setBody(self: *Self, body: []const u8) anyerror!void {
     var new_body = std.ArrayList(u8).init(self.allocator);

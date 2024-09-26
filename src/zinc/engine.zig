@@ -51,7 +51,7 @@ body_buffer_len: usize = undefined,
 
 // options
 router: ?*Router = undefined,
-catchers: ?*Catchers = undefined,
+// catchers: ?*Catchers = undefined,
 middlewares: ?std.ArrayList(HandlerFn) = undefined,
 
 /// Create a new engine.
@@ -84,7 +84,7 @@ fn create(conf: Config.Engine) anyerror!*Engine {
             .allocator = conf.allocator,
             .middlewares = std.ArrayList(HandlerFn).init(conf.allocator),
         }),
-        .catchers = try Catchers.init(conf.allocator),
+        // .catchers = try Catchers.init(conf.allocator),
         .middlewares = std.ArrayList(HandlerFn).init(conf.allocator),
         .threads = std.ArrayList(std.Thread).init(conf.allocator),
 
@@ -130,7 +130,7 @@ pub fn deinit(self: *Self) void {
 
     if (self.middlewares) |m| m.deinit();
 
-    if (self.catchers) |c| c.deinit();
+    // if (self.catchers) |c| c.deinit();
 
     if (self.router) |r| r.deinit();
 
@@ -174,7 +174,7 @@ fn worker(self: *Engine) anyerror!void {
     const engine_allocator = self.allocator;
 
     var router = self.getRouter();
-    const catchers = self.getCatchers();
+    // const catchers = self.getCatchers();
 
     // Engine is stopping.
     // if (self.stopping.isSet()) return;
@@ -200,16 +200,8 @@ fn worker(self: *Engine) anyerror!void {
                 },
             };
 
-            const req = try Request.init(.{ .req = &request, .allocator = engine_allocator });
-            const res = try Response.init(.{ .req = &request, .allocator = engine_allocator });
-            const ctx = try Context.init(.{ .request = req, .response = res, .server_request = &request, .allocator = engine_allocator });
-
-            const match_route = router.getRoute(request.head.method, request.head.target) catch |err| {
-                try catchRouteError(@constCast(catchers), err, conn.stream, ctx);
-                continue :accept;
-            };
-
-            match_route.handle(ctx) catch try utils.response(.internal_server_error, conn.stream);
+            // TODO Catchers handle error.
+            router.handleRequest(&request) catch |err| try catchRouteError(err, conn.stream);
         }
 
         // closing
@@ -219,30 +211,17 @@ fn worker(self: *Engine) anyerror!void {
     }
 }
 
-fn catchRouteError(self: *Catchers, err: anyerror, stream: net.Stream, ctx: *Context) anyerror!void {
+fn catchRouteError(err: anyerror, stream: net.Stream) anyerror!void {
     switch (err) {
         Route.RouteError.NotFound => {
-            if (!ctx.request.method.responseHasBody()) {
-                _ = try stream.write("HTTP/1.1 404 Not Found\r\n\r\n");
-                return;
-            }
-
-            if (self.get(.not_found)) |notFoundHande| {
-                try notFoundHande(ctx);
-                return;
-            }
             try utils.response(.not_found, stream);
             return;
         },
         Route.RouteError.MethodNotAllowed => {
-            if (self.get(.method_not_allowed)) |methodNotAllowedHande| {
-                try methodNotAllowedHande(ctx);
-                return;
-            }
             try utils.response(.method_not_allowed, stream);
             return;
         },
-        else => |e| return e,
+        else => try utils.response(.internal_server_error, stream),
     }
 }
 
@@ -297,12 +276,12 @@ pub fn getRouter(self: *Self) *Router {
 
 /// Get the catchers.
 pub fn getCatchers(self: *Self) *Catchers {
-    return self.catchers.?;
+    return self.router.?.catchers.?;
 }
 
 /// Get the catcher by status.
 fn getCatcher(self: *Self, status: http.Status) ?HandlerFn {
-    return self.catchers.get(status);
+    return self.router.?.catchers.?.get(status);
 }
 
 /// use middleware to match any route

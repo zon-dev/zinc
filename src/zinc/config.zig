@@ -32,4 +32,5 @@ pub const Engine = struct {
 
 pub const Context = struct {
     status: std.http.Status = std.http.Status.ok,
+    keep_alive: bool = false,
 };

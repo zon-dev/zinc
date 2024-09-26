@@ -69,18 +69,27 @@ pub fn init(self: Self) anyerror!*Context {
 }
 
 pub fn html(self: *Self, content: []const u8, conf: Config.Context) anyerror!void {
+    if (conf.keep_alive) {
+        try self.setHeader("Connection", "keep-alive");
+    }
     try self.setHeader("Content-Type", "text/html");
     try self.setBody(content);
     try self.setStatus(conf.status);
 }
 
 pub fn text(self: *Self, content: []const u8, conf: Config.Context) anyerror!void {
+    if (conf.keep_alive) {
+        try self.setHeader("Connection", "keep-alive");
+    }
     try self.setHeader("Content-Type", "text/plain");
     try self.setBody(content);
     try self.setStatus(conf.status);
 }
 
 pub fn json(self: *Self, value: anytype, conf: Config.Context) anyerror!void {
+    if (conf.keep_alive) {
+        try self.setHeader("Connection", "keep-alive");
+    }
     var string = std.ArrayList(u8).init(self.allocator);
     defer self.allocator.free(string.items);
 
@@ -365,5 +374,6 @@ pub fn doRequest(self: *Self) anyerror!void {
     try self.send(body, .{
         .status = self.response.status,
         .extra_headers = self.response.getHeaders(),
+        .keep_alive = self.response.isKeepAlive(),
     });
 }

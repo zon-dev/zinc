@@ -41,22 +41,22 @@ pub fn put(self: *Self, status: Status, handler: HandlerFn) Allocator.Error!void
     try self.catchers.put(status, handler);
 }
 
-pub fn setNotFound(self: *Self, handler: HandlerFn) Allocator.Error!void {
-    try self.catchers.put(.not_found, handler);
-}
-pub fn setMethodNotAllowed(self: *Self, handler: HandlerFn) Allocator.Error!void {
-    try self.catchers.put(.method_not_allowed, handler);
-}
-pub fn setInternalServerError(self: *Self, handler: HandlerFn) Allocator.Error!void {
-    try self.catchers.put(.internal_server_error, handler);
-}
+// pub fn setNotFound(self: *Self, handler: HandlerFn) Allocator.Error!void {
+//     try self.catchers.put(.not_found, handler);
+// }
+// pub fn setMethodNotAllowed(self: *Self, handler: HandlerFn) Allocator.Error!void {
+//     try self.catchers.put(.method_not_allowed, handler);
+// }
+// pub fn setInternalServerError(self: *Self, handler: HandlerFn) Allocator.Error!void {
+//     try self.catchers.put(.internal_server_error, handler);
+// }
 
-pub fn notFound(self: *Self) ?HandlerFn {
-    return self.get(.not_found);
-}
-pub fn methodNotAllowed(self: *Self) ?HandlerFn {
-    return self.get(.method_not_allowed);
-}
-pub fn internalServerError(self: *Self) ?HandlerFn {
-    return self.get(.internal_server_error);
-}
+// pub fn notFound(self: *Self) ?HandlerFn {
+//     return self.get(.not_found);
+// }
+// pub fn methodNotAllowed(self: *Self) ?HandlerFn {
+//     return self.get(.method_not_allowed);
+// }
+// pub fn internalServerError(self: *Self) ?HandlerFn {
+//     return self.get(.internal_server_error);
+// }
