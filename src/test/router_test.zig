@@ -43,7 +43,8 @@ test "Router. Handle Request" {
         var ctx_get = try createContext(allocator, .GET, "/");
         defer ctx_get.destroy();
 
-        try ctx_get.handlers.appendSlice(route.handlers.items);
+        // try ctx_get.handlers.appendSlice(route.handlers.items);
+        ctx_get.handlers = route.handlers;
         try ctx_get.handlersProcess();
         try testing.expectEqual(.ok, ctx_get.response.status);
         try testing.expectEqualStrings("Hello Zinc!", ctx_get.response.body.?);
@@ -53,7 +54,8 @@ test "Router. Handle Request" {
         // POST Request.
         var ctx_post = try createContext(allocator, .POST, "/");
         defer ctx_post.destroy();
-        try ctx_post.handlers.appendSlice(route.handlers.items);
+        // try ctx_post.handlers.appendSlice(route.handlers.items);
+        ctx_post.handlers = route.handlers;
         try ctx_post.handlersProcess();
         try testing.expectEqual(.ok, ctx_post.response.status);
         try testing.expectEqualStrings("Hello Zinc!", ctx_post.response.body.?);

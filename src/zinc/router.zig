@@ -72,6 +72,7 @@ pub fn handleRequest(self: *Self, request: *std.http.Server.Request) anyerror!vo
     const req = try Request.init(.{ .req = request, .allocator = self.allocator });
     const res = try Response.init(.{ .req = request, .allocator = self.allocator });
     const ctx = try Context.init(.{ .request = req, .response = res, .server_request = request, .allocator = self.allocator });
+    defer ctx.destroy();
 
     const match_route = self.getRoute(request.head.method, request.head.target) catch |err| {
         try self.handleError(err, ctx);

@@ -38,10 +38,10 @@ pub fn destroy(self: *Self) void {
     if (self.query_map != null) {
         self.query_map.?.deinit();
     }
-    if (self.handlers.items.len > 0) {
-        self.handlers.clearAndFree();
-        self.handlers.deinit();
-    }
+    // if (self.handlers.items.len > 0) {
+    //     self.handlers.clearAndFree();
+    //     self.handlers.deinit();
+    // }
 
     self.response.deinit();
 

@@ -149,12 +149,9 @@ fn accept(self: *Engine) ?std.net.Server.Connection {
     const conn = self.net_server.accept() catch |e| {
         switch (e) {
             error.ConnectionAborted => {
-                // return self.accept();
                 return null;
             },
-            else => return {
-                return null;
-            },
+            else => return null,
         }
     };
 
