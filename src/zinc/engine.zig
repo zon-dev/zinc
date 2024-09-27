@@ -51,7 +51,6 @@ body_buffer_len: usize = undefined,
 
 // options
 router: ?*Router = undefined,
-// catchers: ?*Catchers = undefined,
 middlewares: ?std.ArrayList(HandlerFn) = undefined,
 
 /// Create a new engine.
@@ -84,7 +83,6 @@ fn create(conf: Config.Engine) anyerror!*Engine {
             .allocator = conf.allocator,
             .middlewares = std.ArrayList(HandlerFn).init(conf.allocator),
         }),
-        // .catchers = try Catchers.init(conf.allocator),
         .middlewares = std.ArrayList(HandlerFn).init(conf.allocator),
         .threads = std.ArrayList(std.Thread).init(conf.allocator),
 
@@ -130,8 +128,6 @@ pub fn deinit(self: *Self) void {
 
     if (self.middlewares) |m| m.deinit();
 
-    // if (self.catchers) |c| c.deinit();
-
     if (self.router) |r| r.deinit();
 
     if (!self.stopped.isSet()) self.stopped.set();
@@ -147,6 +143,7 @@ fn accept(self: *Engine) ?std.net.Server.Connection {
     if (self.stopping.isSet()) return null;
 
     const conn = self.net_server.accept() catch |e| {
+        if (self.stopping.isSet()) return null;
         switch (e) {
             error.ConnectionAborted => {
                 return null;
@@ -169,9 +166,11 @@ fn worker(self: *Engine) anyerror!void {
     self.spawn_count += 1;
 
     const engine_allocator = self.allocator;
+    var arena = std.heap.ArenaAllocator.init(engine_allocator);
+    defer arena.deinit();
+    const arena_allocator = arena.allocator();
 
     var router = self.getRouter();
-    // const catchers = self.getCatchers();
 
     // Engine is stopping.
     // if (self.stopping.isSet()) return;
@@ -179,13 +178,13 @@ fn worker(self: *Engine) anyerror!void {
     accept: while (self.accept()) |conn| {
         const read_buffer_len = self.read_buffer_len;
         var read_buffer: []u8 = undefined;
-        read_buffer = try engine_allocator.alloc(u8, read_buffer_len);
-        defer engine_allocator.free(read_buffer);
+        read_buffer = try arena_allocator.alloc(u8, read_buffer_len);
+        defer arena_allocator.free(read_buffer);
 
         var http_server = http.Server.init(conn, read_buffer);
 
         ready: while (http_server.state == .ready) {
-            // defer _ = arena.reset(.{ .retain_with_limit = read_buffer_len });
+            defer _ = arena.reset(.{ .retain_with_limit = self.read_buffer_len });
 
             var request = http_server.receiveHead() catch |err| switch (err) {
                 error.HttpHeadersUnreadable => continue :accept,
@@ -198,7 +197,7 @@ fn worker(self: *Engine) anyerror!void {
             };
 
             // TODO Catchers handle error.
-            router.handleRequest(&request) catch |err| try catchRouteError(err, conn.stream);
+            router.handleRequest(arena_allocator, &request) catch |err| try catchRouteError(err, conn.stream);
         }
 
         // closing
@@ -277,7 +276,8 @@ pub fn getCatchers(self: *Self) *Catchers {
 /// use middleware to match any route
 pub fn use(self: *Self, handlers: []const HandlerFn) anyerror!void {
     try self.middlewares.?.appendSlice(handlers);
-    try self.router.?.use(handlers);
+    // try self.middlewares.?.appendSlice(handlers);
+    try self.router.?.use(self.middlewares.?.items);
 }
 
 fn routeRebuild(self: *Self) anyerror!void {

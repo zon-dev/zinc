@@ -198,6 +198,7 @@ pub fn redirect(self: *Self, http_status: std.http.Status, url: []const u8) anye
         .status = http_status,
         .reason = http_status.phrase(),
         .extra_headers = self.response.getHeaders(),
+        .keep_alive = self.response.isKeepAlive(),
     });
 }
 

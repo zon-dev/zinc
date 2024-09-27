@@ -58,7 +58,9 @@ pub fn init(self: Self) anyerror!*Router {
 pub fn deinit(self: *Self) void {
     self.middlewares.deinit();
     self.route_tree.destroyTrieTree();
-    self.catchers.?.deinit();
+    if (self.catchers != null) {
+        self.catchers.?.deinit();
+    }
 
     self.allocator.destroy(self);
 }
@@ -68,10 +70,10 @@ pub fn handleContext(self: *Self, ctx: *Context) anyerror!void {
     try ctx.doRequest();
 }
 
-pub fn handleRequest(self: *Self, request: *std.http.Server.Request) anyerror!void {
-    const req = try Request.init(.{ .req = request, .allocator = self.allocator });
-    const res = try Response.init(.{ .req = request, .allocator = self.allocator });
-    const ctx = try Context.init(.{ .request = req, .response = res, .server_request = request, .allocator = self.allocator });
+pub fn handleRequest(self: *Self, allocator: std.mem.Allocator, request: *std.http.Server.Request) anyerror!void {
+    const req = try Request.init(.{ .req = request, .allocator = allocator });
+    const res = try Response.init(.{ .req = request, .allocator = allocator });
+    const ctx = try Context.init(.{ .request = req, .response = res, .server_request = request, .allocator = allocator });
     defer ctx.destroy();
 
     const match_route = self.getRoute(request.head.method, request.head.target) catch |err| {
