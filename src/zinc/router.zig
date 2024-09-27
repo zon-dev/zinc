@@ -75,24 +75,36 @@ pub fn handleRequest(self: *Self, request: *std.http.Server.Request) anyerror!vo
 
     const match_route = self.getRoute(request.head.method, request.head.target) catch |err| {
         try self.handleError(err, ctx);
-        return err;
+        try ctx.doRequest();
+        return;
     };
+
     try match_route.handle(ctx);
+}
+
+/// Get the catcher by status.
+fn getCatcher(self: *Self, status: std.http.Status) ?HandlerFn {
+    return self.catchers.?.get(status);
+}
+
+/// Set the catcher by status.
+pub fn setCatcher(self: *Self, status: std.http.Status, handler: HandlerFn) anyerror!void {
+    try self.catchers.?.put(status, handler);
 }
 
 fn handleError(self: *Self, err: anyerror, ctx: *Context) anyerror!void {
     switch (err) {
         Route.RouteError.NotFound => {
-            if (self.catchers.?.get(.not_found)) |notFoundHande| {
-                return try notFoundHande(ctx);
-            }
+            if (self.getCatcher(.not_found)) |notFoundHande| {
+                try notFoundHande(ctx);
+            } else return err;
         },
         Route.RouteError.MethodNotAllowed => {
-            if (self.catchers.?.get(.method_not_allowed)) |methodNotAllowedHande| {
-                return try methodNotAllowedHande(ctx);
-            }
+            if (self.getCatcher(.method_not_allowed)) |methodNotAllowedHande| {
+                try methodNotAllowedHande(ctx);
+            } else return err;
         },
-        else => return err,
+        else => |e| return e,
     }
 }
 

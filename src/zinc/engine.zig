@@ -214,12 +214,10 @@ fn worker(self: *Engine) anyerror!void {
 fn catchRouteError(err: anyerror, stream: net.Stream) anyerror!void {
     switch (err) {
         Route.RouteError.NotFound => {
-            try utils.response(.not_found, stream);
-            return;
+            return try utils.response(.not_found, stream);
         },
         Route.RouteError.MethodNotAllowed => {
-            try utils.response(.method_not_allowed, stream);
-            return;
+            return try utils.response(.method_not_allowed, stream);
         },
         else => try utils.response(.internal_server_error, stream),
     }
@@ -277,11 +275,6 @@ pub fn getRouter(self: *Self) *Router {
 /// Get the catchers.
 pub fn getCatchers(self: *Self) *Catchers {
     return self.router.?.catchers.?;
-}
-
-/// Get the catcher by status.
-fn getCatcher(self: *Self, status: http.Status) ?HandlerFn {
-    return self.router.?.catchers.?.get(status);
 }
 
 /// use middleware to match any route
