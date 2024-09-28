@@ -165,26 +165,25 @@ pub fn run(self: *Engine) !void {
 fn worker(self: *Engine) anyerror!void {
     self.spawn_count += 1;
 
-    const engine_allocator = self.allocator;
-    var arena = std.heap.ArenaAllocator.init(engine_allocator);
+    var arena = std.heap.ArenaAllocator.init(self.allocator);
     defer arena.deinit();
     const arena_allocator = arena.allocator();
 
+    const read_buffer_len = self.read_buffer_len;
+    var read_buffer: []u8 = undefined;
+
     var router = self.getRouter();
 
-    // Engine is stopping.
-    // if (self.stopping.isSet()) return;
-
     accept: while (self.accept()) |conn| {
-        const read_buffer_len = self.read_buffer_len;
-        var read_buffer: []u8 = undefined;
         read_buffer = try arena_allocator.alloc(u8, read_buffer_len);
         defer arena_allocator.free(read_buffer);
 
         var http_server = http.Server.init(conn, read_buffer);
 
         ready: while (http_server.state == .ready) {
-            defer _ = arena.reset(.{ .retain_with_limit = self.read_buffer_len });
+            // TODO Too slow, need to optimize.
+            // defer _ = arena.reset(.{ .retain_with_limit = self.read_buffer_len });
+            // defer _ = arena.reset(.retain_capacity);
 
             var request = http_server.receiveHead() catch |err| switch (err) {
                 error.HttpHeadersUnreadable => continue :accept,
@@ -197,7 +196,9 @@ fn worker(self: *Engine) anyerror!void {
             };
 
             // TODO Catchers handle error.
-            router.handleRequest(arena_allocator, &request) catch |err| try catchRouteError(err, conn.stream);
+            router.handleRequest(arena_allocator, &request) catch |err| {
+                catchRouteError(err, conn.stream) catch continue :accept;
+            };
         }
 
         // closing
@@ -215,7 +216,10 @@ fn catchRouteError(err: anyerror, stream: net.Stream) anyerror!void {
         Route.RouteError.MethodNotAllowed => {
             return try utils.response(.method_not_allowed, stream);
         },
-        else => try utils.response(.internal_server_error, stream),
+        else => {
+            try utils.response(.internal_server_error, stream);
+            return err;
+        },
     }
 }
 
@@ -258,10 +262,10 @@ pub fn shutdown(self: *Self, timeout_ns: u64) void {
     }
 }
 
-/// Add custom router to engine.s
-pub fn addRouter(self: *Self, r: Router) void {
-    self.router = r;
-}
+// /// Add custom router to engine.s
+// pub fn addRouter(self: *Self, r: Router) void {
+//     self.router = r;
+// }
 
 /// Get the router.
 pub fn getRouter(self: *Self) *Router {
@@ -276,7 +280,6 @@ pub fn getCatchers(self: *Self) *Catchers {
 /// use middleware to match any route
 pub fn use(self: *Self, handlers: []const HandlerFn) anyerror!void {
     try self.middlewares.?.appendSlice(handlers);
-    // try self.middlewares.?.appendSlice(handlers);
     try self.router.?.use(self.middlewares.?.items);
 }
 
