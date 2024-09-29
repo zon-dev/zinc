@@ -90,8 +90,13 @@ fn create(conf: Config.Engine) anyerror!*Engine {
         .stack_size = conf.stack_size,
     };
 
-    if (engine.num_threads > 0) {
-        for (engine.num_threads) |_| {
+    var num_threads = engine.num_threads;
+    if (num_threads > 1) {
+        // The main thread is also a worker.
+        // So we need to subtract 1 from the number of threads.
+        num_threads -= 1;
+
+        for (num_threads) |_| {
             const thread = try std.Thread.spawn(.{
                 .stack_size = engine.stack_size,
                 .allocator = engine.allocator,

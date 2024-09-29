@@ -25,8 +25,6 @@ pub const Engine = struct {
     stack_size: usize = 10 * 1024 * 1024,
 
     /// The number of threads to use. Maximum is 255.
-    /// The total number of threads is equal to .num_threads + 1(main thread).
-    /// e.g. 8 threads means 9 threads in total.
     num_threads: u8 = 8,
 };
 
