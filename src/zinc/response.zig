@@ -39,9 +39,8 @@ pub fn deinit(self: *Self) void {
     if (self.body != null) {
         self.allocator.free(self.body.?);
     }
-    if (self.header.items.len > 0) {
-        self.header.deinit();
-    }
+    self.header.deinit();
+
     self.allocator.destroy(self);
 }
 

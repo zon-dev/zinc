@@ -39,6 +39,8 @@ pub fn init(self: Self) anyerror!*Request {
 }
 
 pub fn deinit(self: *Request) void {
+    self.header.deinit();
+
     self.allocator.destroy(self);
 }
 pub fn send(self: *Request, content: []const u8, options: RespondOptions) anyerror!void {

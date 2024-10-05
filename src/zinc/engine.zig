@@ -40,7 +40,7 @@ mutex: std.Thread.Mutex = .{},
 cond: Condition = .{},
 completed: Condition = .{},
 num_threads: usize = 0,
-spawn_count: usize = 0,
+spawn_count: std.atomic.Value(usize) = std.atomic.Value(usize).init(0),
 
 stack_size: usize = undefined,
 
@@ -168,7 +168,7 @@ pub fn run(self: *Engine) !void {
 
 /// Allocate server worker threads
 fn worker(self: *Engine) anyerror!void {
-    self.spawn_count += 1;
+    _ = self.spawn_count.fetchAdd(1, .monotonic);
 
     var arena = std.heap.ArenaAllocator.init(self.allocator);
     defer arena.deinit();
@@ -176,12 +176,15 @@ fn worker(self: *Engine) anyerror!void {
 
     const read_buffer_len = self.read_buffer_len;
     var read_buffer: []u8 = undefined;
+    read_buffer = try arena_allocator.alloc(u8, read_buffer_len);
 
     var router = self.getRouter();
 
     accept: while (self.accept()) |conn| {
-        read_buffer = try arena_allocator.alloc(u8, read_buffer_len);
-        defer arena_allocator.free(read_buffer);
+        defer {
+            conn.stream.close();
+            arena_allocator.free(read_buffer);
+        }
 
         var http_server = http.Server.init(conn, read_buffer);
 
@@ -266,11 +269,6 @@ pub fn shutdown(self: *Self, timeout_ns: u64) void {
         self.stopped.set();
     }
 }
-
-// /// Add custom router to engine.s
-// pub fn addRouter(self: *Self, r: Router) void {
-//     self.router = r;
-// }
 
 /// Get the router.
 pub fn getRouter(self: *Self) *Router {

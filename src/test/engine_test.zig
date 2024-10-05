@@ -96,6 +96,7 @@ test "Zinc Server" {
     defer client.deinit();
 
     const url = try std.fmt.allocPrint(z.allocator, "http://127.0.0.1:{any}/test", .{z.getPort()});
+    defer z.allocator.free(url);
     var req = try fetch(&client, .{ .method = .GET, .location = .{ .url = url } });
     defer req.deinit();
 
@@ -180,6 +181,8 @@ test "Zinc Server" {
     try router.get("/mid", handle);
 
     const mid_url = try std.fmt.allocPrint(z.allocator, "http://127.0.0.1:{any}/mid", .{z.getPort()});
+    defer z.allocator.free(mid_url);
+
     var req3 = try fetch(&client, .{ .method = .GET, .location = .{ .url = mid_url } });
     defer req3.deinit();
 
