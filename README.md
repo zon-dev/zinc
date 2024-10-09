@@ -4,7 +4,7 @@
 
 Zinc is a framework written in pure Zig with a focus on high performance, usability, security, and extensibility.
 
-**:construction: It's still under development. Built on std. Not the fastest zig frame in the universe, but fast enough.**
+**:construction: It's still under development. Built on std.net. Not the fastest zig framework in the universe, but fast enough.**
 
 A basic example:
 ```zig
