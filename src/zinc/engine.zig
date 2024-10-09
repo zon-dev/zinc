@@ -50,7 +50,7 @@ header_buffer_len: usize = undefined,
 body_buffer_len: usize = undefined,
 
 // options
-router: ?*Router = undefined,
+router: *Router = undefined,
 middlewares: ?std.ArrayList(HandlerFn) = undefined,
 
 /// Create a new engine.
@@ -133,7 +133,7 @@ pub fn deinit(self: *Self) void {
 
     if (self.middlewares) |m| m.deinit();
 
-    if (self.router) |r| r.deinit();
+    self.router.deinit();
 
     if (!self.stopped.isSet()) self.stopped.set();
 
@@ -272,28 +272,28 @@ pub fn shutdown(self: *Self, timeout_ns: u64) void {
 
 /// Get the router.
 pub fn getRouter(self: *Self) *Router {
-    return self.router.?;
+    return self.router;
 }
 
 /// Get the catchers.
 pub fn getCatchers(self: *Self) *Catchers {
-    return self.router.?.catchers.?;
+    return self.router.catchers.?;
 }
 
 /// use middleware to match any route
 pub fn use(self: *Self, handlers: []const HandlerFn) anyerror!void {
     try self.middlewares.?.appendSlice(handlers);
-    try self.router.?.use(self.middlewares.?.items);
+    try self.router.use(self.middlewares.?.items);
 }
 
 // Serve a static file.
 pub fn StaticFile(self: *Self, path: []const u8, file_name: []const u8) anyerror!void {
-    try self.router.?.staticFile(path, file_name);
+    try self.router.staticFile(path, file_name);
 }
 
 /// Serve a static directory.
 pub fn static(self: *Self, path: []const u8, dir_name: []const u8) anyerror!void {
-    try self.router.?.static(path, dir_name);
+    try self.router.static(path, dir_name);
 }
 
 /// Engine error.
