@@ -283,11 +283,7 @@ pub fn getCatchers(self: *Self) *Catchers {
 /// use middleware to match any route
 pub fn use(self: *Self, handlers: []const HandlerFn) anyerror!void {
     try self.middlewares.?.appendSlice(handlers);
-    self.routeRebuild();
-}
-
-fn routeRebuild(self: *Self) anyerror!void {
-    self.router.?.use(self.middlewares.items);
+    try self.router.?.use(self.middlewares.?.items);
 }
 
 // Serve a static file.
