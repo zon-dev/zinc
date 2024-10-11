@@ -60,15 +60,16 @@ pub fn setHeader(self: *Self, key: []const u8, value: []const u8) anyerror!void 
 pub fn getHeaders(self: *Self) []std.http.Header {
     return self.header.items;
 }
+
 pub fn isKeepAlive(self: *Self) bool {
     for (self.header.items) |header| {
-        if (std.mem.eql(u8, header.name, "Connection")) {
-            if (std.mem.eql(u8, header.value, "keep-alive")) {
-                return true;
-            }
+        // If the connection header is set to close, then the connection should be closed.
+        if (std.ascii.eqlIgnoreCase(header.name, "Connection") and std.ascii.eqlIgnoreCase(header.value, "close")) {
+            return false;
         }
     }
-    return false;
+
+    return true;
 }
 
 pub fn setBody(self: *Self, body: []const u8) anyerror!void {

@@ -182,7 +182,7 @@ fn worker(self: *Engine) anyerror!void {
 
     accept: while (self.accept()) |conn| {
         defer {
-            conn.stream.close();
+            // conn.stream.close();
             arena_allocator.free(read_buffer);
         }
 
