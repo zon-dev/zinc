@@ -6,6 +6,9 @@ Zinc is a framework written in pure Zig with a focus on high performance, usabil
 
 **:construction: It's still under development. Built on std.net. Not the fastest zig framework in the universe, but fast enough.**
 
+**In the works**:  
+* Remove std.http.Server
+
 A basic example:
 ```zig
 const zinc = @import("zinc");
