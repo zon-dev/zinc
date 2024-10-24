@@ -17,8 +17,6 @@ const handlerFn = *const fn (*Context) anyerror!void;
 
 allocator: std.mem.Allocator,
 
-server_request: *std.http.Server.Request = undefined,
-
 request: *Request = undefined,
 response: *Response = undefined,
 

@@ -73,7 +73,7 @@ pub fn handleContext(self: *Self, ctx: *Context) anyerror!void {
 pub fn handleRequest(self: *Self, allocator: std.mem.Allocator, request: *std.http.Server.Request) anyerror!void {
     const req = try Request.init(.{ .req = request, .allocator = allocator });
     const res = try Response.init(.{ .req = request, .allocator = allocator });
-    const ctx = try Context.init(.{ .request = req, .response = res, .server_request = request, .allocator = allocator });
+    const ctx = try Context.init(.{ .request = req, .response = res, .allocator = allocator });
     defer ctx.destroy();
 
     const match_route = self.getRoute(request.head.method, request.head.target) catch |err| {
