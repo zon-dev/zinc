@@ -54,7 +54,7 @@ test "Middleware" {
 }
 
 fn createContext(allocator: std.mem.Allocator, method: std.http.Method, target: []const u8) anyerror!*Context {
-    const req = try Request.init(.{ .allocator = allocator, .req = undefined, .method = method, .target = target });
-    const res = try Response.init(.{ .allocator = allocator, .req = undefined, .res = undefined });
+    const req = try Request.init(.{ .allocator = allocator, .method = method, .target = target });
+    const res = try Response.init(.{ .allocator = allocator });
     return try Context.init(.{ .allocator = allocator, .request = req, .response = res });
 }

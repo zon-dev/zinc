@@ -365,7 +365,7 @@ pub fn handle(self: *Self) anyerror!void {
 
 pub fn doRequest(self: *Self) anyerror!void {
     // TODO: handle the case where the request is not fully received.
-    if (self.request.req.head_end == 0) return;
+    // if (self.request.req.head_end == 0) return;
     const body = self.response.body orelse "";
 
     try self.send(body, .{

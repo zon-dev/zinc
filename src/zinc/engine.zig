@@ -141,7 +141,8 @@ pub fn deinit(self: *Self) void {
 }
 
 /// Accept a new connection.
-fn accept(self: *Engine) ?std.net.Server.Connection {
+// fn accept(self: *Engine) ?std.net.Server.Connection {
+fn accept(self: *Engine) ?std.net.Stream {
     // self.mutex.lock();
     // defer self.mutex.unlock();
 
@@ -157,7 +158,7 @@ fn accept(self: *Engine) ?std.net.Server.Connection {
         }
     };
 
-    return conn;
+    return conn.stream;
 }
 
 /// Run the server. This function will block the current thread.
@@ -180,39 +181,54 @@ fn worker(self: *Engine) anyerror!void {
 
     var router = self.getRouter();
 
-    accept: while (self.accept()) |conn| {
+    accept: while (self.accept()) |stream| {
         defer {
-            // conn.stream.close();
+            // stream.close();
             arena_allocator.free(read_buffer);
         }
 
-        var http_server = http.Server.init(conn, read_buffer);
-
-        ready: while (http_server.state == .ready) {
-            // TODO Too slow, need to optimize.
-            // defer _ = arena.reset(.{ .retain_with_limit = self.read_buffer_len });
-            // defer _ = arena.reset(.retain_capacity);
-
-            var request = http_server.receiveHead() catch |err| switch (err) {
-                error.HttpHeadersUnreadable => continue :accept,
-                error.HttpConnectionClosing => continue :ready,
-                error.HttpHeadersOversize => return utils.response(.request_header_fields_too_large, conn.stream),
-                else => {
-                    try utils.response(.bad_request, conn.stream);
-                    continue :accept;
-                },
-            };
-
-            // TODO Catchers handle error.
-            router.handleRequest(arena_allocator, &request) catch |err| {
-                catchRouteError(err, conn.stream) catch continue :accept;
-            };
+        const n = try stream.read(read_buffer);
+        if (n == 0) {
+            continue;
+            // return error.ConnectionClosed;
+            // return error.ConnectionClosed;
         }
 
-        // closing
-        while (http_server.state == .closing) {
-            continue :accept;
-        }
+        // std.debug.print("read_buffer: {s}", .{read_buffer});
+
+        // TODO Catchers handle error.
+        router.handleConn(arena_allocator, stream, read_buffer) catch |err| {
+            catchRouteError(err, stream) catch continue :accept;
+        };
+
+        // var http_server = http.Server.init(conn, read_buffer);
+
+        // ready: while (http_server.state == .ready) {
+        //     // TODO Too slow, need to optimize.
+        //     // defer _ = arena.reset(.{ .retain_with_limit = self.read_buffer_len });
+        //     // defer _ = arena.reset(.retain_capacity);
+
+        //     var request = http_server.receiveHead() catch |err| switch (err) {
+        //         error.HttpHeadersUnreadable => continue :accept,
+        //         error.HttpConnectionClosing => continue :ready,
+        //         error.HttpHeadersOversize => return utils.response(.request_header_fields_too_large, stream),
+        //         else => {
+        //             // try utils.response(.bad_request, conn.stream);
+        //             try utils.response(.bad_request, stream);
+        //             continue :accept;
+        //         },
+        //     };
+
+        //     // TODO Catchers handle error.
+        //     router.handleConn(arena_allocator, stream) catch |err| {
+        //         catchRouteError(err, stream) catch continue :accept;
+        //     };
+        // }
+
+        // // closing
+        // while (http_server.state == .closing) {
+        //     continue :accept;
+        // }
     }
 }
 

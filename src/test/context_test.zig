@@ -98,8 +98,8 @@ test "context Directory with file" {
 }
 
 fn createContext(allocator: std.mem.Allocator, target: []const u8) anyerror!*Context {
-    const req = try Request.init(.{ .req = undefined, .target = target, .allocator = allocator });
-    const res = try Response.init(.{ .req = undefined, .allocator = allocator });
+    const req = try Request.init(.{ .target = target, .allocator = allocator });
+    const res = try Response.init(.{ .allocator = allocator });
     const ctx = try Context.init(.{ .request = req, .response = res, .allocator = allocator });
     return ctx;
 }

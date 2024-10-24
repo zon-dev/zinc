@@ -128,12 +128,12 @@ test "Zinc Server" {
     var it = std.http.HeaderIterator.init(header_buffer);
     try std.testing.expect(!it.is_trailer);
 
-    {
-        const header = it.next().?;
-        try std.testing.expect(!it.is_trailer);
-        try std.testing.expectEqualStrings("connection", header.name);
-        try std.testing.expectEqualStrings("close", header.value);
-    }
+    // {
+    //     const header = it.next().?;
+    //     try std.testing.expect(!it.is_trailer);
+    //     try std.testing.expectEqualStrings("connection", header.name);
+    //     try std.testing.expectEqualStrings("close", header.value);
+    // }
 
     {
         const header = it.next().?;

@@ -1,5 +1,7 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
+const Head = std.http.Server.Request.Head;
+
 const URL = @import("url");
 
 const zinc = @import("../zinc.zig");
@@ -69,9 +71,39 @@ pub fn handleContext(self: *Self, ctx: *Context) anyerror!void {
     try self.prepareContext(ctx);
     try ctx.doRequest();
 }
+pub fn handleConn(self: *Self, allocator: std.mem.Allocator, conn: std.net.Stream, read_buffer: []const u8) anyerror!void {
+    const req_head = try Head.parse(read_buffer);
+    const req_method = req_head.method;
+    const req_target = req_head.target;
+
+    const req = try Request.init(.{
+        .target = req_target,
+        .method = req_method,
+        .allocator = allocator,
+    });
+
+    const res = try Response.init(.{ .conn = conn, .allocator = allocator });
+    const ctx = try Context.init(.{ .request = req, .response = res, .allocator = allocator });
+    defer ctx.destroy();
+
+    const match_route = self.getRoute(req_method, req_target) catch |err| {
+        try self.handleError(err, ctx);
+        try ctx.doRequest();
+        return;
+    };
+
+    try match_route.handle(ctx);
+}
 
 pub fn handleRequest(self: *Self, allocator: std.mem.Allocator, request: *std.http.Server.Request) anyerror!void {
-    const req = try Request.init(.{ .req = request, .allocator = allocator });
+    std.http.Server.Request.Head.parse();
+
+    const req_head: std.http.Server.Request.Head = request.head;
+    const req = try Request.init(.{
+        .target = req_head.target,
+        .method = req_head.method,
+        .allocator = allocator,
+    });
     const res = try Response.init(.{ .req = request, .allocator = allocator });
     const ctx = try Context.init(.{ .request = req, .response = res, .allocator = allocator });
     defer ctx.destroy();
