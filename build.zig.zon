@@ -1,6 +1,7 @@
 .{
     .name = "zinc",
     .version = "0.1.0-beta.5",
+    .minimum_zig_version = "0.13.0",
     .dependencies = .{
         .url = .{
             .url = "https://github.com/zon-dev/url/archive/refs/tags/v0.1.0-beta2.zip",
