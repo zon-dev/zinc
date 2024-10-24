@@ -8,6 +8,8 @@ Zinc is a framework written in pure Zig with a focus on high performance, usabil
 
 **In the works**:  
 * Remove std.http.Server
+* Blocking mode auto change to kqueue for MacOS and BSD
+* Non-blocking mode auto change to io_uring for Linux
 
 A basic example:
 ```zig
