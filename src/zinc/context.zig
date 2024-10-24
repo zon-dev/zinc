@@ -17,6 +17,8 @@ const handlerFn = *const fn (*Context) anyerror!void;
 
 allocator: std.mem.Allocator,
 
+conn: std.net.Stream = undefined,
+
 request: *Request = undefined,
 response: *Response = undefined,
 
@@ -59,6 +61,7 @@ pub fn init(self: Self) anyerror!*Context {
         .query_map = self.query_map,
         .handlers = std.ArrayList(handlerFn).init(self.allocator),
         .index = self.index,
+        .conn = self.conn,
     };
 
     return ctx;
@@ -289,14 +292,14 @@ pub fn queryArray(self: *Self, name: []const u8) anyerror![][]const u8 {
 
 /// Get the post form values as a map.
 pub fn getPostFormMap(self: *Self) ?std.StringHashMap([]const u8) {
-    const req = self.request.req;
+    // const req = self.request.req;
 
-    const content_type = req.head.content_type orelse return null;
+    const content_type = self.request.head.content_type orelse return null;
+    const content_length = self.request.head.content_length orelse return null;
+
     _ = std.mem.indexOf(u8, content_type, "application/x-www-form-urlencoded") orelse return null;
 
-    const content_length = req.head.content_length orelse return null;
-
-    const request_reader = req.reader() catch return null;
+    const request_reader = self.conn.reader();
 
     const body_buffer = request_reader.readAllAlloc(self.allocator, content_length) catch return null;
 

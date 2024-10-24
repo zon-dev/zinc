@@ -95,28 +95,6 @@ pub fn handleConn(self: *Self, allocator: std.mem.Allocator, conn: std.net.Strea
     try match_route.handle(ctx);
 }
 
-pub fn handleRequest(self: *Self, allocator: std.mem.Allocator, request: *std.http.Server.Request) anyerror!void {
-    std.http.Server.Request.Head.parse();
-
-    const req_head: std.http.Server.Request.Head = request.head;
-    const req = try Request.init(.{
-        .target = req_head.target,
-        .method = req_head.method,
-        .allocator = allocator,
-    });
-    const res = try Response.init(.{ .req = request, .allocator = allocator });
-    const ctx = try Context.init(.{ .request = req, .response = res, .allocator = allocator });
-    defer ctx.destroy();
-
-    const match_route = self.getRoute(request.head.method, request.head.target) catch |err| {
-        try self.handleError(err, ctx);
-        try ctx.doRequest();
-        return;
-    };
-
-    try match_route.handle(ctx);
-}
-
 /// Get the catcher by status.
 fn getCatcher(self: *Self, status: std.http.Status) ?HandlerFn {
     return self.catchers.?.get(status);

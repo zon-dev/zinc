@@ -1,6 +1,5 @@
 const std = @import("std");
 const http = std.http;
-const Server = http.Server;
 const Status = http.Status;
 
 const RespondOptions = std.http.Server.Request.RespondOptions;

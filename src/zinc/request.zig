@@ -17,6 +17,8 @@ method: http.Method = undefined,
 
 query: ?std.Uri.Component = null,
 
+head: std.http.Server.Request.Head = undefined,
+
 pub fn init(self: Self) anyerror!*Request {
     var request = try self.allocator.create(Request);
     errdefer self.allocator.destroy(request);
