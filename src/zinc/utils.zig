@@ -1,5 +1,20 @@
 const std = @import("std");
+const builtin = @import("builtin");
 const net = std.net;
+
+const conn_mode = enum {
+    IO_Uring,
+    KQueue,
+    EPoll,
+};
+
+pub fn connMode() conn_mode {
+    if (builtin.os.tag.isBSD()) return conn_mode.KQueue;
+
+    if (builtin.os.tag == .linux) return conn_mode.IO_Uring;
+
+    return conn_mode.EPoll;
+}
 
 pub fn response(status: std.http.Status, conn: net.Stream) anyerror!void {
     var text: []const u8 = undefined;
