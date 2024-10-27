@@ -183,52 +183,17 @@ fn worker(self: *Engine) anyerror!void {
 
     accept: while (self.accept()) |stream| {
         defer {
-            // stream.close();
+            stream.close();
             arena_allocator.free(read_buffer);
         }
 
-        const n = try stream.read(read_buffer);
-        if (n == 0) {
-            continue;
-            // return error.ConnectionClosed;
-            // return error.ConnectionClosed;
-        }
-
-        // std.debug.print("read_buffer: {s}", .{read_buffer});
+        const n =  stream.read(read_buffer) catch continue;
+        if (n == 0) continue;
 
         // TODO Catchers handle error.
         router.handleConn(arena_allocator, stream, read_buffer) catch |err| {
             catchRouteError(err, stream) catch continue :accept;
         };
-
-        // var http_server = http.Server.init(conn, read_buffer);
-
-        // ready: while (http_server.state == .ready) {
-        //     // TODO Too slow, need to optimize.
-        //     // defer _ = arena.reset(.{ .retain_with_limit = self.read_buffer_len });
-        //     // defer _ = arena.reset(.retain_capacity);
-
-        //     var request = http_server.receiveHead() catch |err| switch (err) {
-        //         error.HttpHeadersUnreadable => continue :accept,
-        //         error.HttpConnectionClosing => continue :ready,
-        //         error.HttpHeadersOversize => return utils.response(.request_header_fields_too_large, stream),
-        //         else => {
-        //             // try utils.response(.bad_request, conn.stream);
-        //             try utils.response(.bad_request, stream);
-        //             continue :accept;
-        //         },
-        //     };
-
-        //     // TODO Catchers handle error.
-        //     router.handleConn(arena_allocator, stream) catch |err| {
-        //         catchRouteError(err, stream) catch continue :accept;
-        //     };
-        // }
-
-        // // closing
-        // while (http_server.state == .closing) {
-        //     continue :accept;
-        // }
     }
 }
 
