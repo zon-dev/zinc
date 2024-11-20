@@ -153,8 +153,6 @@ fn create(conf: Config.Engine) anyerror!*Engine {
         .accept_connection = null,
     };
 
-    // engine.connection_pool = std.heap.MemoryPool(IO.Connection).init(engine.allocator);
-
     return engine;
 }
 
