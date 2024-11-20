@@ -10,6 +10,9 @@ const Config = zinc.Config;
 const Param = zinc.Param;
 const Route = zinc.Route;
 
+const IO = zinc.IO;
+const Signal = zinc.Signal;
+
 pub const Context = @This();
 const Self = @This();
 
@@ -17,7 +20,20 @@ const handlerFn = *const fn (*Context) anyerror!void;
 
 allocator: std.mem.Allocator,
 
+// TODO, Remove.
 conn: std.net.Stream = undefined,
+
+// TODO
+io: *IO.IO = undefined,
+
+// // TODO
+// signal: *Signal = undefined,
+
+// TODO
+accepted: std.posix.socket_t = IO.IO.INVALID_SOCKET,
+
+// TODO
+recv_buf: []u8 = undefined,
 
 request: *Request = undefined,
 response: *Response = undefined,
@@ -39,7 +55,11 @@ pub fn destroy(self: *Self) void {
         self.query_map.?.deinit();
     }
 
-    // self.handlers.deinit();
+    //
+    // self.signal.notify();
+    // self.thread.join();
+    self.io.cancel_all();
+    // self.signal.deinit();
 
     self.response.deinit();
 
@@ -49,10 +69,12 @@ pub fn destroy(self: *Self) void {
 }
 
 pub fn init(self: Self) anyerror!*Context {
+    // var io = try IO.IO.init(32, 0);
     const ctx = try self.allocator.create(Context);
     errdefer self.allocator.destroy(ctx);
 
     ctx.* = .{
+        // .io = &io,
         .allocator = self.allocator,
         .request = self.request,
         .response = self.response,
@@ -64,7 +86,14 @@ pub fn init(self: Self) anyerror!*Context {
         .conn = self.conn,
     };
 
+    // try ctx.signal.init(ctx.io, Context.on_signal);
+    // errdefer ctx.signal.deinit();
+
     return ctx;
+}
+
+fn on_signal(signal: *Signal) void {
+    _ = signal;
 }
 
 pub fn html(self: *Self, content: []const u8, conf: Config.Context) anyerror!void {

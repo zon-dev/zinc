@@ -19,7 +19,7 @@ zig-out/
 
 libzinc.a
 libzinc.a.o
-zinc
+# zinc
 zinc.o
 zinc.o.o
 

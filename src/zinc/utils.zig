@@ -16,7 +16,7 @@ pub fn connMode() conn_mode {
     return conn_mode.EPoll;
 }
 
-pub fn response(status: std.http.Status, conn: net.Stream) anyerror!void {
+pub fn response(status: std.http.Status, conn: std.posix.socket_t) anyerror!void {
     var text: []const u8 = undefined;
     switch (status) {
         .ok => {
@@ -35,13 +35,13 @@ pub fn response(status: std.http.Status, conn: net.Stream) anyerror!void {
             text = "HTTP/1.1 431 Request Header Fields Too Large\r\nContent-Type: text/html\r\n\r\n<h1>Request Header Fields Too Large</h1>";
         },
         .internal_server_error => {
-            text = "HTTP/1.1 500 Internal Server Error\r\nContent-Type: text/html\r\n\r\n<h1>Internal Server Error</h1>";
+            text = "HTTP/1.1 500 Internal Server Error\r\nContent-Type: text/html\r\n\r\n<h1>Internal Server Error</h1>\r\n -------- \r\n";
         },
-
         else => {
             text = "HTTP/1.1 500 Internal Server Error\r\nContent-Type: text/html\r\n\r\n<h1>Internal Server Error</h1>";
         },
     }
-    _ = try conn.write(text);
-    defer conn.close();
+
+    _ = try std.posix.write(conn, text);
+    defer std.posix.close(conn);
 }

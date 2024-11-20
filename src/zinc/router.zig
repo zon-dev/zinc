@@ -71,18 +71,14 @@ pub fn handleContext(self: *Self, ctx: *Context) anyerror!void {
     try self.prepareContext(ctx);
     try ctx.doRequest();
 }
-pub fn handleConn(self: *Self, allocator: std.mem.Allocator, conn: std.net.Stream, read_buffer: []const u8) anyerror!void {
+// pub fn handleConn(self: *Self, allocator: std.mem.Allocator, conn: std.net.Stream, read_buffer: []const u8) anyerror!void {
+pub fn handleConn(self: *Self, allocator: std.mem.Allocator, io: *zinc.IO.IO, conn: std.posix.socket_t, read_buffer: []const u8) anyerror!void {
     const req_head = try Head.parse(read_buffer);
     const req_method = req_head.method;
     const req_target = req_head.target;
 
-    const req = try Request.init(.{
-        .target = req_target,
-        .method = req_method,
-        .allocator = allocator,
-    });
-
-    const res = try Response.init(.{ .conn = conn, .allocator = allocator });
+    const req = try Request.init(.{ .target = req_target, .method = req_method, .allocator = allocator });
+    const res = try Response.init(.{ .conn = conn, .io = io, .allocator = allocator });
     const ctx = try Context.init(.{ .request = req, .response = res, .allocator = allocator });
     defer ctx.destroy();
 

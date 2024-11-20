@@ -26,6 +26,12 @@ pub const Engine = struct {
 
     /// The number of threads to use. Maximum is 255.
     num_threads: u8 = 8,
+
+    ///
+    tick_ms: u63 = 10,
+
+    /// Whether to force non-blocking mode. Default is true.
+    force_nonblocking: bool = true,
 };
 
 pub const Context = struct {

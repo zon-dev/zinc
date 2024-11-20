@@ -9,4 +9,5 @@ test {
     _ = @import("test/routergroup_test.zig");
     _ = @import("test/engine_test.zig");
     _ = @import("test/middleware_test.zig");
+    _ = @import("zinc/io/test.zig");
 }
