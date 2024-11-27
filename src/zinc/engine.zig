@@ -37,15 +37,23 @@ const Self = @This();
 
 allocator: Allocator = undefined,
 
-// TODO, Need to remove
-net_server: Server,
-
 /// The IO engine.
 io: *IO.IO,
 
 server_socket: std.posix.socket_t,
+client_socket: std.posix.socket_t,
+
 connect_socket: std.posix.socket_t,
-accept_socket: std.posix.socket_t,
+
+/// The file descriptor for the process on which to accept connections.
+accept_fd: posix.socket_t = undefined,
+/// Address the accept_fd is bound to, as reported by `getsockname`.
+///
+/// This allows passing port 0 as an address for the OS to pick an open port for us
+/// in a TOCTOU immune way and logging the resulting port number.
+accept_address: std.net.Address,
+
+// accept_completion: IO.Completion = undefined,
 
 /// The completion for the server.
 completion: IO.IO.Completion,
@@ -116,11 +124,14 @@ fn create(conf: Config.Engine) anyerror!*Engine {
 
     engine.* = Engine{
         .allocator = conf.allocator,
-        .net_server = listener,
 
         .server_socket = IO.IO.INVALID_SOCKET,
+        .client_socket = IO.IO.INVALID_SOCKET,
+
         .connect_socket = IO.IO.INVALID_SOCKET,
-        .accept_socket = IO.IO.INVALID_SOCKET,
+        .accept_fd = IO.IO.INVALID_SOCKET,
+
+        .accept_address = undefined,
 
         .io = io,
         .signal = undefined,
@@ -141,10 +152,12 @@ fn create(conf: Config.Engine) anyerror!*Engine {
         .stack_size = conf.stack_size,
 
         .completion = undefined,
-        // .state = @TypeOf(engine.state).init(.running),
     };
 
-    engine.server_socket = engine.serverSocket();
+    engine.server_socket = listener.stream.handle;
+
+    engine.accept_fd = listener.stream.handle;
+    engine.accept_address = listener.listen_address;
 
     // engine.connect_socket = try IO.connectSocket(engine.serverSocket(), engine.io);
 
@@ -154,13 +167,24 @@ fn create(conf: Config.Engine) anyerror!*Engine {
     return engine;
 }
 
-fn serverSocket(engine: *Engine) std.posix.socket_t {
-    return engine.net_server.stream.handle;
+const ClientSocket = struct {
+    fd: std.posix.socket_t,
+    address: net.Address,
+};
+
+fn get_client_socket(self: *Engine) !ClientSocket {
+    var client_address = std.net.Address.initIp4(undefined, undefined);
+    var client_address_len = client_address.getOsSockLen();
+
+    try posix.getsockname(self.server_socket, &client_address.any, &client_address_len);
+    const client: std.posix.socket_t = try self.io.open_socket(
+        client_address.any.family,
+        posix.SOCK.STREAM,
+        posix.IPPROTO.TCP,
+    );
+    return .{ .fd = client, .address = client_address };
 }
 
-fn serverAddress(engine: *Engine) std.net.Address {
-    return engine.net_server.listen_address;
-}
 /// Initialize the engine.
 pub fn init(conf: Config.Engine) anyerror!*Engine {
     return try create(conf);
@@ -172,8 +196,8 @@ pub fn deinit(self: *Self) void {
     // Broadcast to all threads to stop.
     self.cond.broadcast();
 
-    if (std.net.tcpConnectToAddress(self.net_server.listen_address)) |c| c.close() else |_| {}
-    self.net_server.deinit();
+    if (std.net.tcpConnectToAddress(self.accept_address)) |c| c.close() else |_| {}
+    std.posix.close(self.accept_fd);
 
     self.signal.notify();
 
@@ -185,7 +209,7 @@ pub fn deinit(self: *Self) void {
         self.threads.deinit();
     }
 
-    self.io.close_socket(self.accept_socket);
+    self.io.close_socket(self.accept_fd);
     self.io.close_socket(self.connect_socket);
 
     self.io.cancel_all();
@@ -206,7 +230,7 @@ fn accept(self: *Engine) ?std.net.Stream {
     if (self.stopping.isSet()) return null;
 
     // TODO Too slow.
-    const conn = self.net_server.accept() catch |e| {
+    const conn = self.block_accept() catch |e| {
         if (self.stopping.isSet()) return null;
         switch (e) {
             error.ConnectionAborted => {
@@ -216,7 +240,15 @@ fn accept(self: *Engine) ?std.net.Stream {
         }
     };
 
-    return conn.stream;
+    return conn;
+}
+
+/// See std.net.Server.accept()
+fn block_accept(self: *Engine) !std.net.Stream {
+    var accepted_addr: std.net.Address = undefined;
+    var addr_len: posix.socklen_t = @sizeOf(std.net.Address);
+    const fd = try posix.accept(self.server_socket, &accepted_addr.any, &addr_len, posix.SOCK.CLOEXEC);
+    return .{ .handle = fd };
 }
 
 /// Run the server. This function will block the current thread.
@@ -293,33 +325,13 @@ fn send_callback(self: *Self, completion: *IO.IO.Completion, result: IO.IO.SendE
     };
 }
 
-const SocketClient = struct {
-    fd: std.posix.socket_t,
-    address: net.Address,
-};
-
-fn socket_client(self: *Engine) !SocketClient {
-    var socket: std.posix.socket_t = IO.IO.INVALID_SOCKET;
-    socket = self.net_server.stream.handle;
-
-    var client_address = std.net.Address.initIp4(undefined, undefined);
-    var client_address_len = client_address.getOsSockLen();
-    try posix.getsockname(socket, &client_address.any, &client_address_len);
-    const client: std.posix.socket_t = try self.io.open_socket(
-        client_address.any.family,
-        posix.SOCK.STREAM,
-        posix.IPPROTO.TCP,
-    );
-    return .{ .fd = client, .address = client_address };
-}
-
 fn server_accept(
     self: *Engine,
     completion: *IO.IO.Completion,
     result: IO.IO.AcceptError!std.posix.socket_t,
 ) void {
-    std.debug.assert(self.accept_socket == IO.IO.INVALID_SOCKET);
-    self.accept_socket = result catch |err| {
+    std.debug.assert(self.accept_fd == IO.IO.INVALID_SOCKET);
+    self.accept_fd = result catch |err| {
         std.debug.print("accept error: {}", .{err});
         return;
     };
@@ -356,11 +368,11 @@ pub fn default() anyerror!*Engine {
 }
 
 pub fn getPort(self: *Self) u16 {
-    return self.net_server.listen_address.getPort();
+    return self.accept_address.getPort();
 }
 
 pub fn getAddress(self: *Self) net.Address {
-    return self.net_server.listen_address;
+    return self.accept_address;
 }
 
 /// Shutdown the server.

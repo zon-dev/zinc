@@ -1,5 +1,6 @@
 const std = @import("std");
 const posix = std.posix;
+// const net_server = std.net.Server;
 
 pub const ListenOptions = struct {
     /// How many connections the kernel will accept on the application's behalf.
@@ -22,7 +23,7 @@ pub const ListenOptions = struct {
 pub fn listen(address: std.net.Address, options: ListenOptions) std.net.Address.ListenError!Server {
     const nonblock: u32 = if (options.force_nonblocking) posix.SOCK.NONBLOCK else 0;
     const posix_flags: u32 = posix.SOCK.CLOEXEC | nonblock;
-    var sock_flags: u32 = std.posix.SOCK.STREAM | std.posix.SOCK.CLOEXEC;
+    var sock_flags: u32 = posix.SOCK.STREAM | posix.SOCK.CLOEXEC;
     sock_flags |= nonblock;
 
     const proto: u32 = if (address.any.family == posix.AF.UNIX) 0 else posix.IPPROTO.TCP;
@@ -41,14 +42,15 @@ pub fn listen(address: std.net.Address, options: ListenOptions) std.net.Address.
             try posix.setsockopt(sockfd, posix.SOL.SOCKET, posix.SO.REUSEPORT, &std.mem.toBytes(@as(c_int, 1)));
         }
         // For freebsd
-        if (@hasDecl(std.posix.SO, "REUSEPORT_LB")) {
-            try std.posix.setsockopt(sockfd, std.posix.SOL.SOCKET, std.posix.SO.REUSEPORT_LB, &std.mem.toBytes(@as(c_int, 1)));
+        if (@hasDecl(posix.SO, "REUSEPORT_LB")) {
+            try posix.setsockopt(sockfd, posix.SOL.SOCKET, posix.SO.REUSEPORT_LB, &std.mem.toBytes(@as(c_int, 1)));
         }
     }
 
-    var socklen = address.getOsSockLen();
-    try posix.bind(sockfd, &address.any, socklen);
+    try posix.bind(sockfd, &address.any, address.getOsSockLen());
     try posix.listen(sockfd, options.kernel_backlog);
+
+    var socklen = address.getOsSockLen();
     try posix.getsockname(sockfd, &s.listen_address.any, &socklen);
 
     return s;
@@ -56,9 +58,9 @@ pub fn listen(address: std.net.Address, options: ListenOptions) std.net.Address.
 
 pub const Server = struct {
     // INVALID_SOCKET:usize = -1,
-    // socket_client: std.posix.socket_t = -1,
-    // socket_server: std.posix.socket_t = -1,
-    // fd: std.posix.socket_t = IO.INVALID_SOCKET,
+    // socket_client: posix.socket_t = -1,
+    // socket_server: posix.socket_t = -1,
+    // fd: posix.socket_t = IO.INVALID_SOCKET,
 
     listen_address: std.net.Address,
     stream: std.net.Stream,
@@ -69,7 +71,7 @@ pub const Server = struct {
     ///   the same result.
     /// * `SOCK.CLOEXEC`  - Set the close-on-exec (`FD_CLOEXEC`) flag on the new file descriptor.   See  the
     ///   description  of the `CLOEXEC` flag in `open` for reasons why this may be useful.
-    ///  Seet std.posix.accpet()
+    ///  Seet posix.accpet()
     flags: u32 = posix.SOCK.CLOEXEC,
 
     pub const Connection = struct {
@@ -88,7 +90,6 @@ pub const Server = struct {
         var accepted_addr: std.net.Address = undefined;
         var addr_len: posix.socklen_t = @sizeOf(std.net.Address);
         const fd = try posix.accept(s.stream.handle, &accepted_addr.any, &addr_len, s.flags);
-        // const fd = try posix.accept(s.stream.handle, &accepted_addr.any, &addr_len, posix.SOCK.CLOEXEC);
         return .{
             .stream = .{ .handle = fd },
             // client address
