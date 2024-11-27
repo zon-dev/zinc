@@ -24,7 +24,7 @@ const Config = zinc.Config;
 const HandlerFn = zinc.HandlerFn;
 const Catchers = zinc.Catchers;
 
-const IO = @import("./io.zig");
+const IO = @import("./io.zig").IO;
 
 const Signal = @import("./signal.zig").Signal;
 const server = @import("./server.zig");
@@ -38,7 +38,7 @@ const Self = @This();
 allocator: Allocator = undefined,
 
 /// The IO engine.
-io: *IO.IO,
+io: *IO,
 
 server_socket: std.posix.socket_t,
 client_socket: std.posix.socket_t,
@@ -56,7 +56,7 @@ accept_address: std.net.Address,
 // accept_completion: IO.Completion = undefined,
 
 /// The completion for the server.
-completion: IO.IO.Completion,
+completion: IO.Completion,
 
 /// Signal for the engine.
 signal: Signal,
@@ -117,19 +117,19 @@ fn create(conf: Config.Engine) anyerror!*Engine {
     });
     errdefer route_tree.destroy();
 
-    var io = try conf.allocator.create(IO.IO);
+    var io = try conf.allocator.create(IO);
     errdefer conf.allocator.destroy(io);
-    io.* = try IO.IO.init(32, 0);
+    io.* = try IO.init(32, 0);
     errdefer io.deinit();
 
     engine.* = Engine{
         .allocator = conf.allocator,
 
-        .server_socket = IO.IO.INVALID_SOCKET,
-        .client_socket = IO.IO.INVALID_SOCKET,
+        .server_socket = IO.INVALID_SOCKET,
+        .client_socket = IO.INVALID_SOCKET,
 
-        .connect_socket = IO.IO.INVALID_SOCKET,
-        .accept_fd = IO.IO.INVALID_SOCKET,
+        .connect_socket = IO.INVALID_SOCKET,
+        .accept_fd = IO.INVALID_SOCKET,
 
         .accept_address = undefined,
 
@@ -308,7 +308,7 @@ fn worker(self: *Engine) anyerror!void {
 
         self.io.send(*Self, self, send_callback, &self.completion, conn.handle, res_buffer);
 
-        try self.io.tick();
+        // try self.io.tick();
     }
 
     // while (!self.stopping.isSet()) {
@@ -316,8 +316,7 @@ fn worker(self: *Engine) anyerror!void {
     // }
 }
 
-fn send_callback(self: *Self, completion: *IO.IO.Completion, result: IO.IO.SendError!usize) void {
-    std.debug.print("send_callback: \n", .{});
+fn send_callback(self: *Self, completion: *IO.Completion, result: IO.SendError!usize) void {
     _ = self;
     _ = completion;
     _ = result catch |err| {
@@ -327,10 +326,10 @@ fn send_callback(self: *Self, completion: *IO.IO.Completion, result: IO.IO.SendE
 
 fn server_accept(
     self: *Engine,
-    completion: *IO.IO.Completion,
-    result: IO.IO.AcceptError!std.posix.socket_t,
+    completion: *IO.Completion,
+    result: IO.AcceptError!std.posix.socket_t,
 ) void {
-    std.debug.assert(self.accept_fd == IO.IO.INVALID_SOCKET);
+    std.debug.assert(self.accept_fd == IO.INVALID_SOCKET);
     self.accept_fd = result catch |err| {
         std.debug.print("accept error: {}", .{err});
         return;
