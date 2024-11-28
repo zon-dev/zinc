@@ -24,9 +24,8 @@ const Config = zinc.Config;
 const HandlerFn = zinc.HandlerFn;
 const Catchers = zinc.Catchers;
 
-const IO = @import("./io.zig").IO;
+const IO = zinc.IO;
 
-const Signal = @import("./signal.zig").Signal;
 const server = @import("./server.zig");
 const Server = @import("./server.zig").Server;
 
@@ -57,9 +56,6 @@ accept_address: std.net.Address,
 
 /// The completion for the server.
 completion: IO.Completion,
-
-/// Signal for the engine.
-signal: Signal,
 
 // threads
 threads: std.ArrayList(std.Thread) = undefined,
@@ -264,16 +260,16 @@ pub fn run(self: *Engine) !void {
         try self.threads.append(thread);
     }
 
-    for (self.threads.items) |thrd| {
-        thrd.join();
-    }
+    // for (self.threads.items) |thrd| {
+    //     thrd.join();
+    // }
 
     while (!self.stopping.isSet()) {
+        std.debug.print("run start!\r\n", .{});
         self.io.tick() catch |err| {
             std.debug.print("IO.tick() failed: {any}", .{err});
             continue;
         };
-
         self.io.run_for_ns(10 * std.time.ns_per_ms) catch |err| {
             std.debug.print("IO.run() failed: {any}", .{err});
             continue;
@@ -302,7 +298,7 @@ fn worker(self: *Engine) anyerror!void {
         if (self.stopping.isSet()) break;
 
         std.debug.print("worker {d} | accept\r\n", .{workder_id});
-        defer conn.close();
+        // defer conn.close();
 
         var process_context: ProcessContext = try ProcessContext.init(.{
             .allocator = arena_allocator,
@@ -314,9 +310,25 @@ fn worker(self: *Engine) anyerror!void {
         });
         var server_completion: IO.Completion = undefined;
         self.io.recv(*ProcessContext, &process_context, recv_callback, &server_completion, process_context.client, process_context.read_buffer);
-        try self.io.tick();
-        // self.io.send(*ProcessContext, &process_context, read_callback, &server_completion, self.server_socket, read_buffer, 0);
     }
+
+    // while (self.accept()) |conn| {
+    //     if (self.stopping.isSet()) break;
+
+    //     std.debug.print("worker {d} | accept\r\n", .{workder_id});
+    //     // defer conn.close();
+
+    //     var process_context: ProcessContext = try ProcessContext.init(.{
+    //         .allocator = arena_allocator,
+    //         .io = self.io,
+    //         .server = self.server_socket,
+    //         .client = conn.handle,
+    //         .router = self.getRouter(),
+    //         .read_buffer = read_buffer,
+    //     });
+    //     var server_completion: IO.Completion = undefined;
+    //     self.io.recv(*ProcessContext, &process_context, recv_callback, &server_completion, process_context.client, process_context.read_buffer);
+    // }
 }
 
 const ProcessContext = struct {
@@ -360,8 +372,6 @@ fn accept_callback(self: *ProcessContext, completion: *IO.Completion, result: IO
 fn recv_callback(self: *ProcessContext, completion: *IO.Completion, result: IO.RecvError!usize) void {
     _ = completion;
     self.received = result catch @panic("recv error");
-    // std.debug.print("recv_callback.received: {d}\r\n", .{self.received});
-    // std.debug.print("recv_callback: {s}\r\n", .{self.read_buffer});
     self.done = true;
     self.router.handleConn(self.allocator, self.io, self.client, self.read_buffer) catch |err| {
         // std.debug.print("recv_callback error: {any}\n", .{err});

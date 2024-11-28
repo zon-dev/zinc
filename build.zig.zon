@@ -7,6 +7,10 @@
             .url = "https://github.com/zon-dev/url/archive/refs/tags/v0.1.0-beta2.zip",
             .hash = "1220e9044149c6bd790b8fd7792b2aff71de8a7a337ba8288d88d0fe68d2fc665d13",
         },
+        .aio = .{
+            .url = "https://github.com/zon-dev/aio/archive/refs/heads/main.zip",
+            .hash = "122008e3a203466d897eeed91fda39d5125c6f586ec30d762621b44b158b7d1c0e20",
+        },
     },
     .paths = .{
         "src",

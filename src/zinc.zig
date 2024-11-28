@@ -14,13 +14,8 @@ pub const RouterGroup = @import("zinc/routergroup.zig");
 pub const RouteTree = @import("zinc/routetree.zig").RouteTree;
 
 /// The `IO` module provides utilities for working with files and directories.
-pub const IO = @import("zinc/io.zig");
-
-/// The `Signal` type is used to send signals between threads.
-pub const Signal = @import("zinc/signal.zig").Signal;
-
-/// The `Packet` type is used to send data between threads.
-pub const Packet = @import("zinc/packet.zig").Packet;
+// pub const IO = @import("zinc/io.zig");
+pub const IO = @import("aio");
 
 // Create a new engine with the given config.
 pub fn init(conf: Config.Engine) anyerror!*Engine {

@@ -11,7 +11,6 @@ const Param = zinc.Param;
 const Route = zinc.Route;
 
 const IO = zinc.IO;
-const Signal = zinc.Signal;
 
 pub const Context = @This();
 const Self = @This();
@@ -89,14 +88,7 @@ pub fn init(self: Self) anyerror!*Context {
         .recv_buf = self.recv_buf,
     };
 
-    // try ctx.signal.init(ctx.io, Context.on_signal);
-    // errdefer ctx.signal.deinit();
-
     return ctx;
-}
-
-fn on_signal(signal: *Signal) void {
-    _ = signal;
 }
 
 pub fn html(self: *Self, content: []const u8, conf: Config.Context) anyerror!void {

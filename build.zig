@@ -26,6 +26,12 @@ pub fn build(b: *std.Build) void {
     //TODO
     unit_tests.linkLibC();
 
+    const aio = b.dependency("aio", .{
+        .target = target,
+        .optimize = optimize,
+    });
+    module.addImport("aio", aio.module("aio"));
+    unit_tests.root_module.addImport("aio", aio.module("aio"));
     const run_unit_tests = b.addRunArtifact(unit_tests);
 
     const test_step = b.step("test", "Run unit tests");

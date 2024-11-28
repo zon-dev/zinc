@@ -5,7 +5,7 @@ const posix = std.posix;
 pub const ListenOptions = struct {
     /// How many connections the kernel will accept on the application's behalf.
     /// If more than this many connections pool in the kernel, clients will start
-    /// seeing "Connection refused".
+    /// seeing "Connection refused". The default is 1024.
     kernel_backlog: u31 = 1024,
     /// Sets SO_REUSEADDR and SO_REUSEPORT on POSIX.
     /// Sets SO_REUSEADDR on Windows, which is roughly equivalent.
