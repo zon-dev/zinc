@@ -298,28 +298,75 @@ fn worker(self: *Engine) anyerror!void {
     read_buffer = try arena_allocator.alloc(u8, read_buffer_len);
     defer arena_allocator.free(read_buffer);
 
-    var router = self.getRouter();
-
     while (self.accept()) |conn| {
         if (self.stopping.isSet()) break;
 
         std.debug.print("worker {d} | accept\r\n", .{workder_id});
         defer conn.close();
 
-        self.io.send(*Self, self, send_callback, &self.completion, conn.handle, res_buffer);
-
-        // try self.io.tick();
-
-        router.handleConn(
-            self.allocator,
-            self.io,
-            conn.handle,
-        );
+        var process_context: ProcessContext = try ProcessContext.init(.{
+            .allocator = arena_allocator,
+            .io = self.io,
+            .server = self.server_socket,
+            .client = conn.handle,
+            .router = self.getRouter(),
+            .read_buffer = read_buffer,
+        });
+        var server_completion: IO.Completion = undefined;
+        self.io.recv(*ProcessContext, &process_context, recv_callback, &server_completion, process_context.client, process_context.read_buffer);
+        try self.io.tick();
+        // self.io.send(*ProcessContext, &process_context, read_callback, &server_completion, self.server_socket, read_buffer, 0);
     }
+}
 
-    // while (!self.stopping.isSet()) {
-    //     std.debug.print("worker {d} | IO.run_for_ns(10 * std.time.ns_per_ms)\r\n", .{workder_id});
-    // }
+const ProcessContext = struct {
+    allocator: Allocator = undefined,
+    io: *IO,
+    done: bool = false,
+    server: posix.socket_t,
+    client: posix.socket_t,
+
+    accepted_sock: posix.socket_t = undefined,
+
+    // send_buf: []u8 = undefined,
+    // recv_buf: []u8 = undefined,
+
+    read_buffer: []u8 = undefined,
+
+    sent: usize = 0,
+    received: usize = 0,
+
+    written: usize = 0,
+    read: usize = 0,
+
+    router: *Router,
+
+    pub fn init(self: ProcessContext) !ProcessContext {
+        return ProcessContext{
+            .allocator = self.allocator,
+            .io = self.io,
+            .server = self.server,
+            .client = self.client,
+            .router = self.router,
+        };
+    }
+};
+
+fn accept_callback(self: *ProcessContext, completion: *IO.Completion, result: IO.AcceptError!posix.socket_t) void {
+    self.accepted_sock = result catch @panic("accept error");
+    self.io.recv(*ProcessContext, self, recv_callback, completion, self.accepted_sock, self.read_buffer);
+}
+
+fn recv_callback(self: *ProcessContext, completion: *IO.Completion, result: IO.RecvError!usize) void {
+    _ = completion;
+    self.received = result catch @panic("recv error");
+    // std.debug.print("recv_callback.received: {d}\r\n", .{self.received});
+    // std.debug.print("recv_callback: {s}\r\n", .{self.read_buffer});
+    self.done = true;
+    self.router.handleConn(self.allocator, self.io, self.client, self.read_buffer) catch |err| {
+        // std.debug.print("recv_callback error: {any}\n", .{err});
+        catchRouteError(err, self.client) catch {};
+    };
 }
 
 fn send_callback(self: *Self, completion: *IO.Completion, result: IO.SendError!usize) void {
@@ -328,19 +375,6 @@ fn send_callback(self: *Self, completion: *IO.Completion, result: IO.SendError!u
     _ = result catch |err| {
         std.debug.print("send_callback error: {any}\n", .{err});
     };
-}
-
-fn server_accept(
-    self: *Engine,
-    completion: *IO.Completion,
-    result: IO.AcceptError!std.posix.socket_t,
-) void {
-    std.debug.assert(self.accept_fd == IO.INVALID_SOCKET);
-    self.accept_fd = result catch |err| {
-        std.debug.print("accept error: {}", .{err});
-        return;
-    };
-    _ = completion;
 }
 
 fn catchRouteError(err: anyerror, stream: std.posix.socket_t) anyerror!void {

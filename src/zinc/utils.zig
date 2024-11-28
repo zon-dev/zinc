@@ -43,5 +43,5 @@ pub fn response(status: std.http.Status, conn: std.posix.socket_t) anyerror!void
     }
 
     _ = try std.posix.write(conn, text);
-    defer std.posix.close(conn);
+    // defer std.posix.close(conn);
 }

@@ -26,14 +26,15 @@ conn: std.net.Stream = undefined,
 // TODO
 io: *IO.IO = undefined,
 
-// // TODO
-// signal: *Signal = undefined,
-
-// TODO
-accepted: std.posix.socket_t = IO.IO.INVALID_SOCKET,
-
-// TODO
+done: bool = false,
+// server: posix.socket_t,
+// client: posix.socket_t,
+accepted_sock: std.posix.socket_t = IO.IO.INVALID_SOCKET,
+// send_buf: [10]u8 = [_]u8{ 1, 0, 1, 0, 1, 0, 1, 0, 1, 0 },
+// recv_buf: [5]u8 = [_]u8{ 0, 1, 0, 1, 0 },
 recv_buf: []u8 = undefined,
+// sent: usize = 0,
+received: usize = 0,
 
 request: *Request = undefined,
 response: *Response = undefined,
@@ -84,6 +85,8 @@ pub fn init(self: Self) anyerror!*Context {
         .handlers = std.ArrayList(handlerFn).init(self.allocator),
         .index = self.index,
         .conn = self.conn,
+
+        .recv_buf = self.recv_buf,
     };
 
     // try ctx.signal.init(ctx.io, Context.on_signal);
