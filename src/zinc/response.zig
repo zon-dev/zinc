@@ -163,35 +163,10 @@ pub fn send(self: *Self, content: []const u8, options: RespondOptions) anyerror!
         }
     }
     // try self.conn.write(iovecs[0..iovecs_len]);
-    // _ = try std.posix.writev(self.conn, iovecs[0..iovecs_len]);
-    // var buffer:[]const u8 = undefined;
-    // const slice:[]iovec_const = iovecs[0..iovecs_len];
-
-    // const first = iovecs[0];
-    // const slice_buffer:[]const u8  = first.base[0..first.len];
-    // const slice = try h.toOwnedSlice(sle.allocator);
-    const slice_buffer: []const u8 = "HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\nhello";
-    // std.debug.print("\r\n------slice_buffer: {s} \r\n", .{slice_buffer});
-    // for (iovecs[0..iovecs_len], 0..) |iov, i| {
-    //     std.debug.print("iov[{d}]: {s}\r\n", .{ i, iov.base[0..iov.len] });
-    // }
-
-    // var completion: IO.Completion = undefined;
-    self.io.send(*Self, self, send_callback, &self.completion, self.conn, slice_buffer);
-}
-
-fn send_callback(self: *Self, completion: *IO.Completion, result: IO.SendError!usize) void {
-    std.debug.print("send_callback: \n", .{});
-    _ = self;
-    _ = completion;
-    _ = result catch |err| {
-        std.debug.print("send_callback error: {any}\n", .{err});
-    };
+    _ = try std.posix.writev(self.conn, iovecs[0..iovecs_len]);
 }
 
 pub fn write(self: *Self, content: []const u8, options: RespondOptions) anyerror!void {
-    // TODO handler panic error
-    // try self.req.respond(content, options);
     const req_method = self.req_method.?;
 
     const transfer_encoding_none = (options.transfer_encoding orelse .chunked) == .none;

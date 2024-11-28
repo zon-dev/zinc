@@ -298,7 +298,7 @@ fn worker(self: *Engine) anyerror!void {
     read_buffer = try arena_allocator.alloc(u8, read_buffer_len);
     defer arena_allocator.free(read_buffer);
 
-    // var router = self.getRouter();
+    var router = self.getRouter();
 
     while (self.accept()) |conn| {
         if (self.stopping.isSet()) break;
@@ -309,6 +309,12 @@ fn worker(self: *Engine) anyerror!void {
         self.io.send(*Self, self, send_callback, &self.completion, conn.handle, res_buffer);
 
         // try self.io.tick();
+
+        router.handleConn(
+            self.allocator,
+            self.io,
+            conn.handle,
+        );
     }
 
     // while (!self.stopping.isSet()) {
