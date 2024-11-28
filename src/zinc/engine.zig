@@ -24,7 +24,7 @@ const Config = zinc.Config;
 const HandlerFn = zinc.HandlerFn;
 const Catchers = zinc.Catchers;
 
-const IO = zinc.IO;
+const IO = zinc.IO.IO;
 
 const server = @import("./server.zig");
 const Server = @import("./server.zig").Server;
@@ -130,7 +130,6 @@ fn create(conf: Config.Engine) anyerror!*Engine {
         .accept_address = undefined,
 
         .io = io,
-        .signal = undefined,
 
         .read_buffer_len = conf.read_buffer_len,
         .header_buffer_len = conf.header_buffer_len,
@@ -154,11 +153,6 @@ fn create(conf: Config.Engine) anyerror!*Engine {
 
     engine.accept_fd = listener.stream.handle;
     engine.accept_address = listener.listen_address;
-
-    // engine.connect_socket = try IO.connectSocket(engine.serverSocket(), engine.io);
-
-    // try engine.signal.init(engine.serverAddress(), engine.serverSocket(), io, on_signal_fn);
-    // errdefer engine.signal.deinit();
 
     return engine;
 }
@@ -195,8 +189,6 @@ pub fn deinit(self: *Self) void {
     if (std.net.tcpConnectToAddress(self.accept_address)) |c| c.close() else |_| {}
     std.posix.close(self.accept_fd);
 
-    self.signal.notify();
-
     if (self.threads.items.len > 0) {
         for (self.threads.items, 0..) |*t, i| {
             _ = i;
@@ -210,7 +202,6 @@ pub fn deinit(self: *Self) void {
 
     self.io.cancel_all();
     self.io.deinit();
-    self.signal.deinit();
 
     if (self.middlewares) |m| m.deinit();
 

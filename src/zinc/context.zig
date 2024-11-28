@@ -10,7 +10,7 @@ const Config = zinc.Config;
 const Param = zinc.Param;
 const Route = zinc.Route;
 
-const IO = zinc.IO;
+const IO = zinc.IO.IO;
 
 pub const Context = @This();
 const Self = @This();
@@ -23,12 +23,12 @@ allocator: std.mem.Allocator,
 conn: std.net.Stream = undefined,
 
 // TODO
-io: *IO.IO = undefined,
+io: *IO = undefined,
 
 done: bool = false,
 // server: posix.socket_t,
 // client: posix.socket_t,
-accepted_sock: std.posix.socket_t = IO.IO.INVALID_SOCKET,
+accepted_sock: std.posix.socket_t = IO.INVALID_SOCKET,
 // send_buf: [10]u8 = [_]u8{ 1, 0, 1, 0, 1, 0, 1, 0, 1, 0 },
 // recv_buf: [5]u8 = [_]u8{ 0, 1, 0, 1, 0 },
 recv_buf: []u8 = undefined,
@@ -55,11 +55,7 @@ pub fn destroy(self: *Self) void {
         self.query_map.?.deinit();
     }
 
-    //
-    // self.signal.notify();
-    // self.thread.join();
-    self.io.cancel_all();
-    // self.signal.deinit();
+    // self.io.cancel_all();
 
     self.response.deinit();
 
