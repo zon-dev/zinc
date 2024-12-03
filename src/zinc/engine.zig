@@ -65,7 +65,6 @@ mutex: std.Thread.Mutex = .{},
 
 /// see at https://github.com/ziglang/zig/blob/master/lib/std/Thread/Condition.zig
 cond: Condition = .{},
-completed: Condition = .{},
 num_threads: usize = 0,
 spawn_count: std.atomic.Value(usize) = std.atomic.Value(usize).init(0),
 
