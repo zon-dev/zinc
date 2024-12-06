@@ -1,12 +1,9 @@
 const std = @import("std");
-const builtin = @import("builtin");
 
 const http = std.http;
 const posix = std.posix;
 const mem = std.mem;
 const net = std.net;
-// const assert = std.testing.assert;
-// const Server = std.http.Server;
 const Allocator = std.mem.Allocator;
 const Condition = std.Thread.Condition;
 
@@ -27,7 +24,7 @@ const Catchers = zinc.Catchers;
 const IO = zinc.IO.IO;
 
 const server = @import("./server.zig");
-const Server = @import("./server.zig").Server;
+// const Server = @import("./server.zig").Server;
 
 const utils = @import("utils.zig");
 
@@ -40,23 +37,20 @@ arena: std.heap.ArenaAllocator = undefined,
 /// The IO engine.
 io: *IO,
 
-server_socket: std.posix.socket_t,
-client_socket: std.posix.socket_t,
+// accept_fd: posix.socket_t = undefined,
+// accept_address: std.net.Address = undefined,
 
-connect_socket: std.posix.socket_t,
+process: struct {
+    // id: u8,
+    accept_fd: posix.socket_t,
+    accept_address: std.net.Address,
+    accept_completion: IO.Completion = undefined,
+    accept_connection: ?*Connection = null,
+    clients: std.AutoHashMapUnmanaged(u128, *Connection) = .{},
+},
 
-/// The file descriptor for the process on which to accept connections.
-accept_fd: posix.socket_t = undefined,
-/// Address the accept_fd is bound to, as reported by `getsockname`.
-///
-/// This allows passing port 0 as an address for the OS to pick an open port for us
-/// in a TOCTOU immune way and logging the resulting port number.
-accept_address: std.net.Address,
-
-// accept_completion: IO.Completion = undefined,
-
-/// The completion for the server.
-completion: IO.Completion,
+connections: []Connection = undefined,
+connections_used: usize = 0,
 
 // threads
 threads: std.ArrayList(std.Thread) = undefined,
@@ -91,6 +85,72 @@ middlewares: ?std.ArrayList(HandlerFn) = undefined,
 /// max connections.
 max_conn: u32 = 1024,
 
+/// Used to send/receive messages to/from a client or fellow replica.
+const Connection = struct {
+    const Peer = union(enum) {
+        /// No peer is currently connected.
+        none: void,
+        /// A connection is established but an unambiguous header has not yet been received.
+        unknown: void,
+        /// The peer is a client with the given id.
+        client: u128,
+        /// The peer is a replica with the given id.
+        replica: u8,
+    };
+
+    /// The peer is determined by inspecting the first message header
+    /// received.
+    peer: Peer = .none,
+    state: enum {
+        /// The connection is not in use, with peer set to `.none`.
+        free,
+        /// The connection has been reserved for an in progress accept operation,
+        /// with peer set to `.none`.
+        accepting,
+        /// The peer is a replica and a connect operation has been started
+        /// but not yet completed.
+        connecting,
+        /// The peer is fully connected and may be a client, replica, or unknown.
+        connected,
+        /// The connection is being terminated but cleanup has not yet finished.
+        terminating,
+    } = .free,
+    /// This is guaranteed to be valid only while state is connected.
+    /// It will be reset to IO.INVALID_SOCKET during the shutdown process and is always
+    /// IO.INVALID_SOCKET if the connection is unused (i.e. peer == .none). We use
+    /// IO.INVALID_SOCKET instead of undefined here for safety to ensure an error if the
+    /// invalid value is ever used, instead of potentially performing an action on an
+    /// active fd.
+    fd: posix.socket_t = IO.INVALID_SOCKET,
+
+    /// This completion is used for all recv operations.
+    /// It is also used for the initial connect when establishing a replica connection.
+    recv_completion: IO.Completion = undefined,
+    /// True exactly when the recv_completion has been submitted to the IO abstraction
+    /// but the callback has not yet been run.
+    recv_submitted: bool = false,
+    /// The Message with the buffer passed to the kernel for recv operations.
+    /// CommandMessageType
+    // recv_message: ?*Message = null,
+    /// The number of bytes in `recv_message` that have been received and need parsing.
+    recv_progress: usize = 0,
+    /// The number of bytes in `recv_message` that have been parsed.
+    recv_parsed: usize = 0,
+    /// True if we have already checked the header checksum of the message we
+    /// are currently receiving/parsing.
+    recv_checked_header: bool = false,
+
+    /// This completion is used for all send operations.
+    send_completion: IO.Completion = undefined,
+    /// True exactly when the send_completion has been submitted to the IO abstraction
+    /// but the callback has not yet been run.
+    send_submitted: bool = false,
+    /// Number of bytes of the current message that have already been sent.
+    send_progress: usize = 0,
+    // /// The queue of messages to send to the client or replica peer.
+    // send_queue: SendQueue = SendQueue.init(),
+};
+
 /// Create a new engine.
 fn create(conf: Config.Engine) anyerror!*Engine {
     const engine = try conf.allocator.create(Engine);
@@ -120,15 +180,7 @@ fn create(conf: Config.Engine) anyerror!*Engine {
 
     engine.* = Engine{
         .allocator = conf.allocator,
-
-        .server_socket = IO.INVALID_SOCKET,
-        .client_socket = IO.INVALID_SOCKET,
-
-        .connect_socket = IO.INVALID_SOCKET,
-        .accept_fd = IO.INVALID_SOCKET,
-
-        .accept_address = undefined,
-
+        .arena = std.heap.ArenaAllocator.init(conf.allocator),
         .io = io,
 
         .read_buffer_len = conf.read_buffer_len,
@@ -146,15 +198,20 @@ fn create(conf: Config.Engine) anyerror!*Engine {
         .num_threads = conf.num_threads,
         .stack_size = conf.stack_size,
 
-        .completion = undefined,
+        .process = undefined,
+        .connections = undefined,
     };
 
-    engine.arena = std.heap.ArenaAllocator.init(conf.allocator);
+    // engine.accept_fd = listener.stream.handle;
+    // engine.accept_address = listener.listen_address;
 
-    engine.server_socket = listener.stream.handle;
-
-    engine.accept_fd = listener.stream.handle;
-    engine.accept_address = listener.listen_address;
+    engine.process = .{
+        // .id = 0,
+        .accept_fd = listener.stream.handle,
+        .accept_address = listener.listen_address,
+        .accept_completion = undefined,
+        .accept_connection = null,
+    };
 
     return engine;
 }
@@ -168,7 +225,7 @@ fn get_client_socket(self: *Engine) !ClientSocket {
     var client_address = std.net.Address.initIp4(undefined, undefined);
     var client_address_len = client_address.getOsSockLen();
 
-    try posix.getsockname(self.server_socket, &client_address.any, &client_address_len);
+    try posix.getsockname(self.getAcceptFD(), &client_address.any, &client_address_len);
     const client: std.posix.socket_t = try self.io.open_socket(
         client_address.any.family,
         posix.SOCK.STREAM,
@@ -188,8 +245,8 @@ pub fn deinit(self: *Self) void {
     // Broadcast to all threads to stop.
     self.cond.broadcast();
 
-    if (std.net.tcpConnectToAddress(self.accept_address)) |c| c.close() else |_| {}
-    std.posix.close(self.accept_fd);
+    if (std.net.tcpConnectToAddress(self.getAddress())) |c| c.close() else |_| {}
+    std.posix.close(self.getSocket());
 
     if (self.threads.items.len > 0) {
         for (self.threads.items, 0..) |*t, i| {
@@ -199,8 +256,7 @@ pub fn deinit(self: *Self) void {
         self.threads.deinit();
     }
 
-    self.io.close_socket(self.accept_fd);
-    self.io.close_socket(self.connect_socket);
+    // self.io.close_socket(self.getSocket());
 
     self.io.cancel_all();
     self.io.deinit();
@@ -237,7 +293,7 @@ fn accept(self: *Engine) ?std.net.Stream {
 fn block_accept(self: *Engine) !std.net.Stream {
     var accepted_addr: std.net.Address = undefined;
     var addr_len: posix.socklen_t = @sizeOf(std.net.Address);
-    const fd = try posix.accept(self.server_socket, &accepted_addr.any, &addr_len, posix.SOCK.CLOEXEC);
+    const fd = try posix.accept(self.getSocket(), &accepted_addr.any, &addr_len, posix.SOCK.CLOEXEC);
     return .{ .handle = fd };
 }
 
@@ -275,14 +331,13 @@ pub fn run(self: *Engine) !void {
 
 const res_buffer = "HTTP/1.1 200 OK\r\nContent-Length: 11\r\n\r\nHello World";
 
-threadlocal var read_buffer: []u8 = undefined;
 /// Allocate server worker threads
 fn worker(self: *Engine) anyerror!void {
     const workder_id = self.spawn_count.fetchAdd(1, .monotonic);
     std.debug.print("{d} | worker start!\r\n", .{workder_id});
 
     const arena_allocator = self.arena.allocator();
-    read_buffer = try arena_allocator.alloc(u8, self.read_buffer_len / self.num_threads);
+    var read_buffer:[]u8 = try arena_allocator.alloc(u8, self.read_buffer_len);
 
     while (self.accept()) |conn| {
         defer arena_allocator.free(read_buffer);
@@ -292,16 +347,23 @@ fn worker(self: *Engine) anyerror!void {
         std.debug.print("worker {d} | accept\r\n", .{workder_id});
         // defer conn.close();
 
-        var process_context: ProcessContext = try ProcessContext.init(.{
-            .allocator = arena_allocator,
-            .io = self.io,
-            .server = self.server_socket,
-            .client = conn.handle,
-            .router = self.getRouter(),
-            .read_buffer = read_buffer,
-        });
-        var server_completion: IO.Completion = undefined;
-        self.io.recv(*ProcessContext, &process_context, recv_callback, &server_completion, process_context.client, process_context.read_buffer);
+        const read_size = try conn.read(read_buffer);
+        // _ = read_buffer[0..read_size];
+
+        self.router.handleConn(arena_allocator, self.io, conn.handle, read_buffer[0..read_size]) catch |err| {
+            catchRouteError(err, conn.handle) catch {};
+        };
+
+        // var process_context: ProcessContext = try ProcessContext.init(.{
+        //     .allocator = arena_allocator,
+        //     .io = self.io,
+        //     .server = self.getSocket(),
+        //     .client = conn.handle,
+        //     .router = self.getRouter(),
+        //     .read_buffer = read_buffer,
+        // });
+        // var server_completion: IO.Completion = undefined;
+        // self.io.recv(*ProcessContext, &process_context, recv_callback, &server_completion, process_context.client, process_context.read_buffer);
     }
 }
 
@@ -390,12 +452,20 @@ pub fn default() anyerror!*Engine {
     return try init(.{});
 }
 
+pub fn getSocket(self: *Self) posix.socket_t {
+    return self.process.accept_fd;
+}
+
+pub fn getAcceptAddress(self: *Self) std.net.Address {
+    return self.process.accept_address;
+}
+
 pub fn getPort(self: *Self) u16 {
-    return self.accept_address.getPort();
+    return self.getAddress().getPort();
 }
 
 pub fn getAddress(self: *Self) net.Address {
-    return self.accept_address;
+    return self.process.accept_address;
 }
 
 /// Shutdown the server.

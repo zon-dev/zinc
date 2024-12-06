@@ -19,7 +19,6 @@ const ProcessPool = struct {
     pub fn spawn(self: *Self, args: anytype) void {
         _ = self;
         _ = args;
-
     }
 
     pub fn flush(self: *Self, batch_size: usize) void {
