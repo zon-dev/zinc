@@ -35,6 +35,7 @@ pub const Engine = @This();
 const Self = @This();
 
 allocator: Allocator = undefined,
+arena: std.heap.ArenaAllocator = undefined,
 
 /// The IO engine.
 io: *IO,
@@ -148,6 +149,8 @@ fn create(conf: Config.Engine) anyerror!*Engine {
         .completion = undefined,
     };
 
+    engine.arena = std.heap.ArenaAllocator.init(conf.allocator);
+
     engine.server_socket = listener.stream.handle;
 
     engine.accept_fd = listener.stream.handle;
@@ -208,6 +211,7 @@ pub fn deinit(self: *Self) void {
 
     if (!self.stopped.isSet()) self.stopped.set();
 
+    self.arena.deinit();
     self.allocator.destroy(self);
 }
 
@@ -255,7 +259,7 @@ pub fn run(self: *Engine) !void {
     // }
 
     while (!self.stopping.isSet()) {
-        std.debug.print("run start!\r\n", .{});
+        // std.debug.print("run start!\r\n", .{});
         self.io.tick() catch |err| {
             std.debug.print("IO.tick() failed: {any}", .{err});
             continue;
@@ -271,20 +275,18 @@ pub fn run(self: *Engine) !void {
 
 const res_buffer = "HTTP/1.1 200 OK\r\nContent-Length: 11\r\n\r\nHello World";
 
+threadlocal var read_buffer: []u8 = undefined;
 /// Allocate server worker threads
 fn worker(self: *Engine) anyerror!void {
     const workder_id = self.spawn_count.fetchAdd(1, .monotonic);
     std.debug.print("{d} | worker start!\r\n", .{workder_id});
 
-    var arena = std.heap.ArenaAllocator.init(self.allocator);
-    defer arena.deinit();
-    const arena_allocator = arena.allocator();
-    const read_buffer_len = self.read_buffer_len;
-    var read_buffer: []u8 = undefined;
-    read_buffer = try arena_allocator.alloc(u8, read_buffer_len);
-    defer arena_allocator.free(read_buffer);
+    const arena_allocator = self.arena.allocator();
+    read_buffer = try arena_allocator.alloc(u8, self.read_buffer_len / self.num_threads);
 
     while (self.accept()) |conn| {
+        defer arena_allocator.free(read_buffer);
+
         if (self.stopping.isSet()) break;
 
         std.debug.print("worker {d} | accept\r\n", .{workder_id});
@@ -301,24 +303,6 @@ fn worker(self: *Engine) anyerror!void {
         var server_completion: IO.Completion = undefined;
         self.io.recv(*ProcessContext, &process_context, recv_callback, &server_completion, process_context.client, process_context.read_buffer);
     }
-
-    // while (self.accept()) |conn| {
-    //     if (self.stopping.isSet()) break;
-
-    //     std.debug.print("worker {d} | accept\r\n", .{workder_id});
-    //     // defer conn.close();
-
-    //     var process_context: ProcessContext = try ProcessContext.init(.{
-    //         .allocator = arena_allocator,
-    //         .io = self.io,
-    //         .server = self.server_socket,
-    //         .client = conn.handle,
-    //         .router = self.getRouter(),
-    //         .read_buffer = read_buffer,
-    //     });
-    //     var server_completion: IO.Completion = undefined;
-    //     self.io.recv(*ProcessContext, &process_context, recv_callback, &server_completion, process_context.client, process_context.read_buffer);
-    // }
 }
 
 const ProcessContext = struct {
