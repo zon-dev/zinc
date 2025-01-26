@@ -10,7 +10,7 @@ const Config = zinc.Config;
 const Param = zinc.Param;
 const Route = zinc.Route;
 
-const IO = zinc.IO.IO;
+const IO = zinc.AIO.IO;
 
 pub const Context = @This();
 const Self = @This();

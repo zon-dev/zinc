@@ -10,14 +10,14 @@ pub const Response = @This();
 const Self = @This();
 
 const zinc = @import("../zinc.zig");
-const IO = zinc.IO.IO;
+const IO = zinc.AIO.IO;
 
 allocator: std.mem.Allocator,
 // conn: std.net.Stream = undefined,
 conn: std.posix.socket_t = undefined,
 
 // TODO
-io: *IO = undefined,
+// io: *IO = undefined,
 completion: IO.Completion = undefined,
 
 req_method: ?http.Method = undefined,
@@ -36,7 +36,7 @@ pub fn init(self: Self) anyerror!*Response {
         .allocator = self.allocator,
         .header = std.ArrayList(std.http.Header).init(self.allocator),
         .conn = self.conn,
-        .io = self.io,
+        // .io = self.io,
     };
     return response;
 }

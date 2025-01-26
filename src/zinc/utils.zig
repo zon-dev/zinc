@@ -2,6 +2,9 @@ const std = @import("std");
 const builtin = @import("builtin");
 const net = std.net;
 
+const assert = std.debug.assert;
+const posix = std.posix;
+
 const conn_mode = enum {
     IO_Uring,
     KQueue,
@@ -43,5 +46,5 @@ pub fn response(status: std.http.Status, conn: std.posix.socket_t) anyerror!void
     }
 
     _ = try std.posix.write(conn, text);
-    defer std.posix.close(conn);
+    // defer std.posix.close(conn);
 }

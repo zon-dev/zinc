@@ -15,7 +15,7 @@ pub const RouteTree = @import("zinc/routetree.zig").RouteTree;
 
 /// The `IO` module provides utilities for working with files and directories.
 // pub const IO = @import("zinc/io.zig");
-pub const IO = @import("aio");
+pub const AIO = @import("aio");
 
 // Create a new engine with the given config.
 pub fn init(conf: Config.Engine) anyerror!*Engine {
