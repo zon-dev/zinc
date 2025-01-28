@@ -161,7 +161,7 @@ const ClientSocket = struct {
     address: net.Address,
 };
 
-fn get_client_socket(self: *Engine) !ClientSocket {
+fn getClientSocket(self: *Engine) !ClientSocket {
     var client_address = std.net.Address.initIp4(undefined, undefined);
     var client_address_len = client_address.getOsSockLen();
 
@@ -199,7 +199,7 @@ pub fn deinit(self: *Self) void {
 
     self.aio.close_socket(self.getSocket());
 
-    self.aio.cancel_all();
+    self.aio.cancelAll();
     self.aio.deinit();
 
     if (self.middlewares) |m| m.deinit();
@@ -217,7 +217,7 @@ fn accept(self: *Engine) ?std.net.Stream {
     if (self.stopping.isSet()) return null;
 
     // TODO Too slow.
-    const conn = self.block_accept() catch |e| {
+    const conn = self.blockAccept() catch |e| {
         if (self.stopping.isSet()) return null;
         switch (e) {
             error.ConnectionAborted => {
@@ -231,14 +231,14 @@ fn accept(self: *Engine) ?std.net.Stream {
 }
 
 /// See std.net.Server.accept()
-fn block_accept(self: *Engine) !std.net.Stream {
+fn blockAccept(self: *Engine) !std.net.Stream {
     var accepted_addr: std.net.Address = undefined;
     var addr_len: posix.socklen_t = @sizeOf(std.net.Address);
     const fd = try posix.accept(self.getSocket(), &accepted_addr.any, &addr_len, posix.SOCK.CLOEXEC);
     return .{ .handle = fd };
 }
 
-fn nonblock_accept(self: *Engine) !std.net.Stream {
+fn nonblockAccept(self: *Engine) !std.net.Stream {
     var accepted_addr: std.net.Address = undefined;
     var addr_len: posix.socklen_t = @sizeOf(std.net.Address);
     const fd = try posix.accept(self.getSocket(), &accepted_addr.any, &addr_len, posix.SOCK.NONBLOCK);
@@ -279,16 +279,33 @@ fn worker(self: *Engine) anyerror!void {
                             connection.state = .connected;
                         },
                         .connected => {
-                            const buffer = try self.processConnected(connection);
+
+                            //TODO Improve the performance of the following code
+                            const buffer = self.processConnected(connection) catch |err| {
+                                switch (err) {
+                                    error.ConnectionResetByPeer => {
+                                        connection.state = .terminating;
+                                        posix.close(connection.getSocket());
+                                        continue;
+                                    },
+                                    else => {
+                                        posix.close(connection.getSocket());
+                                        continue;
+                                    },
+                                }
+                            };
                             if (buffer.len == 0) {
                                 connection.state = .terminating;
                                 posix.close(connection.getSocket());
                                 continue;
                             }
-                            _ = posix.write(connection.getSocket(), res_buffer) catch {
+                            // std.debug.print("buffer: {s}\r\n", .{buffer});
+                            self.router.handleConn(self.allocator, connection.getSocket(), buffer) catch |err| {
+                                try catchRouteError(err, connection.getSocket());
                                 posix.close(connection.getSocket());
                                 continue;
                             };
+
                             self.io.signal() catch |err| std.log.err("failed to signal worker: {}", .{err});
                         },
                         .terminating => {
@@ -314,7 +331,7 @@ fn worker(self: *Engine) anyerror!void {
 fn processAccept(self: *Engine, listener: std.posix.socket_t) !void {
     _ = listener;
 
-    const conn = self.nonblock_accept() catch |err| {
+    const conn = self.nonblockAccept() catch |err| {
         switch (err) {
             error.WouldBlock => {
                 return;
@@ -336,10 +353,9 @@ fn processAccept(self: *Engine, listener: std.posix.socket_t) !void {
 }
 
 fn processConnected(self: *Engine, connection: *IO.Connection) ![]u8 {
-    _ = self;
-    var buf: [4096]u8 = undefined;
-    const read = posix.read(connection.getSocket(), &buf) catch 0;
-    return buf[0..read];
+    const bytes = try self.allocator.alloc(u8, 4096);
+    const read = try std.posix.read(connection.getSocket(), bytes);
+    return bytes[0..read];
 }
 
 fn processSignal(self: *Engine) void {

@@ -55,7 +55,7 @@ pub fn destroy(self: *Self) void {
         self.query_map.?.deinit();
     }
 
-    // self.io.cancel_all();
+    // self.io.cancelAll();
 
     self.response.deinit();
 
