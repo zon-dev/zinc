@@ -413,7 +413,7 @@ pub const RouteTree = struct {
         var indentBuffer = std.ArrayList(u8).init(self.allocator);
         defer indentBuffer.deinit();
 
-        for (indentSize) |_| {
+        for (0..indentSize) |_| {
             indentBuffer.append(' ') catch {};
         }
 

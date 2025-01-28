@@ -96,7 +96,7 @@ fn create(conf: Config.Engine) anyerror!*Engine {
         // So we need to subtract 1 from the number of threads.
         num_threads -= 1;
 
-        for (num_threads) |_| {
+        for (0..num_threads) |_| {
             const thread = try std.Thread.spawn(.{
                 .stack_size = engine.stack_size,
                 .allocator = engine.allocator,
@@ -187,7 +187,7 @@ fn worker(self: *Engine) anyerror!void {
             arena_allocator.free(read_buffer);
         }
 
-        const n =  stream.read(read_buffer) catch continue;
+        const n = stream.read(read_buffer) catch continue;
         if (n == 0) continue;
 
         // TODO Catchers handle error.
