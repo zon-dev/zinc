@@ -183,7 +183,7 @@ fn worker(self: *Engine) anyerror!void {
 
     accept: while (self.accept()) |stream| {
         defer {
-            stream.close();
+            // stream.close();
             arena_allocator.free(read_buffer);
         }
 
