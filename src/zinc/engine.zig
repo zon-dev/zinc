@@ -268,6 +268,7 @@ fn worker(self: *Engine) anyerror!void {
         while (it.next()) |event| {
             // TODO create a new thread to process the request
 
+<<<<<<< HEAD
             switch (event) {
                 .accept => {
                     try self.processAccept(listener);
@@ -324,6 +325,12 @@ fn worker(self: *Engine) anyerror!void {
                     std.debug.print("got a unknown ready_socket:{any}\n", .{event});
                 },
             }
+=======
+    accept: while (self.accept()) |stream| {
+        defer {
+            // stream.close();
+            arena_allocator.free(read_buffer);
+>>>>>>> main
         }
     }
 }
