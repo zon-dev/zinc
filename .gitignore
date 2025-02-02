@@ -25,3 +25,5 @@ zinc.o.o
 
 # Ignore the generated documentation befor it is published
 /docs
+.zig-cache
+zig-out
