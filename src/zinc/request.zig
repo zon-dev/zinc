@@ -26,7 +26,7 @@ pub fn init(self: Self) anyerror!*Request {
         .allocator = self.allocator,
         .header = std.StringArrayHashMap([]u8).init(self.allocator),
         .status = self.status,
-
+        .head = self.head,
         .conn = self.conn,
     };
 

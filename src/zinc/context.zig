@@ -45,7 +45,8 @@ pub fn destroy(self: *Self) void {
 
     self.request.deinit();
 
-    self.allocator.destroy(self);
+    const allocator = self.allocator;
+    allocator.destroy(self);
 }
 
 pub fn init(self: Self) anyerror!*Context {
@@ -370,10 +371,15 @@ pub fn doRequest(self: *Self) anyerror!void {
     // TODO: handle the case where the request is not fully received.
     // if (self.request.req.head_end == 0) return;
     const body = self.response.body orelse "";
-
+    const keep_alive = self.request.head.keep_alive and self.response.isKeepAlive();
+    if (keep_alive) {
+        try self.setHeader("Connection", "keep-alive");
+    } else {
+        try self.setHeader("Connection", "close");
+    }
     try self.send(body, .{
         .status = self.response.status,
         .extra_headers = self.response.getHeaders(),
-        .keep_alive = self.response.isKeepAlive(),
+        .keep_alive = keep_alive,
     });
 }

@@ -17,7 +17,7 @@ const zinc = @import("zinc");
 
 pub fn main() !void {
     var z = try zinc.init(.{ .port = 8080 });
-
+    defer z.deinit();
     var router = z.getRouter();
     try router.get("/", helloWorld);
 

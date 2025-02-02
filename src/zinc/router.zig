@@ -80,6 +80,7 @@ pub fn handleConn(self: *Self, allocator: std.mem.Allocator, conn: std.net.Strea
         .target = req_target,
         .method = req_method,
         .allocator = allocator,
+        .head = req_head,
     });
 
     const res = try Response.init(.{ .conn = conn, .allocator = allocator });
@@ -91,6 +92,11 @@ pub fn handleConn(self: *Self, allocator: std.mem.Allocator, conn: std.net.Strea
         try ctx.doRequest();
         return;
     };
+    defer {
+        if (!ctx.response.isKeepAlive()) {
+            conn.close();
+        }
+    }
 
     try match_route.handle(ctx);
 }

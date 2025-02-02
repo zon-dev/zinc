@@ -136,8 +136,8 @@ pub fn deinit(self: *Self) void {
     self.router.deinit();
 
     if (!self.stopped.isSet()) self.stopped.set();
-
-    self.allocator.destroy(self);
+    const allocator = self.allocator;
+    allocator.destroy(self);
 }
 
 /// Accept a new connection.
@@ -171,21 +171,17 @@ pub fn run(self: *Engine) !void {
 fn worker(self: *Engine) anyerror!void {
     _ = self.spawn_count.fetchAdd(1, .monotonic);
 
-    var arena = std.heap.ArenaAllocator.init(self.allocator);
-    defer arena.deinit();
-    const arena_allocator = arena.allocator();
-
-    const read_buffer_len = self.read_buffer_len;
-    var read_buffer: []u8 = undefined;
-    read_buffer = try arena_allocator.alloc(u8, read_buffer_len);
-
-    var router = self.getRouter();
-
     accept: while (self.accept()) |stream| {
-        defer {
-            // stream.close();
-            arena_allocator.free(read_buffer);
-        }
+        var arena = std.heap.ArenaAllocator.init(self.allocator);
+        defer arena.deinit();
+        const arena_allocator = arena.allocator();
+
+        const read_buffer_len = self.read_buffer_len;
+
+        var router = self.getRouter();
+
+        var read_buffer: []u8 = undefined;
+        read_buffer = try arena_allocator.alloc(u8, read_buffer_len);
 
         const n = stream.read(read_buffer) catch continue;
         if (n == 0) continue;
