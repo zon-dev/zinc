@@ -90,6 +90,11 @@ pub fn handleConn(self: *Self, allocator: std.mem.Allocator, conn: std.posix.soc
         try ctx.doRequest();
         return;
     };
+    defer {
+        if (!ctx.response.isKeepAlive()) {
+            conn.close();
+        }
+    }
 
     try match_route.handle(ctx);
 }
