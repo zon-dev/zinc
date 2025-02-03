@@ -92,7 +92,7 @@ pub fn handleConn(self: *Self, allocator: std.mem.Allocator, conn: std.posix.soc
     };
     defer {
         if (!ctx.response.isKeepAlive()) {
-            conn.close();
+            std.posix.close(conn);
         }
     }
 
