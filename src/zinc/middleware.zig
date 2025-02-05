@@ -15,7 +15,7 @@ pub fn cors() HandlerFn {
                 try ctx.response.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
                 try ctx.response.setHeader("Access-Control-Allow-Headers", "Content-Type");
                 try ctx.response.setHeader("Access-Control-Allow-Private-Network", "true");
-                try ctx.response.sendStatus(.no_content);
+                ctx.response.setStatus(.no_content);
                 return;
             }
 

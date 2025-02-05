@@ -409,7 +409,13 @@ pub fn getRoute(self: *Self, method: std.http.Method, target: []const u8) anyerr
             if (r.method == method) {
                 return r;
             }
+
+            // enable for CORS
+            if (r.method == .GET and method == .OPTIONS) {
+                return r;
+            }
         }
+
         return Route.RouteError.MethodNotAllowed;
     }
 

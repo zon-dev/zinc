@@ -296,14 +296,11 @@ fn worker(self: *Engine) anyerror!void {
                                     },
                                 }
                             };
-                            defer self.allocator.free(buffer);
-
                             if (buffer.len == 0) {
                                 connection.state = .terminating;
                                 posix.close(connection.getSocket());
                                 continue;
                             }
-                            // std.debug.print("buffer: {s}\r\n", .{buffer});
                             self.router.handleConn(self.allocator, connection.getSocket(), buffer) catch |err| {
                                 try catchRouteError(err, connection.getSocket());
                                 posix.close(connection.getSocket());
