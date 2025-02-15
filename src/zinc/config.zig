@@ -26,6 +26,12 @@ pub const Engine = struct {
 
     /// The number of threads to use. Maximum is 255.
     num_threads: u8 = 8,
+    /// Data of any arbitrary type that will be passed down to each Context
+    data: *anyopaque = undefined,
+
+    pub fn appData(self: *Engine, data: anytype) void {
+        self.data = data;
+    }
 };
 
 pub const Context = struct {

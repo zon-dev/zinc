@@ -1,5 +1,4 @@
 pub const Context = @import("zinc/context.zig");
-pub const ContextData = @import("zinc/context_data.zig");
 pub const Config = @import("zinc/config.zig");
 pub const Catchers = @import("zinc/catchers.zig");
 pub const Engine = @import("zinc/engine.zig");
