@@ -1,4 +1,5 @@
 pub const Context = @import("zinc/context.zig");
+pub const ContextData = @import("zinc/context_data.zig");
 pub const Config = @import("zinc/config.zig");
 pub const Catchers = @import("zinc/catchers.zig");
 pub const Engine = @import("zinc/engine.zig");
@@ -12,6 +13,7 @@ pub const HandlerFn = @import("zinc/handler.zig").HandlerFn;
 pub const Middleware = @import("zinc/middleware.zig");
 pub const RouterGroup = @import("zinc/routergroup.zig");
 pub const RouteTree = @import("zinc/routetree.zig").RouteTree;
+
 //
 // Create a new engine with the given config.
 pub fn init(conf: Config.Engine) anyerror!*Engine {
