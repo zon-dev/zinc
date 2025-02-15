@@ -82,6 +82,7 @@ fn create(conf: Config.Engine) anyerror!*Engine {
         .router = try Router.init(.{
             .allocator = conf.allocator,
             .middlewares = std.ArrayList(HandlerFn).init(conf.allocator),
+            .data = conf.data,
         }),
         .middlewares = std.ArrayList(HandlerFn).init(conf.allocator),
         .threads = std.ArrayList(std.Thread).init(conf.allocator),

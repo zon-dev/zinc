@@ -61,7 +61,7 @@ pub const RouteTree = struct {
         stack.append(self) catch unreachable;
 
         while (stack.items.len > 0) {
-            var node: *RouteTree = stack.pop();
+            var node: *RouteTree = stack.pop().?;
             defer node.destroy();
 
             if (node.children != null) {
@@ -377,7 +377,7 @@ pub const RouteTree = struct {
         childStack.append(self) catch unreachable;
 
         while (childStack.items.len > 0) {
-            const node: *RouteTree = childStack.pop();
+            const node: *RouteTree = childStack.pop().?;
 
             // append children routes to the routes
             if (node.routes != null) {

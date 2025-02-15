@@ -39,6 +39,12 @@ route_tree: *RouteTree = undefined,
 
 catchers: ?*Catchers = undefined,
 
+data: *anyopaque,
+
+fn setData(self: Self, ptr: anytype) void {
+    self.data = ptr;
+}
+
 pub fn init(self: Self) anyerror!*Router {
     const r = try self.allocator.create(Router);
     errdefer self.allocator.destroy(r);
@@ -53,6 +59,7 @@ pub fn init(self: Self) anyerror!*Router {
             .routes = std.ArrayList(*Route).init(self.allocator),
         }),
         .catchers = try Catchers.init(self.allocator),
+        .data = self.data,
     };
     return r;
 }
@@ -84,7 +91,7 @@ pub fn handleConn(self: *Self, allocator: std.mem.Allocator, conn: std.net.Strea
     });
 
     const res = try Response.init(.{ .conn = conn, .allocator = allocator });
-    const ctx = try Context.init(.{ .request = req, .response = res, .allocator = allocator });
+    const ctx = try Context.init(.{ .request = req, .response = res, .allocator = allocator, .data = self.data });
     defer ctx.destroy();
 
     const match_route = self.getRoute(req_method, req_target) catch |err| {
