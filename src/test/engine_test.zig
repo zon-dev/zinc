@@ -50,16 +50,6 @@ test "Zinc with std.heap.ArenaAllocator" {
     z.shutdown(0);
 }
 
-test "Zinc with LoggingAllocator" {
-    var allocator = std.heap.LoggingAllocator(.info, .debug).init(std.heap.page_allocator);
-    var z = try zinc.init(.{
-        .allocator = allocator.allocator(),
-        .num_threads = 255,
-    });
-    defer z.deinit();
-    z.shutdown(0);
-}
-
 test "Zinc with std.heap.page_allocator" {
     const allocator = std.heap.page_allocator;
     var z = try zinc.init(.{

@@ -220,7 +220,7 @@ pub const RouteTree = struct {
         stack.append(self) catch unreachable;
 
         while (stack.items.len > 0) {
-            const node: *RouteTree = stack.pop();
+            const node: *RouteTree = stack.pop().?;
 
             // 如果当前节点是路由的结尾，添加到结果
             if (node.routes != null and node.routes.?.items.len > 0) {
@@ -244,7 +244,7 @@ pub const RouteTree = struct {
         stack.append(self) catch unreachable;
 
         while (stack.items.len > 0) {
-            const node: *RouteTree = stack.pop();
+            const node: *RouteTree = stack.pop().?;
             var iter = node.children.valueIterator();
             while (iter.next()) |child| {
                 stack.append(child.*) catch unreachable;
@@ -262,7 +262,7 @@ pub const RouteTree = struct {
         stack.append(self) catch unreachable;
 
         while (stack.items.len > 0) {
-            const node: *RouteTree = stack.pop();
+            const node: *RouteTree = stack.pop().?;
 
             if (node.routes != null) {
                 for (node.routes.?.items) |route| {

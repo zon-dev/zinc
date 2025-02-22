@@ -39,7 +39,7 @@ route_tree: *RouteTree = undefined,
 
 catchers: ?*Catchers = undefined,
 
-data: *anyopaque,
+data: *anyopaque = undefined,
 
 fn setData(self: Self, ptr: anytype) void {
     self.data = ptr;

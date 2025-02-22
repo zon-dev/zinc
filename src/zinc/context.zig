@@ -33,7 +33,7 @@ handlers: std.ArrayList(handlerFn) = undefined,
 
 index: u8 = 0, // Adjust the type based on your specific needs
 
-data: *anyopaque,
+data: *anyopaque = undefined,
 
 pub fn destroy(self: *Self) void {
     self.params.deinit();
