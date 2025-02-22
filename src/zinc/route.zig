@@ -51,7 +51,8 @@ pub fn deinit(self: *Self) void {
     }
     // self.allocator.free(self.path);
 
-    self.allocator.destroy(self);
+    const allocator = self.allocator;
+    allocator.destroy(self);
 }
 
 pub const RouteError = error{

@@ -47,7 +47,8 @@ pub fn deinit(self: *Self) void {
     }
     self.header.deinit();
 
-    self.allocator.destroy(self);
+    const allocator = self.allocator;
+    allocator.destroy(self);
 }
 pub fn send(self: *Self, content: []const u8, options: RespondOptions) anyerror!void {
     const req_method = self.req_method.?;

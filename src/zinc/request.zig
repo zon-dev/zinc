@@ -41,7 +41,8 @@ pub fn init(self: Self) anyerror!*Request {
 pub fn deinit(self: *Request) void {
     self.header.deinit();
 
-    self.allocator.destroy(self);
+    const allocator = self.allocator;
+    allocator.destroy(self);
 }
 
 pub fn setHeader(self: *Request, key: []const u8, value: []const u8) anyerror!void {

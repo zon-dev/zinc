@@ -47,7 +47,8 @@ pub const RouteTree = struct {
 
         // self.allocator.free(self.full_path);
 
-        self.allocator.destroy(self);
+        const allocator = self.allocator;
+        allocator.destroy(self);
     }
 
     pub fn destroyTrieTree(self: *RouteTree) void {

@@ -30,7 +30,8 @@ pub fn init(allocator: std.mem.Allocator) anyerror!*Catchers {
 
 pub fn deinit(self: *Self) void {
     self.catchers.deinit();
-    self.allocator.destroy(self);
+    const allocator = self.allocator;
+    allocator.destroy(self);
 }
 
 pub fn get(self: *Self, status: Status) ?HandlerFn {

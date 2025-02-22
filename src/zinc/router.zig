@@ -70,8 +70,8 @@ pub fn deinit(self: *Self) void {
     if (self.catchers != null) {
         self.catchers.?.deinit();
     }
-
-    self.allocator.destroy(self);
+    const allocator = self.allocator;
+    allocator.destroy(self);
 }
 
 pub fn handleContext(self: *Self, ctx: *Context) anyerror!void {

@@ -43,7 +43,8 @@ pub fn group(self: *Self, prefix: []const u8) anyerror!*RouterGroup {
 
 pub fn deinit(self: *Self) void {
     self.router = undefined;
-    self.allocator.destroy(self);
+    const allocator = self.allocator;
+    allocator.destroy(self);
 }
 
 /// Create a new RouterGroup.
