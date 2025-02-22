@@ -1,9 +1,9 @@
 const std = @import("std");
+
 const http = std.http;
+const posix = std.posix;
 const mem = std.mem;
 const net = std.net;
-const proto = http.protocol;
-const Server = http.Server;
 const Allocator = std.mem.Allocator;
 const Condition = std.Thread.Condition;
 
@@ -21,37 +21,71 @@ const Config = zinc.Config;
 const HandlerFn = zinc.HandlerFn;
 const Catchers = zinc.Catchers;
 
+const IO = @import("io.zig");
+const AIO = zinc.AIO.IO;
+
+const server = @import("./server.zig");
+// const Server = @import("./server.zig").Server;
+
 const utils = @import("utils.zig");
 
 pub const Engine = @This();
 const Self = @This();
 
 allocator: Allocator = undefined,
+arena: std.heap.ArenaAllocator = undefined,
 
-net_server: std.net.Server,
+process: struct {
+    // id: u8,
+    accept_fd: posix.socket_t,
+    accept_address: std.net.Address,
+    accept_completion: AIO.Completion = undefined,
+    accept_connection: ?*IO.Connection = null,
+    clients: std.AutoHashMapUnmanaged(u128, *IO.Connection) = .{},
+},
+
+connections: []IO.Connection = undefined,
+connections_used: usize = 0,
 
 // threads
-threads: std.ArrayList(std.Thread) = undefined,
+// threads: std.ArrayList(std.Thread) = undefined,
+threads: std.Thread.Pool = undefined,
 stopping: std.Thread.ResetEvent = .{},
 stopped: std.Thread.ResetEvent = .{},
 mutex: std.Thread.Mutex = .{},
 
 /// see at https://github.com/ziglang/zig/blob/master/lib/std/Thread/Condition.zig
 cond: Condition = .{},
-completed: Condition = .{},
 num_threads: usize = 0,
 spawn_count: std.atomic.Value(usize) = std.atomic.Value(usize).init(0),
 
+connection_pool: std.heap.MemoryPool(IO.Connection) = undefined,
+
+/// Thread stack size.
 stack_size: usize = undefined,
 
-// buffer len
+// buffer len for every connection,
+// The total memory usage for each connection is:
+// read_buffer_len * thread_num
 read_buffer_len: usize = undefined,
+
+/// header buffer len for every connection
 header_buffer_len: usize = undefined,
+/// body buffer len for every connection
 body_buffer_len: usize = undefined,
 
-// options
+///
 router: *Router = undefined,
+
+///
 middlewares: ?std.ArrayList(HandlerFn) = undefined,
+
+/// max connections.
+max_conn: u32 = 1024,
+
+io: *IO.IO = undefined,
+
+aio: AIO = undefined,
 
 /// Create a new engine.
 fn create(conf: Config.Engine) anyerror!*Engine {
@@ -59,7 +93,11 @@ fn create(conf: Config.Engine) anyerror!*Engine {
     errdefer conf.allocator.destroy(engine);
 
     const address = try std.net.Address.parseIp(conf.addr, conf.port);
-    var listener = try address.listen(.{ .reuse_address = true });
+    var listener = try server.listen(address, .{
+        .reuse_address = true,
+        .force_nonblocking = conf.force_nonblocking,
+    });
+
     errdefer listener.deinit();
 
     const route_tree = try RouteTree.init(.{
@@ -71,9 +109,15 @@ fn create(conf: Config.Engine) anyerror!*Engine {
     });
     errdefer route_tree.destroy();
 
+    var io = try conf.allocator.create(IO.IO);
+    errdefer conf.allocator.destroy(io);
+    io.* = try IO.IO.init(32, 0);
+    errdefer io.deinit();
+
     engine.* = Engine{
         .allocator = conf.allocator,
-        .net_server = listener,
+        .arena = std.heap.ArenaAllocator.init(conf.allocator),
+        .io = io,
 
         .read_buffer_len = conf.read_buffer_len,
         .header_buffer_len = conf.header_buffer_len,
@@ -85,29 +129,50 @@ fn create(conf: Config.Engine) anyerror!*Engine {
             .data = conf.data,
         }),
         .middlewares = std.ArrayList(HandlerFn).init(conf.allocator),
-        .threads = std.ArrayList(std.Thread).init(conf.allocator),
+
+        .threads = undefined,
 
         .num_threads = conf.num_threads,
         .stack_size = conf.stack_size,
+
+        .process = undefined,
+        .connections = undefined,
+
+        .connection_pool = std.heap.MemoryPool(IO.Connection).init(conf.allocator),
     };
 
-    var num_threads = engine.num_threads;
-    if (num_threads > 1) {
-        // The main thread is also a worker.
-        // So we need to subtract 1 from the number of threads.
-        num_threads -= 1;
+    try engine.threads.init(.{
+        .allocator = conf.allocator,
+        .n_jobs = conf.num_threads,
+        .track_ids = false,
+    });
 
-        for (0..num_threads) |_| {
-            const thread = try std.Thread.spawn(.{
-                .stack_size = engine.stack_size,
-                .allocator = engine.allocator,
-            }, Engine.worker, .{engine});
-
-            try engine.threads.append(thread);
-        }
-    }
+    engine.process = .{
+        .accept_fd = listener.stream.handle,
+        .accept_address = listener.listen_address,
+        .accept_completion = undefined,
+        .accept_connection = null,
+    };
 
     return engine;
+}
+
+const ClientSocket = struct {
+    fd: std.posix.socket_t,
+    address: net.Address,
+};
+
+fn getClientSocket(self: *Engine) !ClientSocket {
+    var client_address = std.net.Address.initIp4(undefined, undefined);
+    var client_address_len = client_address.getOsSockLen();
+
+    try posix.getsockname(self.getAcceptFD(), &client_address.any, &client_address_len);
+    const client: std.posix.socket_t = try self.io.open_socket(
+        client_address.any.family,
+        posix.SOCK.STREAM,
+        posix.IPPROTO.TCP,
+    );
+    return .{ .fd = client, .address = client_address };
 }
 
 /// Initialize the engine.
@@ -121,35 +186,33 @@ pub fn deinit(self: *Self) void {
     // Broadcast to all threads to stop.
     self.cond.broadcast();
 
-    if (std.net.tcpConnectToAddress(self.net_server.listen_address)) |c| c.close() else |_| {}
-    self.net_server.deinit();
+    if (std.net.tcpConnectToAddress(self.getAddress())) |c| c.close() else |_| {}
+    if (self.getSocket() >= 0) posix.close(self.getSocket());
 
-    if (self.threads.items.len > 0) {
-        for (self.threads.items, 0..) |*t, i| {
-            _ = i;
-            t.join();
-        }
-        self.threads.deinit();
-    }
+    self.threads.deinit();
+
+    // self.aio.close_socket(self.getSocket());
+    // self.aio.cancelAll();
+    // self.aio.deinit();
 
     if (self.middlewares) |m| m.deinit();
 
     self.router.deinit();
 
     if (!self.stopped.isSet()) self.stopped.set();
+
+    self.arena.deinit();
+
     const allocator = self.allocator;
     allocator.destroy(self);
 }
 
 /// Accept a new connection.
-// fn accept(self: *Engine) ?std.net.Server.Connection {
 fn accept(self: *Engine) ?std.net.Stream {
-    // self.mutex.lock();
-    // defer self.mutex.unlock();
-
     if (self.stopping.isSet()) return null;
 
-    const conn = self.net_server.accept() catch |e| {
+    // TODO Too slow.
+    const conn = self.blockAccept() catch |e| {
         if (self.stopping.isSet()) return null;
         switch (e) {
             error.ConnectionAborted => {
@@ -159,42 +222,156 @@ fn accept(self: *Engine) ?std.net.Stream {
         }
     };
 
-    return conn.stream;
+    return conn;
+}
+
+/// See std.net.Server.accept()
+fn blockAccept(self: *Engine) !std.net.Stream {
+    var accepted_addr: std.net.Address = undefined;
+    var addr_len: posix.socklen_t = @sizeOf(std.net.Address);
+    const fd = try posix.accept(self.getSocket(), &accepted_addr.any, &addr_len, posix.SOCK.CLOEXEC);
+    return .{ .handle = fd };
+}
+
+fn nonblockAccept(self: *Engine) !std.net.Stream {
+    var accepted_addr: std.net.Address = undefined;
+    var addr_len: posix.socklen_t = @sizeOf(std.net.Address);
+    const fd = try posix.accept(self.getSocket(), &accepted_addr.any, &addr_len, posix.SOCK.NONBLOCK);
+    return .{ .handle = fd };
 }
 
 /// Run the server. This function will block the current thread.
 pub fn run(self: *Engine) !void {
-    // defer self.deinit();
-    self.wait();
+    std.debug.print("running!\r\n", .{});
+    try self.worker();
 }
+
+const res_buffer = "HTTP/1.1 200 OK\r\nContent-Length: 11\r\n\r\nHello World";
 
 /// Allocate server worker threads
 fn worker(self: *Engine) anyerror!void {
-    _ = self.spawn_count.fetchAdd(1, .monotonic);
+    // std.debug.print("std.math.maxInt(usize) {d}\r\n", .{std.math.maxInt(c_int)});
+    const workder_id = self.spawn_count.fetchAdd(1, .monotonic);
+    std.debug.print("{d} | worker start!\r\n", .{workder_id});
 
-    accept: while (self.accept()) |stream| {
-        var arena = std.heap.ArenaAllocator.init(self.allocator);
-        defer arena.deinit();
-        const arena_allocator = arena.allocator();
+    const listener = self.getSocket();
 
-        const read_buffer_len = self.read_buffer_len;
+    try self.io.monitorAccept(listener);
 
-        var router = self.getRouter();
+    while (!self.stopping.isSet()) {
+        var it = try self.io.wait(null);
+        while (it.next()) |event| {
+            // TODO create a new thread to process the request
 
-        var read_buffer: []u8 = undefined;
-        read_buffer = try arena_allocator.alloc(u8, read_buffer_len);
+            switch (event) {
+                .accept => {
+                    try self.processAccept(listener);
+                },
+                .recv => |connection| {
+                    switch (connection.state) {
+                        .accepting => {
+                            try self.processAccepting(connection, connection.getSocket(), listener);
+                            connection.state = .connected;
+                        },
+                        .connected => {
 
-        const n = stream.read(read_buffer) catch continue;
-        if (n == 0) continue;
+                            //TODO Improve the performance of the following code
+                            const buffer = self.processConnected(connection) catch |err| {
+                                switch (err) {
+                                    error.ConnectionResetByPeer => {
+                                        connection.state = .terminating;
+                                        posix.close(connection.getSocket());
+                                        continue;
+                                    },
+                                    else => {
+                                        posix.close(connection.getSocket());
+                                        continue;
+                                    },
+                                }
+                            };
+                            if (buffer.len == 0) {
+                                connection.state = .terminating;
+                                posix.close(connection.getSocket());
+                                continue;
+                            }
+                            self.router.handleConn(self.allocator, connection.getSocket(), buffer) catch |err| {
+                                try catchRouteError(err, connection.getSocket());
+                                posix.close(connection.getSocket());
+                                continue;
+                            };
 
-        // TODO Catchers handle error.
-        router.handleConn(arena_allocator, stream, read_buffer) catch |err| {
-            catchRouteError(err, stream) catch continue :accept;
-        };
+                            self.io.signal() catch |err| std.log.err("failed to signal worker: {}", .{err});
+                        },
+                        .terminating => {
+                            posix.close(connection.getSocket());
+                            self.io.signal() catch |err| std.log.err("failed to signal worker: {}", .{err});
+                        },
+                        else => {
+                            std.debug.print("got a unknown connection state:{any}\n", .{connection.state});
+                        },
+                    }
+                },
+                .signal => {
+                    self.processSignal();
+                },
+                else => {
+                    std.debug.print("got a unknown ready_socket:{any}\n", .{event});
+                },
+            }
+        }
     }
 }
 
-fn catchRouteError(err: anyerror, stream: net.Stream) anyerror!void {
+fn processAccept(self: *Engine, listener: std.posix.socket_t) !void {
+    _ = listener;
+
+    const conn = self.nonblockAccept() catch |err| {
+        switch (err) {
+            error.WouldBlock => {
+                return;
+            },
+            else => return err,
+        }
+    };
+    const client_socket = conn.handle;
+    errdefer posix.close(client_socket);
+
+    const connection = try self.connection_pool.create();
+    errdefer self.allocator.destroy(connection);
+    connection.* = IO.Connection.init(.{
+        .state = .accepting,
+        .fd = client_socket,
+    });
+
+    try self.io.monitorRead(connection);
+}
+
+fn processConnected(self: *Engine, connection: *IO.Connection) ![]u8 {
+    const socket_fd = connection.getSocket();
+    if (socket_fd < 0) return &[_]u8{};
+
+    const bytes = try self.allocator.alloc(u8, 4096);
+    const read = try std.posix.read(socket_fd, bytes);
+    return bytes[0..read];
+}
+
+fn processSignal(self: *Engine) void {
+    _ = self;
+}
+
+fn processAccepting(self: *Engine, conn: *IO.Connection, client: std.posix.socket_t, listener: std.posix.socket_t) !void {
+    std.debug.assert(conn.state == .accepting);
+
+    _ = self;
+    _ = listener;
+    _ = client;
+}
+
+pub fn requestDone(self: *Engine, retain_size: usize) void {
+    _ = self.arena.reset(.{ .retain_with_limit = retain_size });
+}
+
+fn catchRouteError(err: anyerror, stream: std.posix.socket_t) anyerror!void {
     switch (err) {
         Route.RouteError.NotFound => {
             return try utils.response(.not_found, stream);
@@ -223,17 +400,20 @@ pub fn default() anyerror!*Engine {
     return try init(.{});
 }
 
+pub fn getSocket(self: *Self) posix.socket_t {
+    return self.process.accept_fd;
+}
+
+pub fn getAcceptAddress(self: *Self) std.net.Address {
+    return self.process.accept_address;
+}
+
 pub fn getPort(self: *Self) u16 {
-    return self.net_server.listen_address.getPort();
+    return self.getAddress().getPort();
 }
 
 pub fn getAddress(self: *Self) net.Address {
-    return self.net_server.listen_address;
-}
-
-/// Wait for the server to stop.
-pub fn wait(self: *Self) void {
-    self.stopped.wait();
+    return self.process.accept_address;
 }
 
 /// Shutdown the server.

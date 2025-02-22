@@ -78,18 +78,15 @@ pub fn handleContext(self: *Self, ctx: *Context) anyerror!void {
     try self.prepareContext(ctx);
     try ctx.doRequest();
 }
-pub fn handleConn(self: *Self, allocator: std.mem.Allocator, conn: std.net.Stream, read_buffer: []const u8) anyerror!void {
-    const req_head = try Head.parse(read_buffer);
-    const req_method = req_head.method;
-    const req_target = req_head.target;
+// pub fn handleConn(self: *Self, allocator: std.mem.Allocator, conn: std.net.Stream, read_buffer: []const u8) anyerror!void {
+pub fn handleConn(self: *Self, allocator: std.mem.Allocator, conn: std.posix.socket_t, read_buffer: []u8) anyerror!void {
+    var parser = Router.Parser.init(read_buffer);
+    _ = try parser.parse();
+    const req_method = parser.method;
+    const req_target = parser.target;
 
-    const req = try Request.init(.{
-        .target = req_target,
-        .method = req_method,
-        .allocator = allocator,
-        .head = req_head,
-    });
-
+    // TODO too slow, need to optimize
+    const req = try Request.init(.{ .target = req_target, .method = req_method, .allocator = allocator });
     const res = try Response.init(.{ .conn = conn, .allocator = allocator });
     const ctx = try Context.init(.{ .request = req, .response = res, .allocator = allocator, .data = self.data });
     defer ctx.destroy();
@@ -101,11 +98,171 @@ pub fn handleConn(self: *Self, allocator: std.mem.Allocator, conn: std.net.Strea
     };
     defer {
         if (!ctx.response.isKeepAlive()) {
-            conn.close();
+            std.posix.close(conn);
         }
     }
 
     try match_route.handle(ctx);
+}
+
+pub const Parser = struct {
+    // GET / HTTP/1.1
+    // Host: 0.0.0.0:5882
+    buf: []u8,
+
+    // position in buf that we've parsed up to
+    pos: usize,
+
+    len: usize,
+
+    method: std.http.Method = undefined,
+
+    target: []const u8 = undefined,
+
+    pub fn init(buf: []u8) Parser {
+        return Parser{ .buf = buf, .pos = 0, .len = buf.len };
+    }
+
+    pub fn parse(self: *Parser) !bool {
+        _ = try self.parseMethod(self.buf);
+        _ = try self.parseTarget(self.buf);
+        return true;
+    }
+
+    fn parseMethod(self: *Parser, buffer: []u8) !bool {
+        //
+        const buf = buffer[self.pos..];
+
+        const buf_len = buf.len;
+
+        // Shortest method is only 3 characters (+1 trailing space), so
+        // this seems like it should be: if (buf_len < 4)
+        // But the longest method, OPTIONS, is 7 characters (+1 trailing space).
+        // Now even if we have a short method, like "GET ", we'll eventually expect
+        // a URL + protocol. The shorter valid line is: e.g. GET / HTTP/1.1
+        // If buf_len < 8, we _might_ have a method, but we still need more data
+        // and might as well break early.
+        // If buf_len > = 8, then we can safely parse any (valid) method without
+        // having to do any other bound-checking.
+        if (buf_len < 8) return false;
+
+        // this approach to matching method name comes from zhp
+        switch (@as(u32, @bitCast(buf[0..4].*))) {
+            asUint("GET ") => {
+                self.pos = 4;
+                self.method = .GET;
+            },
+            asUint("PUT ") => {
+                self.pos = 4;
+                self.method = .PUT;
+            },
+            asUint("POST") => {
+                if (buf[4] != ' ') return error.UnknownMethod;
+                self.pos = 5;
+                self.method = .POST;
+            },
+            asUint("HEAD") => {
+                if (buf[4] != ' ') return error.UnknownMethod;
+                self.pos = 5;
+                self.method = .HEAD;
+            },
+            asUint("PATC") => {
+                if (buf[4] != 'H' or buf[5] != ' ') return error.UnknownMethod;
+                self.pos = 6;
+                self.method = .PATCH;
+            },
+            asUint("DELE") => {
+                if (@as(u32, @bitCast(buf[3..7].*)) != asUint("ETE ")) return error.UnknownMethod;
+                self.pos = 7;
+                self.method = .DELETE;
+            },
+            asUint("OPTI") => {
+                if (@as(u32, @bitCast(buf[4..8].*)) != asUint("ONS ")) return error.UnknownMethod;
+                self.pos = 8;
+                self.method = .OPTIONS;
+            },
+            asUint("CONN") => {
+                if (@as(u32, @bitCast(buf[4..8].*)) != asUint("ECT ")) return error.UnknownMethod;
+                self.pos = 8;
+                self.method = .CONNECT;
+            },
+            else => {
+                const space = std.mem.indexOfScalarPos(u8, buf, 0, ' ') orelse return error.UnknownMethod;
+                if (space == 0) {
+                    return error.UnknownMethod;
+                }
+
+                const candidate = buf[0..space];
+                for (candidate) |c| {
+                    if (c < 'A' or c > 'Z') {
+                        return error.UnknownMethod;
+                    }
+                }
+
+                // + 1 to skip the space
+                self.pos = space + 1;
+                // self.method = .OTHER;
+                // self.method_string = candidate;
+            },
+        }
+        return true;
+    }
+
+    fn parseTarget(self: *Parser, buffer: []u8) !bool {
+        const buf = buffer[self.pos..];
+
+        const buf_len = buf.len;
+        if (buf_len == 0) return false;
+
+        var len: usize = 0;
+        switch (buf[0]) {
+            '/' => {
+                const end_index = std.mem.indexOfScalarPos(u8, buf[1..buf_len], 0, ' ') orelse return false;
+                // +1 since we skipped the leading / in our indexOfScalar and +1 to consume the space
+                len = end_index + 2;
+                const url = buf[0 .. end_index + 1];
+                // if (!Url.isValid(url)) return error.InvalidRequestTarget;
+                self.target = url;
+            },
+            '*' => {
+                if (buf_len == 1) return false;
+                // Read never returns 0, so if we're here, buf.len >= 1
+                if (buf[1] != ' ') return error.InvalidRequestTarget;
+                len = 2;
+                self.target = buf[0..1];
+            },
+            // TODO: Support absolute-form target (e.g. http://....)
+            else => return error.InvalidRequestTarget,
+        }
+
+        self.pos += len;
+        return true;
+    }
+};
+
+/// converts ascii to unsigned int of appropriate size
+fn asUint(comptime string: anytype) @Type(std.builtin.Type{
+    .int = .{
+        .bits = @bitSizeOf(@TypeOf(string.*)) - 8, // (- 8) to exclude sentinel 0
+        .signedness = .unsigned,
+    },
+}) {
+    const byteLength = @bitSizeOf(@TypeOf(string.*)) / 8 - 1;
+    const expectedType = *const [byteLength:0]u8;
+    if (@TypeOf(string) != expectedType) {
+        @compileError("expected : " ++ @typeName(expectedType) ++ ", got: " ++ @typeName(@TypeOf(string)));
+    }
+
+    return @bitCast(@as(*const [byteLength]u8, string).*);
+}
+
+const headInfo = struct {
+    method: std.http.Method,
+    target: []const u8,
+};
+
+inline fn int64(array: *const [8]u8) u64 {
+    return @bitCast(array.*);
 }
 
 /// Get the catcher by status.
@@ -258,7 +415,13 @@ pub fn getRoute(self: *Self, method: std.http.Method, target: []const u8) anyerr
             if (r.method == method) {
                 return r;
             }
+
+            // enable for CORS
+            if (r.method == .GET and method == .OPTIONS) {
+                return r;
+            }
         }
+
         return Route.RouteError.MethodNotAllowed;
     }
 

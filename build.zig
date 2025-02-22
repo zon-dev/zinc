@@ -16,7 +16,6 @@ pub fn build(b: *std.Build) void {
     });
 
     module.addImport("url", url.module("url"));
-
     const unit_tests = b.addTest(.{
         .root_source_file = b.path("src/zinc_test.zig"),
         .target = target,
@@ -24,7 +23,15 @@ pub fn build(b: *std.Build) void {
     });
     // unit_tests.root_module.addImport("zinc", module);
     unit_tests.root_module.addImport("url", url.module("url"));
+    //TODO
+    unit_tests.linkLibC();
 
+    const aio = b.dependency("aio", .{
+        .target = target,
+        .optimize = optimize,
+    });
+    module.addImport("aio", aio.module("aio"));
+    unit_tests.root_module.addImport("aio", aio.module("aio"));
     const run_unit_tests = b.addRunArtifact(unit_tests);
 
     const test_step = b.step("test", "Run unit tests");

@@ -14,6 +14,7 @@ const RouteError = Route.RouteError;
 test "Zinc with std.heap.GeneralPurposeAllocator" {
     var gpa = std.heap.GeneralPurposeAllocator(.{
         .verbose_log = true,
+        .thread_safe = true,
     }){};
     const allocator = gpa.allocator();
 
@@ -22,20 +23,18 @@ test "Zinc with std.heap.GeneralPurposeAllocator" {
         .num_threads = 255,
     });
     defer z.deinit();
-
     z.shutdown(0);
 }
 
-// test "Zinc with std.testing.allocator" {
-//     const allocator = std.testing.allocator;
-//     var z = try zinc.init(.{
-//         .allocator = allocator,
-//         .num_threads = 100,
-//     });
-//     defer z.deinit();
-
-//     z.shutdown(0);
-// }
+test "Zinc with std.testing.allocator" {
+    const allocator = std.testing.allocator;
+    var z = try zinc.init(.{
+        .allocator = allocator,
+        .num_threads = 255,
+    });
+    defer z.deinit();
+    z.shutdown(0);
+}
 
 test "Zinc with std.heap.ArenaAllocator" {
     const page_allocator = std.heap.page_allocator;
@@ -70,7 +69,6 @@ test "Zinc Server" {
 
     var z = try zinc.init(.{ .num_threads = 255, .allocator = allocator });
     defer z.deinit();
-
     defer z.shutdown(0);
 
     var router = z.getRouter();
