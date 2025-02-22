@@ -4,11 +4,12 @@
 
 Zinc is a framework written in pure Zig with a focus on high performance, usability, security, and extensibility.
 
-**:construction: It's still under development. Built on std.net. Not the fastest zig framework in the universe, but fast enough.**
+**:construction: It's still active development. Not the fastest zig framework in the universe, but fast enough.**
 
-**In the works**:  
-* Remove std.http.Server
-* Blocking mode auto change to kqueue for MacOS and BSD
+**:warning: Do not use it in production environments until the official release.**
+
+**Working**:  
+* Non-blocking mode auto change to kqueue for MacOS and BSD
 * Non-blocking mode auto change to io_uring for Linux
 
 A basic example:
