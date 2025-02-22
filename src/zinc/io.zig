@@ -265,19 +265,22 @@ pub const IO_Uring = struct {
         self.ring.deinit();
     }
 
+    // TODO: implement
     pub fn wait(self: *Self, timeout_sec: ?i32) !Iterator {
-        const events = &self.events;
-        const timeout: ?posix.timespec = if (timeout_sec) |ts| posix.timespec{ .sec = ts, .nsec = 0 } else null;
-        const changed = try posix.kevent(self.fd, self.change_buffer[0..self.changed], events, if (timeout) |ts| &ts else null);
+        _ = self;
+        _ = timeout_sec;
+        // const events = &self.events;
+        // const timeout: ?posix.timespec = if (timeout_sec) |ts| posix.timespec{ .sec = ts, .nsec = 0 } else null;
+        // const changed = try posix.kevent(self.fd, self.change_buffer[0..self.changed], events, if (timeout) |ts| &ts else null);
 
-        // reset the change buffer
-        self.changed = 0;
+        // // reset the change buffer
+        // self.changed = 0;
 
-        return .{
-            .index = 0,
-            .io = self,
-            .events = events[0..changed],
-        };
+        // return .{
+        //     .index = 0,
+        //     .io = self,
+        //     .events = events[0..changed],
+        // };
     }
 
     // std.SemanticVersion requires there be no extra characters after the
