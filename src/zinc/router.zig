@@ -65,12 +65,15 @@ pub fn init(self: Self) anyerror!*Router {
 }
 
 pub fn deinit(self: *Self) void {
+    const allocator = self.allocator;
+
     self.middlewares.deinit();
     self.route_tree.destroyTrieTree();
     if (self.catchers != null) {
         self.catchers.?.deinit();
     }
-    const allocator = self.allocator;
+
+    // allocator.destroy(self.route_tree);
     allocator.destroy(self);
 }
 

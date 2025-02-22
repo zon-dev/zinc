@@ -20,16 +20,17 @@ pub const RouteTree = struct {
     param_name: ?[]const u8 = null, // To store the parameter name (like `:name`)
 
     pub fn init(self: RouteTree) anyerror!*RouteTree {
-        const node = try self.allocator.create(RouteTree);
+        const allocator = self.allocator;
+        const node = try allocator.create(RouteTree);
 
-        errdefer self.allocator.destroy(node);
+        errdefer allocator.destroy(node);
 
         node.* = RouteTree{
             .value = self.value,
             .full_path = self.full_path,
-            .allocator = self.allocator,
-            .children = std.StringHashMap(*RouteTree).init(self.allocator),
-            .routes = std.ArrayList(*Route).init(self.allocator),
+            .allocator = allocator,
+            .children = std.StringHashMap(*RouteTree).init(allocator),
+            .routes = std.ArrayList(*Route).init(allocator),
         };
 
         return node;
@@ -59,7 +60,9 @@ pub const RouteTree = struct {
         defer routes.deinit();
         for (routes.items) |route| route.deinit();
 
-        stack.append(self) catch unreachable;
+        stack.append(self) catch |err| {
+            std.debug.print("destroyTrieTree error: {any}", .{err});
+        };
 
         while (stack.items.len > 0) {
             var node: *RouteTree = stack.pop().?;

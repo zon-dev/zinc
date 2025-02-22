@@ -89,8 +89,9 @@ aio: AIO = undefined,
 
 /// Create a new engine.
 fn create(conf: Config.Engine) anyerror!*Engine {
-    const engine = try conf.allocator.create(Engine);
-    errdefer conf.allocator.destroy(engine);
+    const allocator = conf.allocator;
+    const engine = try allocator.create(Engine);
+    errdefer allocator.destroy(engine);
 
     const address = try std.net.Address.parseIp(conf.addr, conf.port);
     var listener = try server.listen(address, .{
@@ -100,23 +101,14 @@ fn create(conf: Config.Engine) anyerror!*Engine {
 
     errdefer listener.deinit();
 
-    const route_tree = try RouteTree.init(.{
-        .value = "/",
-        .full_path = "/",
-        .allocator = conf.allocator,
-        .children = std.StringHashMap(*RouteTree).init(conf.allocator),
-        .routes = std.ArrayList(*Route).init(conf.allocator),
-    });
-    errdefer route_tree.destroy();
-
-    var io = try conf.allocator.create(IO.IO);
-    errdefer conf.allocator.destroy(io);
+    var io = try allocator.create(IO.IO);
+    errdefer allocator.destroy(io);
     io.* = try IO.IO.init(32, 0);
     errdefer io.deinit();
 
     engine.* = Engine{
-        .allocator = conf.allocator,
-        .arena = std.heap.ArenaAllocator.init(conf.allocator),
+        .allocator = allocator,
+        .arena = std.heap.ArenaAllocator.init(allocator),
         .io = io,
 
         .read_buffer_len = conf.read_buffer_len,
@@ -124,11 +116,11 @@ fn create(conf: Config.Engine) anyerror!*Engine {
         .body_buffer_len = conf.body_buffer_len,
 
         .router = try Router.init(.{
-            .allocator = conf.allocator,
-            .middlewares = std.ArrayList(HandlerFn).init(conf.allocator),
+            .allocator = allocator,
+            .middlewares = std.ArrayList(HandlerFn).init(allocator),
             .data = conf.data,
         }),
-        .middlewares = std.ArrayList(HandlerFn).init(conf.allocator),
+        .middlewares = std.ArrayList(HandlerFn).init(allocator),
 
         .threads = undefined,
 
@@ -138,11 +130,11 @@ fn create(conf: Config.Engine) anyerror!*Engine {
         .process = undefined,
         .connections = undefined,
 
-        .connection_pool = std.heap.MemoryPool(IO.Connection).init(conf.allocator),
+        .connection_pool = std.heap.MemoryPool(IO.Connection).init(allocator),
     };
 
     try engine.threads.init(.{
-        .allocator = conf.allocator,
+        .allocator = allocator,
         .n_jobs = conf.num_threads,
         .track_ids = false,
     });
@@ -181,6 +173,8 @@ pub fn init(conf: Config.Engine) anyerror!*Engine {
 }
 
 pub fn deinit(self: *Self) void {
+    const allocator = self.allocator;
+
     if (!self.stopping.isSet()) self.stopping.set();
 
     // Broadcast to all threads to stop.
@@ -194,6 +188,8 @@ pub fn deinit(self: *Self) void {
     // self.aio.close_socket(self.getSocket());
     // self.aio.cancelAll();
     // self.aio.deinit();
+    self.io.deinit();
+    allocator.destroy(self.io);
 
     if (self.middlewares) |m| m.deinit();
 
@@ -203,7 +199,6 @@ pub fn deinit(self: *Self) void {
 
     self.arena.deinit();
 
-    const allocator = self.allocator;
     allocator.destroy(self);
 }
 

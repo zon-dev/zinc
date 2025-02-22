@@ -11,19 +11,26 @@ const Route = zinc.Route;
 const Router = zinc.Router;
 const RouteError = Route.RouteError;
 
+fn startServer(z: *zinc.Engine) !std.Thread {
+    return try std.Thread.spawn(.{}, zinc.Engine.run, .{z});
+}
+
 test "Zinc with std.heap.GeneralPurposeAllocator" {
     var gpa = std.heap.GeneralPurposeAllocator(.{
         .verbose_log = true,
         .thread_safe = true,
     }){};
     const allocator = gpa.allocator();
+    defer _ = gpa.deinit();
 
     var z = try zinc.init(.{
         .allocator = allocator,
         .num_threads = 255,
     });
     defer z.deinit();
-    z.shutdown(0);
+    const server_thread = try startServer(z);
+    defer server_thread.join();
+    defer z.shutdown(0);
 }
 
 test "Zinc with std.testing.allocator" {
@@ -33,7 +40,10 @@ test "Zinc with std.testing.allocator" {
         .num_threads = 255,
     });
     defer z.deinit();
-    z.shutdown(0);
+
+    const server_thread = try startServer(z);
+    defer server_thread.join();
+    defer z.shutdown(0);
 }
 
 test "Zinc with std.heap.ArenaAllocator" {
@@ -46,7 +56,10 @@ test "Zinc with std.heap.ArenaAllocator" {
         .num_threads = 255,
     });
     defer z.deinit();
-    z.shutdown(0);
+
+    const server_thread = try startServer(z);
+    defer server_thread.join();
+    defer z.shutdown(0);
 }
 
 test "Zinc with std.heap.page_allocator" {
@@ -56,7 +69,10 @@ test "Zinc with std.heap.page_allocator" {
         .num_threads = 255,
     });
     defer z.deinit();
-    z.shutdown(0);
+
+    const server_thread = try startServer(z);
+    defer server_thread.join();
+    defer z.shutdown(0);
 }
 
 test "Zinc Server" {
@@ -66,10 +82,19 @@ test "Zinc Server" {
         .safety = true,
     }){};
     const allocator = gpa.allocator();
+    defer _ = gpa.deinit();
 
-    var z = try zinc.init(.{ .num_threads = 255, .allocator = allocator });
+    var z = try zinc.init(.{
+        .allocator = allocator,
+        .num_threads = 255,
+    });
     defer z.deinit();
+
+    const server_thread = try startServer(z);
+    defer server_thread.join();
     defer z.shutdown(0);
+
+    const server_port = z.getPort();
 
     var router = z.getRouter();
     try router.get("/test", testHandle);
@@ -80,15 +105,15 @@ test "Zinc Server" {
     try std.testing.expectEqual(1, routes.items[0].handlers.items.len);
 
     // Create an HTTP client.
-    var client = std.http.Client{ .allocator = z.allocator };
+    var client = std.http.Client{ .allocator = allocator };
     defer client.deinit();
 
-    const url = try std.fmt.allocPrint(z.allocator, "http://127.0.0.1:{any}/test", .{z.getPort()});
-    defer z.allocator.free(url);
+    const url = try std.fmt.allocPrint(allocator, "http://127.0.0.1:{any}/test", .{server_port});
+    defer allocator.free(url);
     var req = try fetch(&client, .{ .method = .GET, .location = .{ .url = url } });
     defer req.deinit();
 
-    const body_buffer = req.reader().readAllAlloc(z.allocator, req.response.content_length.?) catch unreachable;
+    const body_buffer = req.reader().readAllAlloc(allocator, req.response.content_length.?) catch unreachable;
     try std.testing.expectEqualStrings("Hello World!", body_buffer);
 
     // test use middleware
@@ -103,7 +128,7 @@ test "Zinc Server" {
     defer req2.deinit();
 
     var header_buffer: []u8 = undefined;
-    header_buffer = try z.allocator.alloc(u8, 1024);
+    header_buffer = try allocator.alloc(u8, 1024);
     header_buffer = req2.response.parser.get();
 
     // HTTP/1.1 204 No Content
@@ -168,13 +193,13 @@ test "Zinc Server" {
     try router.use(&.{ mid1, mid2 });
     try router.get("/mid", handle);
 
-    const mid_url = try std.fmt.allocPrint(z.allocator, "http://127.0.0.1:{any}/mid", .{z.getPort()});
-    defer z.allocator.free(mid_url);
+    const mid_url = try std.fmt.allocPrint(allocator, "http://127.0.0.1:{any}/mid", .{z.getPort()});
+    defer allocator.free(mid_url);
 
     var req3 = try fetch(&client, .{ .method = .GET, .location = .{ .url = mid_url } });
     defer req3.deinit();
 
-    const req3_body_buffer = req3.reader().readAllAlloc(z.allocator, req3.response.content_length.?) catch unreachable;
+    const req3_body_buffer = req3.reader().readAllAlloc(allocator, req3.response.content_length.?) catch unreachable;
     try std.testing.expectEqualStrings("Hello Zinc!", req3_body_buffer);
 }
 
