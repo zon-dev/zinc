@@ -26,16 +26,16 @@ test "Zinc with std.heap.GeneralPurposeAllocator" {
     z.shutdown(0);
 }
 
-// test "Zinc with std.testing.allocator" {
-//     const allocator = std.testing.allocator;
-//     var z = try zinc.init(.{
-//         .allocator = allocator,
-//         .num_threads = 100,
-//     });
-//     defer z.deinit();
+test "Zinc with std.testing.allocator" {
+    const allocator = std.testing.allocator;
+    var z = try zinc.init(.{
+        .allocator = allocator,
+        .num_threads = 100,
+    });
+    defer z.deinit();
 
-//     z.shutdown(0);
-// }
+    z.shutdown(0);
+}
 
 test "Zinc with std.heap.ArenaAllocator" {
     const page_allocator = std.heap.page_allocator;

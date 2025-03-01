@@ -62,15 +62,6 @@ fn create(conf: Config.Engine) anyerror!*Engine {
     var listener = try address.listen(.{ .reuse_address = true });
     errdefer listener.deinit();
 
-    const route_tree = try RouteTree.init(.{
-        .value = "/",
-        .full_path = "/",
-        .allocator = conf.allocator,
-        .children = std.StringHashMap(*RouteTree).init(conf.allocator),
-        .routes = std.ArrayList(*Route).init(conf.allocator),
-    });
-    errdefer route_tree.destroy();
-
     engine.* = Engine{
         .allocator = conf.allocator,
         .net_server = listener,
