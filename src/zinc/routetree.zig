@@ -61,7 +61,7 @@ pub const RouteTree = struct {
         stack.append(self) catch unreachable;
 
         while (stack.items.len > 0) {
-            var node: *RouteTree = stack.pop().?;
+            var node: *RouteTree = stack.pop();
             defer node.destroy();
 
             if (node.children != null) {
@@ -220,7 +220,7 @@ pub const RouteTree = struct {
         stack.append(self) catch unreachable;
 
         while (stack.items.len > 0) {
-            const node: *RouteTree = stack.pop().?;
+            const node: *RouteTree = stack.pop();
 
             // 如果当前节点是路由的结尾，添加到结果
             if (node.routes != null and node.routes.?.items.len > 0) {
@@ -244,7 +244,7 @@ pub const RouteTree = struct {
         stack.append(self) catch unreachable;
 
         while (stack.items.len > 0) {
-            const node: *RouteTree = stack.pop().?;
+            const node: *RouteTree = stack.pop();
             var iter = node.children.valueIterator();
             while (iter.next()) |child| {
                 stack.append(child.*) catch unreachable;
@@ -262,7 +262,7 @@ pub const RouteTree = struct {
         stack.append(self) catch unreachable;
 
         while (stack.items.len > 0) {
-            const node: *RouteTree = stack.pop().?;
+            const node: *RouteTree = stack.pop();
 
             if (node.routes != null) {
                 for (node.routes.?.items) |route| {
@@ -377,7 +377,7 @@ pub const RouteTree = struct {
         childStack.append(self) catch unreachable;
 
         while (childStack.items.len > 0) {
-            const node: *RouteTree = childStack.pop().?;
+            const node: *RouteTree = childStack.pop();
 
             // append children routes to the routes
             if (node.routes != null) {

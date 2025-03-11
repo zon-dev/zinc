@@ -113,7 +113,7 @@ pub fn trace(self: *RouterGroup, target: []const u8, handler: HandlerFn) anyerro
 }
 
 /// Add middleware to the route.
-pub fn use(self: *RouterGroup, handler: HandlerFn) anyerror!void {
+pub fn use(self: *RouterGroup, handler: []const HandlerFn) anyerror!void {
     try self.router.use(handler);
 }
 
