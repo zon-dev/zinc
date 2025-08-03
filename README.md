@@ -89,6 +89,16 @@ try router.use(&.{authMiddleware, corsMiddleware});
 try router.get("/protected", protectedHandler);
 ```
 
+### Static Files
+
+```zig
+// Serve static files
+try router.staticFile("/favicon.ico", "public/favicon.ico");
+
+// Serve static directories
+try router.staticDir("/assets", "public/assets");
+```
+
 ### Async I/O Configuration
 
 ```zig
@@ -140,7 +150,6 @@ All tests pass with zero memory leaks and full async I/O coverage.
 
 - **API Reference**: https://zinc.zon.dev/
 - **Quick Start Guide**: https://zinc.zon.dev/src/quickstart.html
-- **Examples Repository**: https://github.com/zon-dev/zinc-examples
 
 ## 🔧 Development
 
@@ -156,12 +165,6 @@ zig build
 
 ```bash
 zig build test
-```
-
-### Running Examples
-
-```bash
-zig build run-example
 ```
 
 ## 🤝 Contributing
