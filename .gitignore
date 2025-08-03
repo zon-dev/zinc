@@ -27,3 +27,6 @@ zinc.o.o
 /docs
 .zig-cache
 zig-out
+
+# custom
+/tmp

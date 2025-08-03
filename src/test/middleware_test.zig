@@ -7,13 +7,7 @@ const Request = zinc.Request;
 const Response = zinc.Response;
 
 test "Middleware" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{
-        .verbose_log = true,
-        .thread_safe = true,
-    }){};
-    const allocator = gpa.allocator();
-    defer _ = gpa.deinit();
-    // const allocator = std.testing.allocator;
+    const allocator = std.testing.allocator;
 
     var router = try zinc.Router.init(.{
         .allocator = allocator,

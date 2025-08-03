@@ -10,30 +10,26 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
 
-    const url = b.dependency("url", .{
-        .target = target,
-        .optimize = optimize,
-    });
-
+    // Add url dependency
+    const url = b.dependency("url", .{});
     module.addImport("url", url.module("url"));
+
+    const aio = b.dependency("aio", .{});
+    module.addImport("aio", aio.module("aio"));
+
+    // Add tests
     const unit_tests = b.addTest(.{
-        .root_source_file = b.path("src/zinc_test.zig"),
-        .target = target,
-        .optimize = optimize,
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/zinc_test.zig"),
+            .target = b.graph.host,
+            .optimize = optimize,
+        }),
     });
-    // unit_tests.root_module.addImport("zinc", module);
     unit_tests.root_module.addImport("url", url.module("url"));
-    //TODO
+    unit_tests.root_module.addImport("aio", aio.module("aio"));
     unit_tests.linkLibC();
 
-    const aio = b.dependency("aio", .{
-        .target = target,
-        .optimize = optimize,
-    });
-    module.addImport("aio", aio.module("aio"));
-    unit_tests.root_module.addImport("aio", aio.module("aio"));
     const run_unit_tests = b.addRunArtifact(unit_tests);
-
     const test_step = b.step("test", "Run unit tests");
     test_step.dependOn(&run_unit_tests.step);
 }

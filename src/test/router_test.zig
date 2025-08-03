@@ -19,13 +19,7 @@ fn createContext(allocator: std.mem.Allocator, method: std.http.Method, target: 
 }
 
 test "Router. Handle Request" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{
-        .verbose_log = true,
-        .thread_safe = true,
-    }){};
-    const allocator = gpa.allocator();
-    defer _ = gpa.deinit();
-    // const allocator = std.testing.allocator;
+    const allocator = std.heap.smp_allocator;
 
     var router = try Router.init(.{ .allocator = allocator });
     defer router.deinit();

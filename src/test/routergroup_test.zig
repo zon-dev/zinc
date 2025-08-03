@@ -20,9 +20,7 @@ fn createContext(allocator: std.mem.Allocator, method: std.http.Method, target: 
 }
 
 test "RouterGroup" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    const allocator = gpa.allocator();
-    // const allocator = std.testing.allocator;
+    const allocator = std.testing.allocator;
 
     var router = try Router.init(.{ .allocator = allocator });
     defer router.deinit();
@@ -34,11 +32,14 @@ test "RouterGroup" {
     }.anyHandle;
 
     var test_group = try router.group("/test");
+    defer test_group.deinit();
     try test_group.get("/group", handle);
 
     var group2 = try router.group("/test2");
+    defer group2.deinit();
     try group2.get("/group2", handle);
     var group_user = try group2.group("/user");
+    defer group_user.deinit();
     _ = try group_user.get("/login", handle);
 
     const routes = router.getRoutes();

@@ -2,6 +2,7 @@ const std = @import("std");
 const URL = @import("url");
 const RespondOptions = std.http.Server.Request.RespondOptions;
 const Header = std.http.Header;
+const Stringify = std.json.Stringify;
 
 const zinc = @import("../zinc.zig");
 const Request = zinc.Request;
@@ -112,14 +113,18 @@ pub fn json(self: *Self, value: anytype, conf: Config.Context) anyerror!void {
     if (conf.keep_alive) {
         try self.setHeader("Connection", "keep-alive");
     }
-    var string = std.ArrayList(u8).init(self.allocator);
-    defer self.allocator.free(string.items);
+    
+    var out: std.io.Writer.Allocating = .init(self.allocator);
+    defer out.deinit();
+    
+    var stringify = Stringify{
+        .writer = &out.writer,
+        .options = .{},
+    };
+    try stringify.write(value);
 
-    try std.json.stringify(value, .{}, string.writer());
     try self.setHeader("Content-Type", "application/json");
-    const slice = try string.toOwnedSlice();
-
-    try self.setBody(slice);
+    try self.setBody(out.getWritten());
     try self.setStatus(conf.status);
 }
 
@@ -187,8 +192,18 @@ pub fn getParam(self: *Self, key: []const u8) ?Param {
     return self.params.get(key);
 }
 
-pub fn setStatus(self: *Self, status: std.http.Status) !void {
-    self.response.setStatus(status);
+pub fn getQuery(self: *Self, key: []const u8) ?[]const u8 {
+    const values = self.queryValues(key) catch return null;
+    if (values.items.len == 0) return null;
+    return values.items[0];
+}
+
+pub fn setStatus(self: *Self, status_code: std.http.Status) !void {
+    self.response.setStatus(status_code);
+}
+
+pub fn status(self: *Self, status_code: std.http.Status) !void {
+    self.response.setStatus(status_code);
 }
 pub fn setHeader(self: *Self, key: []const u8, value: []const u8) anyerror!void {
     try self.response.setHeader(key, value);
@@ -322,9 +337,9 @@ pub fn getPostFormMap(self: *Self) ?std.StringHashMap([]const u8) {
 
     _ = std.mem.indexOf(u8, content_type, "application/x-www-form-urlencoded") orelse return null;
 
-    const request_reader = self.conn.reader();
+    const request_reader = self.conn.reader(self.recv_buf);
 
-    const body_buffer = request_reader.readAllAlloc(self.allocator, content_length) catch return null;
+    const body_buffer = try request_reader.file_reader.read(content_length);
 
     var form = std.StringHashMap([]const u8).init(self.allocator);
     var form_data = std.mem.splitSequence(u8, body_buffer, "&");
@@ -404,4 +419,12 @@ pub fn doRequest(self: *Self) anyerror!void {
         .extra_headers = self.response.getHeaders(),
         .keep_alive = keep_alive,
     });
+}
+
+pub fn getBody(self: *Self) []const u8 {
+    return self.response.body orelse "";
+}
+
+pub fn getMethod(self: *Self) std.http.Method {
+    return self.request.method;
 }
