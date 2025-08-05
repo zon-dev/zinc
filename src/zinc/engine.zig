@@ -82,10 +82,8 @@ middlewares: ?std.ArrayList(HandlerFn) = undefined,
 /// max connections.
 max_conn: u32 = 1024,
 
-// Aio completions
+// Aio completion for accept operations (global, not per-connection)
 accept_completion: IO.Completion = undefined,
-read_completion: IO.Completion = undefined,
-write_completion: IO.Completion = undefined,
 
 // Read buffer for each connection
 read_buffer: []u8 = undefined,
@@ -104,6 +102,10 @@ pub const Connection = struct {
 
     fd: posix.socket_t = -1,
     address: net.Address = undefined,
+
+    // Each connection has its own completion objects to avoid race conditions
+    read_completion: IO.Completion = undefined,
+    write_completion: IO.Completion = undefined,
 
     pub fn init() Connection {
         return .{};
@@ -136,8 +138,8 @@ fn create(conf: Config.Engine) anyerror!*Engine {
 
     errdefer listener.deinit();
 
-    // Initialize aio
-    const aio_io = try IO.init(32, 0);
+    // Initialize aio with larger queue for better performance
+    const aio_io = try IO.init(1024, 0);
     const aio_time = Time{};
 
     engine.* = Engine{
@@ -166,13 +168,14 @@ fn create(conf: Config.Engine) anyerror!*Engine {
         .listener_address = listener.listen_address,
 
         .connection_pool = std.heap.MemoryPool(Connection).init(allocator),
-        .read_buffer = try allocator.alloc(u8, 4096),
+        .read_buffer = try allocator.alloc(u8, 32768), // Increased to 32KB for maximum performance
     };
 
     try engine.threads.init(.{
         .allocator = allocator,
         .n_jobs = conf.num_threads,
         .track_ids = false,
+        .stack_size = conf.stack_size,
     });
 
     return engine;
@@ -212,7 +215,11 @@ pub fn deinit(self: *Self) void {
             posix.close(connection.fd);
             connection.fd = -1;
         }
+
+        // Destroy connection with mutex protection
+        self.mutex.lock();
         self.connection_pool.destroy(@alignCast(connection));
+        self.mutex.unlock();
     }
     self.connections.deinit(allocator);
 
@@ -287,7 +294,7 @@ fn startRead(self: *Engine, connection: *Connection) !void {
         *Engine,
         self,
         readCallback,
-        &self.read_completion,
+        &connection.read_completion,
         connection.fd,
         self.read_buffer,
     );
@@ -299,7 +306,7 @@ fn startWrite(self: *Engine, connection: *Connection, data: []const u8) !void {
         *Engine,
         self,
         writeCallback,
-        &self.write_completion,
+        &connection.write_completion,
         connection.fd,
         data,
     );
@@ -307,19 +314,28 @@ fn startWrite(self: *Engine, connection: *Connection, data: []const u8) !void {
 
 /// Handle accepted connection
 fn handleAcceptedConnection(self: *Engine, client_fd: posix.socket_t) void {
-    // Create new connection
-    const connection = self.connection_pool.create() catch |err| {
-        std.log.err("Failed to create connection: {}", .{err});
-        posix.close(client_fd);
-        return;
+    // Create new connection with minimal mutex protection
+    const connection = blk: {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+        break :blk self.connection_pool.create() catch |err| {
+            std.log.err("Failed to create connection: {}", .{err});
+            posix.close(client_fd);
+            return;
+        };
     };
     connection.setSocket(client_fd);
     connection.state = .connected;
 
-    // Add to managed connections
+    // Add to managed connections (this doesn't need mutex protection)
     self.connections.put(self.allocator, client_fd, connection) catch |err| {
         std.log.err("Failed to add connection: {}", .{err});
-        self.connection_pool.destroy(connection);
+
+        // Destroy connection with mutex protection
+        self.mutex.lock();
+        defer self.mutex.unlock();
+        self.connection_pool.destroy(@alignCast(connection));
+
         posix.close(client_fd);
         return;
     };
@@ -349,10 +365,12 @@ fn handleReadCompletion(self: *Engine, connection: *Connection, data: []u8) void
         return;
     };
 
-    // 对于 HTTP 请求，我们需要等待响应发送完成后再关闭连接
-    // 这里我们暂时使用同步写入，然后关闭连接
-    // TODO: 实现异步写入响应
-    self.closeConnection(connection);
+    // Continue reading for keep-alive connections instead of closing immediately
+    // The response will be sent asynchronously by the router
+    self.startRead(connection) catch |err| {
+        std.log.err("Failed to continue reading: {}", .{err});
+        self.closeConnection(connection);
+    };
 }
 
 /// Handle write completion
@@ -370,8 +388,12 @@ fn closeConnection(self: *Engine, connection: *Connection) void {
     if (connection.fd != -1) {
         self.aio_io.close_socket(connection.fd);
         _ = self.connections.remove(connection.fd);
+
+        // Only protect the actual destroy operation
+        self.mutex.lock();
         self.connection_pool.destroy(@alignCast(connection));
-        connection.fd = -1;
+        self.mutex.unlock();
+        // Don't access connection after destroying it
     }
 }
 
@@ -487,8 +509,8 @@ fn acceptCallback(
         // Handle successful accept
         std.log.info("Accepted connection: {}", .{fd});
         engine.handleAcceptedConnection(fd);
-        
-        // 重新开始接受新的连接
+
+        // Accept new connection
         engine.startAccept(engine.getSocket()) catch |err| {
             if (!engine.stopping.isSet()) {
                 std.log.err("Failed to start accepting new connections: {}", .{err});
@@ -499,8 +521,8 @@ fn acceptCallback(
         if (!engine.stopping.isSet()) {
             std.log.err("Accept error: {}", .{err});
         }
-        
-        // 即使出错也要重新开始接受连接
+
+        // Restart accepting new connections
         engine.startAccept(engine.getSocket()) catch |err2| {
             if (!engine.stopping.isSet()) {
                 std.log.err("Failed to restart accepting after error: {}", .{err2});

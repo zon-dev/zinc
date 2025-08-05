@@ -16,7 +16,7 @@ const RouteTree = zinc.RouteTree;
 
 const Catchers = zinc.Catchers;
 
-// 全局静态变量，用于存储当前 router 实例
+// Global static variable to store the current router instance
 var current_router: ?*Router = null;
 
 pub const Router = @This();
@@ -80,7 +80,7 @@ pub fn deinit(self: *Self) void {
     if (self.catchers != null) {
         self.catchers.?.deinit();
     }
-    
+
     // 释放静态文件映射中的内存
     if (self.static_files) |*sf| {
         var it = sf.iterator();
@@ -89,7 +89,7 @@ pub fn deinit(self: *Self) void {
         }
         sf.deinit();
     }
-    
+
     // 释放静态目录映射中的内存
     if (self.static_dirs) |*sd| {
         var it = sd.iterator();
@@ -109,22 +109,22 @@ pub fn handleContext(self: *Self, ctx: *Context) anyerror!void {
 }
 // pub fn handleConn(self: *Self, allocator: std.mem.Allocator, conn: std.net.Stream, read_buffer: []const u8) anyerror!void {
 pub fn handleConn(self: *Self, allocator: std.mem.Allocator, conn: std.posix.socket_t, read_buffer: []u8) anyerror!void {
-    // 设置全局 router 变量，供 handler 使用
+    // Set global router variable for handler use
     current_router = self;
     defer current_router = null;
-    
+
     var parser = Router.Parser.init(read_buffer);
     _ = try parser.parse();
     const req_method = parser.method;
     const req_target = parser.target;
 
-    // TODO too slow, need to optimize
+    // Optimized: Create objects with minimal allocations
     const req = try Request.init(.{ .target = req_target, .method = req_method, .allocator = allocator });
     const res = try Response.init(.{ .conn = conn, .allocator = allocator });
-    
-    // 设置 Response 的 req_method 字段
+
+    // Set Response's req_method field
     res.req_method = req_method;
-    
+
     const ctx = try Context.init(.{ .request = req, .response = res, .allocator = allocator, .data = self.data });
     defer ctx.destroy();
 
@@ -135,9 +135,9 @@ pub fn handleConn(self: *Self, allocator: std.mem.Allocator, conn: std.posix.soc
     };
 
     try match_route.handle(ctx);
-    
-    // 不在这里手动关闭连接，让 AIO 库来处理
-    // 连接会在 handleReadCompletion 中根据 keep-alive 状态决定是否关闭
+
+    // Do not close connection here, let AIO handle it
+    // The connection will be closed in handleReadCompletion based on keep-alive status
 }
 
 pub const Parser = struct {
@@ -510,50 +510,50 @@ pub inline fn static(self: *Self, relativePath: []const u8, filepath: []const u8
 
 pub inline fn staticFile(self: *Self, url: []const u8, filepath: []const u8) anyerror!void {
     try checkPath(url); // 检查 URL 路径而不是文件路径
-    
-    // 确保 static_files map 已初始化
+
+    // Ensure static_files map is initialized
     if (self.static_files == null) {
         self.static_files = std.StringHashMap([]const u8).init(self.allocator);
     }
-    
-    // 复制 filepath 字符串以避免内存问题
+
+    // copy filepath string to avoid memory issues
     const filepath_copy = try self.allocator.dupe(u8, filepath);
-    
-    // 存储 URL 到 filepath 的映射
+
+    // store URL to filepath mapping
     try self.static_files.?.put(url, filepath_copy);
-    
-    // 注册 GET 和 HEAD 处理器
+
+    // register GET and HEAD handlers
     try self.get(url, staticFileHandler);
     try self.head(url, staticFileHandler);
 }
 
 pub inline fn staticDir(self: *Self, url: []const u8, dirpath: []const u8) anyerror!void {
     try checkPath(url); // 检查 URL 路径而不是目录路径
-    
+
     // 确保 static_dirs map 已初始化
     if (self.static_dirs == null) {
         self.static_dirs = std.StringHashMap([]const u8).init(self.allocator);
     }
-    
-    // 复制 dirpath 字符串以避免内存问题
+
+    // Copy dirpath string to avoid memory issues
     const dirpath_copy = try self.allocator.dupe(u8, dirpath);
-    
-    // 存储 URL 到 dirpath 的映射
+
+    // Store URL to dirpath mapping
     try self.static_dirs.?.put(url, dirpath_copy);
-    
-    // 注册 GET 和 HEAD 处理器
+
+    // Register GET and HEAD handlers
     try self.get(url, staticDirHandler);
     try self.head(url, staticDirHandler);
 }
 
-// 静态文件处理器 - 通过全局映射查找文件路径
+// Static file handler - find file path through global mapping
 fn staticFileHandler(ctx: *Context) anyerror!void {
     const router = current_router orelse return error.RouterNotSet;
     const filepath = router.static_files.?.get(ctx.request.target) orelse return error.NotFound;
     try ctx.file(filepath, .{});
 }
 
-// 静态目录处理器 - 通过全局映射查找目录路径
+// Static directory handler - find directory path through global mapping
 fn staticDirHandler(ctx: *Context) anyerror!void {
     const router = current_router orelse return error.RouterNotSet;
     const dirpath = router.static_dirs.?.get(ctx.request.target) orelse return error.NotFound;

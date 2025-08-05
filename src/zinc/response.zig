@@ -163,8 +163,67 @@ pub fn send(self: *Self, content: []const u8, options: RespondOptions) anyerror!
             iovecs_len += 1;
         }
     }
-    // try self.conn.write(iovecs[0..iovecs_len]);
+
+    // Use synchronous write for now, but this should be made async
     _ = try std.posix.writev(self.conn, iovecs[0..iovecs_len]);
+}
+
+/// Async version of send that uses AIO for non-blocking response writing
+pub fn sendAsync(self: *Self, content: []const u8, options: RespondOptions, engine: anytype, connection: anytype) anyerror!void {
+    const req_method = self.req_method.?;
+
+    const transfer_encoding_none = (options.transfer_encoding orelse .chunked) == .none;
+    const keep_alive = !transfer_encoding_none and options.keep_alive;
+    const phrase = options.reason orelse options.status.phrase() orelse "";
+
+    var first_buffer: [500]u8 = undefined;
+    var h = std.ArrayListUnmanaged(u8).initBuffer(&first_buffer);
+
+    h.fixedWriter().print("{s} {d} {s}\r\n", .{
+        @tagName(options.version), @intFromEnum(options.status), phrase,
+    }) catch unreachable;
+
+    switch (options.version) {
+        .@"HTTP/1.0" => if (keep_alive) h.appendSliceAssumeCapacity("connection: keep-alive\r\n"),
+        .@"HTTP/1.1" => if (!keep_alive) h.appendSliceAssumeCapacity("connection: close\r\n"),
+    }
+
+    if (options.transfer_encoding) |transfer_encoding| switch (transfer_encoding) {
+        .none => {},
+        .chunked => h.appendSliceAssumeCapacity("transfer-encoding: chunked\r\n"),
+    } else {
+        h.fixedWriter().print("content-length: {d}\r\n", .{content.len}) catch unreachable;
+    }
+
+    // Build the complete response buffer
+    var response_buffer = std.ArrayList(u8).init(self.allocator);
+    defer response_buffer.deinit();
+
+    // Add headers
+    response_buffer.appendSlice(h.items) catch unreachable;
+
+    // Add extra headers
+    for (options.extra_headers) |header| {
+        response_buffer.appendSlice(header.name) catch unreachable;
+        response_buffer.appendSlice(": ") catch unreachable;
+        if (header.value.len > 0) {
+            response_buffer.appendSlice(header.value) catch unreachable;
+        }
+        response_buffer.appendSlice("\r\n") catch unreachable;
+    }
+
+    response_buffer.appendSlice("\r\n") catch unreachable;
+
+    // Add body for non-HEAD requests
+    if (req_method != .HEAD and content.len > 0) {
+        response_buffer.appendSlice(content) catch unreachable;
+    }
+
+    // Use AIO to send the response asynchronously
+    engine.startWrite(connection, response_buffer.items) catch |err| {
+        std.log.err("Failed to start async write: {}", .{err});
+        return err;
+    };
 }
 
 pub fn write(self: *Self, content: []const u8, options: RespondOptions) anyerror!void {

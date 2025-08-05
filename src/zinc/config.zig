@@ -12,12 +12,12 @@ pub const Engine = struct {
     /// Default is the std.heap.page_allocator.
     allocator: std.mem.Allocator = std.heap.page_allocator,
 
-    /// The buffer length for the read buffer. Default is 10KB.
-    read_buffer_len: usize = 10 * 1024,
-    /// The buffer length for the header. Default is 1KB.
-    header_buffer_len: usize = 1024,
-    /// The buffer length for the body. Default is 8KB.
-    body_buffer_len: usize = 8 * 1024,
+    /// The buffer length for the read buffer. Default is 32KB for maximum performance.
+    read_buffer_len: usize = 32 * 1024,
+    /// The buffer length for the header. Default is 4KB for maximum performance.
+    header_buffer_len: usize = 4 * 1024,
+    /// The buffer length for the body. Default is 32KB for maximum performance.
+    body_buffer_len: usize = 32 * 1024,
 
     /// The stack_size in bytes is the stack of each thread.
     /// Default is 10MB.
@@ -25,7 +25,8 @@ pub const Engine = struct {
     stack_size: usize = 10 * 1024 * 1024,
 
     /// The number of threads to use. Maximum is 255.
-    num_threads: u8 = 8,
+    /// Increased to 32 for maximum performance.
+    num_threads: u8 = 32,
 
     ///
     tick_ms: u63 = 10,

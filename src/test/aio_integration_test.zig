@@ -18,8 +18,8 @@ test "aio default configuration" {
     defer engine.deinit();
 
     try std.testing.expect(engine.getPort() > 0);
-    try std.testing.expect(engine.num_threads == 8); // Default thread count
-    try std.testing.expect(engine.read_buffer_len == 10240); // Default buffer size
+    try std.testing.expect(engine.num_threads == 32); // Updated default thread count
+    try std.testing.expect(engine.read_buffer_len == 32768); // Updated default buffer size
 }
 
 test "aio custom configuration" {

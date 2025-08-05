@@ -110,16 +110,16 @@ test "RouteTree complex wildcard match" {
 //     var routeTree = try createTree();
 //     defer routeTree.destroyTrieTree();
 
-//     // 插入多层路由
+//     // insert multiple levels routes
 //     _ = try routeTree.insert("/users/*/posts");
 //     _ = try routeTree.insert("/users/*/comments");
 
-//     // 测试多层通配符匹配
+//     // test multiple levels wildcard match
 //     try std.testing.expect(routeTree.findWithWildcard("/users/1/posts") != null);
 //     try std.testing.expect(routeTree.findWithWildcard("/users/2/comments") != null);
 //     try std.testing.expect(routeTree.findWithWildcard("/users/3/posts") != null);
 
-//     // 测试不存在的多层路径
+//     // test nonexistent multiple levels paths
 //     try std.testing.expect(routeTree.findWithWildcard("/users/1/friends") == null);
 //     try std.testing.expect(routeTree.findWithWildcard("/users/2/likes") == null);
 // }
@@ -129,15 +129,15 @@ test "RouteTree complex wildcard match" {
 //     var routeTree = try RouteTree.init(.{ .allocator = allocator });
 //     defer routeTree.destroyTrieTree();
 
-//     // 插入具体的路由
+//     // insert specific routes
 //     _ = try routeTree.insert("/home");
 //     _ = try routeTree.insert("/about");
 
-//     // 测试精确匹配
+//     // test exact match
 //     try std.testing.expect(routeTree.findWithWildcard("/home") != null);
 //     try std.testing.expect(routeTree.findWithWildcard("/about") != null);
 
-//     // 测试不存在的路径
+//     // test nonexistent paths
 //     try std.testing.expect(routeTree.findWithWildcard("/contact") == null);
 // }
 
@@ -146,19 +146,19 @@ test "RouteTree complex wildcard match" {
 //     var routeTree = try RouteTree.init(allocator);
 //     defer routeTree.destroy();
 
-//     // 插入复杂路由
+//     // insert complex routes
 //     try routeTree.insert("/api/*/users");
 //     try routeTree.insert("/api/v1/*");
 //     try routeTree.insert("/files/*/documents/*");
 
-//     // 测试各种复杂路径匹配
+//     // test various complex path matches
 //     try std.testing.expect(routeTree.findWithWildcard("/api/v1/users") != null);
 //     try std.testing.expect(routeTree.findWithWildcard("/api/v1/products") != null);
 //     try std.testing.expect(routeTree.findWithWildcard("/api/v1/") != null);
 //     try std.testing.expect(routeTree.findWithWildcard("/files/abc/documents/123") != null);
 //     try std.testing.expect(routeTree.findWithWildcard("/files/xyz/documents/test.pdf") != null);
 
-//     // 测试不存在的复杂路径
+//     // test nonexistent complex paths
 //     try std.testing.expect(routeTree.findWithWildcard("/api/v2/users") == null);
 //     try std.testing.expect(routeTree.findWithWildcard("/files/abc/pictures/123") == null);
 // }
@@ -168,18 +168,18 @@ test "RouteTree complex wildcard match" {
 //     var routeTree = try RouteTree.init(allocator);
 //     defer routeTree.destroy();
 
-//     // 插入混合路由
+//     // insert mixed routes
 //     try routeTree.insert("/blog/*");
 //     try routeTree.insert("/blog/2023");
 //     try routeTree.insert("/blog/2023/post1");
 
-//     // 测试精确和通配符匹配
+//     // test exact and wildcard matches
 //     try std.testing.expect(routeTree.findWithWildcard("/blog/2023") != null);
 //     try std.testing.expect(routeTree.findWithWildcard("/blog/2023/post1") != null);
 //     try std.testing.expect(routeTree.findWithWildcard("/blog/2023/anything") != null);
 //     try std.testing.expect(routeTree.findWithWildcard("/blog/anything") != null);
 
-//     // 测试不存在的路径
+//     // test nonexistent paths
 //     try std.testing.expect(routeTree.findWithWildcard("/blog/2024") == null);
 //     try std.testing.expect(routeTree.findWithWildcard("/blog/2023/post2") == null);
 // }
@@ -189,21 +189,21 @@ test "RouteTree complex wildcard match" {
 //     var routeTree = try RouteTree.init(allocator);
 //     defer routeTree.destroy();
 
-//     // 插入边界路由
-//     try routeTree.insert("/"); // 根路径
+//     // insert boundary routes
+//     try routeTree.insert("/"); // root path
 //     try routeTree.insert("/health");
 //     try routeTree.insert("/health/check");
 //     try routeTree.insert("/health/*");
 
-//     // 测试根路径匹配
+//     // test root path match
 //     try std.testing.expect(routeTree.findWithWildcard("/") != null);
 
-//     // 测试健康检查路径
+//     // test health check path
 //     try std.testing.expect(routeTree.findWithWildcard("/health") != null);
 //     try std.testing.expect(routeTree.findWithWildcard("/health/check") != null);
 //     try std.testing.expect(routeTree.findWithWildcard("/health/status") != null);
 
-//     // 测试不存在的边界路径
+//     // test nonexistent boundary paths
 //     try std.testing.expect(routeTree.findWithWildcard("/unknown") == null);
 // }
 
@@ -212,16 +212,16 @@ test "RouteTree complex wildcard match" {
 //     var routeTree = try RouteTree.init(allocator);
 //     defer routeTree.destroy();
 
-//     // 插入嵌套通配符路由
+//     // insert nested wildcard routes
 //     try routeTree.insert("/users/*/friends/*");
 //     try routeTree.insert("/users/*/messages/*/details");
 
-//     // 测试嵌套通配符路径
+//     // test nested wildcard paths
 //     try std.testing.expect(routeTree.findWithWildcard("/users/1/friends/2") != null);
 //     try std.testing.expect(routeTree.findWithWildcard("/users/3/messages/4/details") != null);
 //     try std.testing.expect(routeTree.findWithWildcard("/users/5/messages/6/details") != null);
 
-//     // 测试不存在的嵌套路径
+//     // test nonexistent nested paths
 //     try std.testing.expect(routeTree.findWithWildcard("/users/1/friends/") == null);
 //     try std.testing.expect(routeTree.findWithWildcard("/users/1/unknown/2") == null);
 // }
