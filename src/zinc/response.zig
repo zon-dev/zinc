@@ -24,7 +24,7 @@ req_method: ?http.Method = undefined,
 
 version: []const u8 = "HTTP/1.1",
 status: std.http.Status = .ok,
-header: std.ArrayList(std.http.Header) = undefined,
+header: std.array_list.Managed(std.http.Header) = undefined,
 
 body: ?[]const u8 = null,
 
@@ -34,7 +34,7 @@ pub fn init(self: Self) anyerror!*Response {
     const response = try self.allocator.create(Response);
     response.* = .{
         .allocator = self.allocator,
-        .header = std.ArrayList(std.http.Header).init(self.allocator),
+        .header = std.array_list.Managed(std.http.Header).init(self.allocator),
         .conn = self.conn,
         // .io = self.io,
     };
@@ -376,7 +376,7 @@ pub fn isKeepAlive(self: *Self) bool {
 }
 
 pub fn setBody(self: *Self, body: []const u8) anyerror!void {
-    var new_body = std.ArrayList(u8).init(self.allocator);
+    var new_body = std.array_list.Managed(u8).init(self.allocator);
     defer self.allocator.free(new_body.items);
 
     if (self.body) |old_body| {

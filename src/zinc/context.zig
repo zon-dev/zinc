@@ -46,7 +46,7 @@ params: std.StringHashMap(Param) = undefined,
 query_map: ?std.StringHashMap(std.ArrayList([]const u8)) = null,
 
 // Slice of optional function pointers
-handlers: std.ArrayList(handlerFn) = undefined,
+handlers: std.array_list.Managed(handlerFn) = undefined,
 
 index: u8 = 0, // Adjust the type based on your specific needs
 
@@ -81,7 +81,7 @@ pub fn init(self: Self) anyerror!*Context {
         .params = std.StringHashMap(Param).init(self.allocator),
         .query = self.request.query,
         .query_map = self.query_map,
-        .handlers = std.ArrayList(handlerFn).init(self.allocator),
+        .handlers = std.array_list.Managed(handlerFn).init(self.allocator),
         .index = self.index,
         .conn = self.conn,
         .recv_buf = self.recv_buf,
@@ -113,10 +113,10 @@ pub fn json(self: *Self, value: anytype, conf: Config.Context) anyerror!void {
     if (conf.keep_alive) {
         try self.setHeader("Connection", "keep-alive");
     }
-    
+
     var out: std.io.Writer.Allocating = .init(self.allocator);
     defer out.deinit();
-    
+
     var stringify = Stringify{
         .writer = &out.writer,
         .options = .{},
@@ -124,7 +124,7 @@ pub fn json(self: *Self, value: anytype, conf: Config.Context) anyerror!void {
     try stringify.write(value);
 
     try self.setHeader("Content-Type", "application/json");
-    try self.setBody(out.getWritten());
+    try self.setBody(out.written());
     try self.setStatus(conf.status);
 }
 

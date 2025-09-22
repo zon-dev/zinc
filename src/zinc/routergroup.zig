@@ -29,7 +29,7 @@ fn relativePath(self: *RouterGroup, path: []const u8) anyerror![]const u8 {
     var arena = std.heap.ArenaAllocator.init(self.allocator);
     defer arena.deinit();
 
-    var slice = std.ArrayList(u8).init(arena.allocator());
+    var slice = std.array_list.Managed(u8).init(arena.allocator());
     defer slice.deinit();
 
     try slice.appendSlice(self.prefix);
