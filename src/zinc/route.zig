@@ -18,7 +18,7 @@ method: Method,
 
 path: []const u8,
 
-handlers: std.ArrayList(HandlerFn),
+handlers: std.array_list.Managed(HandlerFn),
 
 pub fn init(self: Self) anyerror!*Route {
     const route = try self.allocator.create(Route);
@@ -28,7 +28,7 @@ pub fn init(self: Self) anyerror!*Route {
         .allocator = self.allocator,
         .method = self.method,
         .path = self.path,
-        .handlers = std.ArrayList(HandlerFn).init(self.allocator),
+        .handlers = std.array_list.Managed(HandlerFn).init(self.allocator),
     };
 
     return route;
@@ -39,7 +39,7 @@ pub fn create(allocator: std.mem.Allocator, path: []const u8, http_method: Metho
         .method = http_method,
         .path = path,
         .allocator = allocator,
-        .handlers = std.ArrayList(HandlerFn).init(allocator),
+        .handlers = std.array_list.Managed(HandlerFn).init(allocator),
     });
     try r.handlers.appendSlice(handlers);
     return r;

@@ -36,7 +36,7 @@ methods: []const std.http.Method = &[_]std.http.Method{
 
 allocator: Allocator = undefined,
 
-middlewares: std.ArrayList(HandlerFn) = undefined,
+middlewares: std.array_list.Managed(HandlerFn) = undefined,
 
 route_tree: *RouteTree = undefined,
 
@@ -56,13 +56,13 @@ pub fn init(self: Self) anyerror!*Router {
     errdefer self.allocator.destroy(r);
     r.* = .{
         .allocator = self.allocator,
-        .middlewares = std.ArrayList(HandlerFn).init(self.allocator),
+        .middlewares = std.array_list.Managed(HandlerFn).init(self.allocator),
         .route_tree = try RouteTree.init(.{
             .value = "/",
             .full_path = "/",
             .allocator = self.allocator,
             .children = std.StringHashMap(*RouteTree).init(self.allocator),
-            .routes = std.ArrayList(*Route).init(self.allocator),
+            .routes = std.array_list.Managed(*Route).init(self.allocator),
         }),
         .catchers = try Catchers.init(self.allocator),
         .data = self.data,
@@ -343,7 +343,7 @@ pub fn getRoutes(self: *Self) std.ArrayList(*Route) {
 
 pub fn add(self: *Self, method: std.http.Method, path: []const u8, handler: HandlerFn) anyerror!void {
     _ = self.getRoute(method, path) catch {
-        var handlers = std.ArrayList(HandlerFn).init(self.allocator);
+        var handlers = std.array_list.Managed(HandlerFn).init(self.allocator);
         defer handlers.deinit();
         try handlers.appendSlice(self.middlewares.items);
         try handlers.append(handler);

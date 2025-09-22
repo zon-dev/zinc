@@ -14,7 +14,7 @@ pub const RouteTree = struct {
 
     children: ?std.StringHashMap(*RouteTree) = null,
 
-    routes: ?std.ArrayList(*Route) = null,
+    routes: ?std.array_list.Managed(*Route) = null,
 
     is_wildcard: bool = false, // To mark if this node is a wildcard (like `*`)
     param_name: ?[]const u8 = null, // To store the parameter name (like `:name`)
@@ -30,7 +30,7 @@ pub const RouteTree = struct {
             .full_path = self.full_path,
             .allocator = allocator,
             .children = std.StringHashMap(*RouteTree).init(allocator),
-            .routes = std.ArrayList(*Route).init(allocator),
+            .routes = std.array_list.Managed(*Route).init(allocator),
         };
 
         return node;
@@ -53,7 +53,7 @@ pub const RouteTree = struct {
     }
 
     pub fn destroyTrieTree(self: *RouteTree) void {
-        var stack = std.ArrayList(*RouteTree).init(self.allocator);
+        var stack = std.array_list.Managed(*RouteTree).init(self.allocator);
         defer stack.deinit();
 
         const routes = self.getCurrentTreeRoutes();
@@ -170,7 +170,7 @@ pub const RouteTree = struct {
             .full_path = full_path,
             .allocator = allocator,
             .children = std.StringHashMap(*RouteTree).init(allocator),
-            .routes = std.ArrayList(*Route).init(allocator),
+            .routes = std.array_list.Managed(*Route).init(allocator),
             .is_wildcard = is_wildcard,
             .param_name = param_name orelse null,
         };
@@ -370,10 +370,10 @@ pub const RouteTree = struct {
     /// Return a list of routes
     /// Make sure to deinit the list after use.
     /// routes.deinit();
-    pub fn getCurrentTreeRoutes(self: *RouteTree) std.ArrayList(*Route) {
-        var routes = std.ArrayList(*Route).init(self.allocator);
+    pub fn getCurrentTreeRoutes(self: *RouteTree) std.array_list.Managed(*Route) {
+        var routes = std.array_list.Managed(*Route).init(self.allocator);
 
-        var childStack = std.ArrayList(*RouteTree).init(self.allocator);
+        var childStack = std.array_list.Managed(*RouteTree).init(self.allocator);
         defer {
             childStack.deinit();
         }
@@ -414,7 +414,7 @@ pub const RouteTree = struct {
         // const stdout = std.io.getStdOut().writer();
 
         const indentSize: usize = indentLevel * 2;
-        var indentBuffer = std.ArrayList(u8).init(self.allocator);
+        var indentBuffer = std.array_list.Managed(u8).init(self.allocator);
         defer indentBuffer.deinit();
 
         for (0..indentSize) |_| {
@@ -424,7 +424,7 @@ pub const RouteTree = struct {
         // Convert the buffer to a string
         const indentString = indentBuffer.items;
 
-        var methods = std.ArrayList([]const u8).init(self.allocator);
+        var methods = std.array_list.Managed([]const u8).init(self.allocator);
         if (self.routes != null) {
             for (self.routes.?.items) |route| {
                 const m: []const u8 = @tagName(route.method);

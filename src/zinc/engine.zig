@@ -77,7 +77,7 @@ body_buffer_len: usize = undefined,
 router: *Router = undefined,
 
 ///
-middlewares: ?std.ArrayList(HandlerFn) = undefined,
+middlewares: ?std.array_list.Managed(HandlerFn) = undefined,
 
 /// max connections.
 max_conn: u32 = 1024,
@@ -154,10 +154,10 @@ fn create(conf: Config.Engine) anyerror!*Engine {
 
         .router = try Router.init(.{
             .allocator = allocator,
-            .middlewares = std.ArrayList(HandlerFn).init(allocator),
+            .middlewares = std.array_list.Managed(HandlerFn).init(allocator),
             .data = conf.data,
         }),
-        .middlewares = std.ArrayList(HandlerFn).init(allocator),
+        .middlewares = std.array_list.Managed(HandlerFn).init(allocator),
 
         .threads = undefined,
 
