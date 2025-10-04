@@ -60,7 +60,8 @@ pub fn send(self: *Self, content: []const u8, options: RespondOptions) anyerror!
     var first_buffer: [500]u8 = undefined;
     var h = std.ArrayListUnmanaged(u8).initBuffer(&first_buffer);
 
-    const status_line = std.fmt.bufPrint(&first_buffer, "{s} {d} {s}\r\n", .{
+    var status_line_buffer: [64]u8 = undefined;
+    const status_line = std.fmt.bufPrint(&status_line_buffer, "{s} {d} {s}\r\n", .{
         @tagName(options.version), @intFromEnum(options.status), phrase,
     }) catch unreachable;
     h.appendSliceAssumeCapacity(status_line);
@@ -74,7 +75,8 @@ pub fn send(self: *Self, content: []const u8, options: RespondOptions) anyerror!
         .none => {},
         .chunked => h.appendSliceAssumeCapacity("transfer-encoding: chunked\r\n"),
     } else {
-        const content_length_line = std.fmt.bufPrint(&first_buffer, "content-length: {d}\r\n", .{content.len}) catch unreachable;
+        var content_length_buffer: [32]u8 = undefined;
+        const content_length_line = std.fmt.bufPrint(&content_length_buffer, "content-length: {d}\r\n", .{content.len}) catch unreachable;
         h.appendSliceAssumeCapacity(content_length_line);
     }
 
@@ -181,7 +183,8 @@ pub fn sendAsync(self: *Self, content: []const u8, options: RespondOptions, engi
     var first_buffer: [500]u8 = undefined;
     var h = std.ArrayListUnmanaged(u8).initBuffer(&first_buffer);
 
-    const status_line = std.fmt.bufPrint(&first_buffer, "{s} {d} {s}\r\n", .{
+    var status_line_buffer: [64]u8 = undefined;
+    const status_line = std.fmt.bufPrint(&status_line_buffer, "{s} {d} {s}\r\n", .{
         @tagName(options.version), @intFromEnum(options.status), phrase,
     }) catch unreachable;
     h.appendSliceAssumeCapacity(status_line);
@@ -195,7 +198,8 @@ pub fn sendAsync(self: *Self, content: []const u8, options: RespondOptions, engi
         .none => {},
         .chunked => h.appendSliceAssumeCapacity("transfer-encoding: chunked\r\n"),
     } else {
-        const content_length_line = std.fmt.bufPrint(&first_buffer, "content-length: {d}\r\n", .{content.len}) catch unreachable;
+        var content_length_buffer: [32]u8 = undefined;
+        const content_length_line = std.fmt.bufPrint(&content_length_buffer, "content-length: {d}\r\n", .{content.len}) catch unreachable;
         h.appendSliceAssumeCapacity(content_length_line);
     }
 
@@ -249,7 +253,8 @@ pub fn write(self: *Self, content: []const u8, options: RespondOptions) anyerror
     //     return;
     // }
 
-    const status_line = std.fmt.bufPrint(&first_buffer, "{s} {d} {s}\r\n", .{
+    var status_line_buffer: [64]u8 = undefined;
+    const status_line = std.fmt.bufPrint(&status_line_buffer, "{s} {d} {s}\r\n", .{
         @tagName(options.version), @intFromEnum(options.status), phrase,
     }) catch unreachable;
     h.appendSliceAssumeCapacity(status_line);
@@ -263,7 +268,8 @@ pub fn write(self: *Self, content: []const u8, options: RespondOptions) anyerror
         .none => {},
         .chunked => h.appendSliceAssumeCapacity("transfer-encoding: chunked\r\n"),
     } else {
-        const content_length_line = std.fmt.bufPrint(&first_buffer, "content-length: {d}\r\n", .{content.len}) catch unreachable;
+        var content_length_buffer: [32]u8 = undefined;
+        const content_length_line = std.fmt.bufPrint(&content_length_buffer, "content-length: {d}\r\n", .{content.len}) catch unreachable;
         h.appendSliceAssumeCapacity(content_length_line);
     }
 
