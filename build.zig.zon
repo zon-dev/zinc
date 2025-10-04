@@ -10,7 +10,7 @@
         },
         .url = .{
             .url = "https://github.com/zon-dev/url/archive/refs/heads/main.zip",
-            .hash = "url-0.1.2-niLQwnU-AADzj7u8Of6leSoTmJYL0btP7xMqq2sqWCuS",
+            .hash = "url-0.1.3-niLQwoU-AADuCggCBxol0MK6dwBra0gJ25BpUdfqOhMA",
         },
     },
     .paths = .{

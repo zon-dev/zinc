@@ -30,7 +30,7 @@ test "context query" {
     try std.testing.expectEqualStrings(messages[0], "hello");
     try std.testing.expectEqualStrings(messages[1], "world");
 
-    var ids: std.StringHashMap(std.ArrayList([]const u8)) = ctx.queryMap("ids") orelse return try std.testing.expect(false);
+    var ids: std.StringHashMap(std.array_list.Managed([]const u8)) = ctx.queryMap("ids") orelse return try std.testing.expect(false);
     defer ids.deinit();
     try std.testing.expectEqualStrings(ids.get("a").?.items[0], "1234");
     try std.testing.expectEqualStrings(ids.get("b").?.items[0], "hello");
@@ -42,7 +42,7 @@ test "context query map" {
     var ctx = try createContext(allocator, "/query?ids[a]=1234&ids[b]=hello&ids[b]=world");
     defer ctx.destroy();
 
-    var ids: std.StringHashMap(std.ArrayList([]const u8)) = ctx.queryMap("ids") orelse return try std.testing.expect(false);
+    var ids: std.StringHashMap(std.array_list.Managed([]const u8)) = ctx.queryMap("ids") orelse return try std.testing.expect(false);
     defer ids.deinit();
 
     try std.testing.expectEqualStrings(ids.get("a").?.items[0], "1234");

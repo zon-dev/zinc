@@ -43,7 +43,7 @@ query: ?std.Uri.Component = null,
 
 params: std.StringHashMap(Param) = undefined,
 
-query_map: ?std.StringHashMap(std.ArrayList([]const u8)) = null,
+query_map: ?std.StringHashMap(std.array_list.Managed([]const u8)) = null,
 
 // Slice of optional function pointers
 handlers: std.array_list.Managed(handlerFn) = undefined,
@@ -266,9 +266,9 @@ pub fn queryString(self: *Self, name: []const u8) anyerror![]const u8 {
 /// e.g /post?name=foo => queryValues("name") => ["foo"]
 /// e.g /post?name=foo&name=bar => queryValues("name") => ["foo", "bar"]
 /// e.g /post?name=foo&name=bar => queryValues("any") => queryError.Empty
-pub fn queryValues(self: *Self, name: []const u8) anyerror!std.ArrayList([]const u8) {
+pub fn queryValues(self: *Self, name: []const u8) anyerror!std.array_list.Managed([]const u8) {
     const query_map = self.getQueryMap() orelse return queryError.InvalidValue;
-    const values: std.ArrayList([]const u8) = query_map.get(name) orelse return queryError.NotFound;
+    const values: std.array_list.Managed([]const u8) = query_map.get(name) orelse return queryError.NotFound;
 
     if (values.items.len == 0) {
         return queryError.Empty;
@@ -279,12 +279,12 @@ pub fn queryValues(self: *Self, name: []const u8) anyerror!std.ArrayList([]const
 
 /// e.g /query?ids[a]=1234&ids[b]=hello&ids[b]=world
 /// queryMap("ids") => {"a": ["1234"], "b": ["hello", "world"]}
-pub fn queryMap(self: *Self, map_key: []const u8) ?std.StringHashMap(std.ArrayList([]const u8)) {
-    var qm: std.StringHashMap(std.ArrayList([]const u8)) = self.getQueryMap() orelse return null;
+pub fn queryMap(self: *Self, map_key: []const u8) ?std.StringHashMap(std.array_list.Managed([]const u8)) {
+    var qm: std.StringHashMap(std.array_list.Managed([]const u8)) = self.getQueryMap() orelse return null;
     // defer qm.deinit();
 
     var qit = qm.iterator();
-    var inner_map: std.StringHashMap(std.ArrayList([]const u8)) = std.StringHashMap(std.ArrayList([]const u8)).init(self.allocator);
+    var inner_map: std.StringHashMap(std.array_list.Managed([]const u8)) = std.StringHashMap(std.array_list.Managed([]const u8)).init(self.allocator);
 
     // defer inner_map.deinit();
 
@@ -311,19 +311,20 @@ pub fn queryMap(self: *Self, map_key: []const u8) ?std.StringHashMap(std.ArrayLi
 
 /// Get the query values as a map.
 /// e.g /post?name=foo&name=bar => getQueryMap() => {"name": ["foo", "bar"]}
-pub fn getQueryMap(self: *Self) ?std.StringHashMap(std.ArrayList([]const u8)) {
+pub fn getQueryMap(self: *Self) ?std.StringHashMap(std.array_list.Managed([]const u8)) {
     if (self.query_map != null) {
         return self.query_map;
     }
     var url = URL.init(.{ .allocator = self.allocator });
     _ = url.parseUrl(self.request.target) catch return null;
-    self.query_map = url.values orelse return null;
+
+    self.query_map = url.values;
     return self.query_map;
 }
 
 pub fn queryArray(self: *Self, name: []const u8) anyerror![][]const u8 {
     const query_map = self.getQueryMap() orelse return queryError.InvalidValue;
-    const values: std.ArrayList([]const u8) = query_map.get(name) orelse return queryError.NotFound;
+    const values: std.array_list.Managed([]const u8) = query_map.get(name) orelse return queryError.NotFound;
     if (values.items.len == 0) {
         return error.Empty;
     }
