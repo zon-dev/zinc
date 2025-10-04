@@ -332,7 +332,7 @@ pub fn queryArray(self: *Self, name: []const u8) anyerror![][]const u8 {
 }
 
 /// Get the post form values as a map.
-pub fn getPostFormMap(self: *Self) ?std.StringHashMap([]const u8) {
+pub fn getPostFormMap(self: *Self) !?std.StringHashMap([]const u8) {
     // const req = self.request.req;
 
     const content_type = self.request.head.content_type orelse return null;
@@ -340,9 +340,11 @@ pub fn getPostFormMap(self: *Self) ?std.StringHashMap([]const u8) {
 
     _ = std.mem.indexOf(u8, content_type, "application/x-www-form-urlencoded") orelse return null;
 
-    const request_reader = self.conn.reader(self.recv_buf);
+    var request_reader = self.conn.reader(self.recv_buf);
 
-    const body_buffer = try request_reader.file_reader.read(content_length);
+    const body_buffer = try self.allocator.alloc(u8, content_length);
+    defer self.allocator.free(body_buffer);
+    _ = try request_reader.file_reader.read(body_buffer);
 
     var form = std.StringHashMap([]const u8).init(self.allocator);
     var form_data = std.mem.splitSequence(u8, body_buffer, "&");
@@ -359,8 +361,8 @@ pub fn getPostFormMap(self: *Self) ?std.StringHashMap([]const u8) {
 /// Get the post form values as a map.
 /// e.g name[first]=foo&name[last]=bar
 /// postFormMap("name") => {"first": ["foo"], "last": ["bar"]}
-pub fn postFormMap(self: *Self, map_key: []const u8) ?std.StringHashMap([]const u8) {
-    var qm: std.StringHashMap([]const u8) = self.getPostFormMap() orelse return null;
+pub fn postFormMap(self: *Self, map_key: []const u8) !?std.StringHashMap([]const u8) {
+    var qm: std.StringHashMap([]const u8) = try self.getPostFormMap() orelse return null;
     var qit = qm.iterator();
     var inner_map: std.StringHashMap([]const u8) = std.StringHashMap([]const u8).init(self.allocator);
 

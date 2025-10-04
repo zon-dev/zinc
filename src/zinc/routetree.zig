@@ -426,7 +426,9 @@ pub const RouteTree = struct {
         } else if (methods.items.len == 0) {
             std.debug.print("|{s}{s}  | {s} \n", .{ indentString, self.value, self.full_path });
         } else {
-            std.debug.print("|{s}{s} | {s} |methods:{s}\n", .{ indentString, self.value, self.full_path, methods.items });
+            const methods_str = std.mem.join(self.allocator, ",", methods.items) catch "unknown";
+            defer self.allocator.free(methods_str);
+            std.debug.print("|{s}{s} | {s} |methods:{s}\n", .{ indentString, self.value, self.full_path, methods_str });
         }
 
         if (self.children != null) {

@@ -96,6 +96,28 @@ test "context Directory with file" {
     try std.testing.expectEqualStrings(ctx.response.body.?, "// script.js");
 }
 
+test "context getPostFormMap function signature change" {
+    const allocator = std.testing.allocator;
+    var ctx = try createContext(allocator, "/");
+    defer ctx.destroy();
+
+    // Test that getPostFormMap now returns !? instead of ?
+    // This tests the function signature change from the recent modifications
+    const result = try ctx.getPostFormMap();
+    try std.testing.expect(result == null); // Should return null for no content type
+}
+
+test "context postFormMap function signature change" {
+    const allocator = std.testing.allocator;
+    var ctx = try createContext(allocator, "/");
+    defer ctx.destroy();
+
+    // Test that postFormMap now returns !? instead of ?
+    // This tests the function signature change from the recent modifications
+    const result = try ctx.postFormMap("user");
+    try std.testing.expect(result == null); // Should return null for no content type
+}
+
 fn createContext(allocator: std.mem.Allocator, target: []const u8) anyerror!*Context {
     const req = try Request.init(.{ .target = target, .allocator = allocator });
     const res = try Response.init(.{ .allocator = allocator });

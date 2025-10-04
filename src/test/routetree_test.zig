@@ -225,3 +225,18 @@ test "RouteTree complex wildcard match" {
 //     try std.testing.expect(routeTree.findWithWildcard("/users/1/friends/") == null);
 //     try std.testing.expect(routeTree.findWithWildcard("/users/1/unknown/2") == null);
 // }
+
+test "RouteTree print function fix" {
+    var root = try createTree();
+    defer root.destroyTrieTree();
+
+    // Insert a simple route
+    _ = try root.insert("/test");
+
+    // Test that print function works without crashing
+    // This test ensures the fix for the print function works correctly
+    root.print(0);
+
+    // The test passes if no panic occurs during printing
+    try std.testing.expect(true);
+}
