@@ -1,6 +1,6 @@
 .{
     .name = .zinc,
-    .version = "0.2.0-alpha.1",
+    .version = "0.2.0-alpha.2",
     .fingerprint = 0x4d051980cd34bdb8,
     .minimum_zig_version = "0.15.0",
     .dependencies = .{
@@ -9,7 +9,8 @@
             .hash = "aio-0.1.2-dev.2-dzJt5DBDBABARkKT5MzgkkKNgx6aZHPIchhQDr6haust",
         },
         .url = .{
-            .path = "../url",
+            .url = "https://github.com/zon-dev/url/archive/refs/heads/main.zip",
+            .hash = "url-0.1.2-niLQwnU-AADzj7u8Of6leSoTmJYL0btP7xMqq2sqWCuS",
         },
     },
     .paths = .{
