@@ -97,7 +97,7 @@ test "router, routeTree and router.getRoute" {
         .method = .GET,
         .path = "/static",
         .allocator = allocator,
-        .handlers = std.ArrayList(HandlerFn).init(allocator),
+        .handlers = std.array_list.Managed(HandlerFn).init(allocator),
     });
     // defer static_route.deinit();
 

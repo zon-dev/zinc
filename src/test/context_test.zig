@@ -24,7 +24,6 @@ test "context query" {
     try std.testing.expectEqualStrings(qm.get("message").?.items[1], "world");
 
     const idv = ctx.queryValues("id") catch return try std.testing.expect(false);
-    defer idv.deinit();
     try std.testing.expectEqualStrings(idv.items[0], "1234");
 
     const messages = ctx.queryArray("message") catch return try std.testing.expect(false);

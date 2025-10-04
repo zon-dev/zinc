@@ -99,7 +99,7 @@ pub fn deinit(self: *Self) void {
         sd.deinit();
     }
 
-    // allocator.destroy(self.route_tree);
+    // Note: route_tree is destroyed by destroyTrieTree() above
     allocator.destroy(self);
 }
 
@@ -337,7 +337,7 @@ pub fn prepareContext(self: *Self, ctx: *Context) anyerror!void {
 
 /// Return routes.
 /// Make sure to call `routes.deinit()` after using it.
-pub fn getRoutes(self: *Self) std.ArrayList(*Route) {
+pub fn getRoutes(self: *Self) std.array_list.Managed(*Route) {
     return self.route_tree.getCurrentTreeRoutes();
 }
 
@@ -377,6 +377,14 @@ fn insertRouteToRouteTree(self: *Self, route: *Route) anyerror!void {
     var rTree = try self.route_tree.insert(path);
     if (!rTree.isRouteExist(route)) {
         try rTree.routes.?.append(route);
+    } else {
+        // If route already exists, we need to properly free the duplicate route
+        // But we should not call route.deinit() here because route might already be in the tree
+        // Instead, we should free the route's path if it's owned
+        if (route.path_owned) {
+            self.allocator.free(route.path);
+        }
+        self.allocator.destroy(route);
     }
 }
 
@@ -516,6 +524,11 @@ pub inline fn staticFile(self: *Self, url: []const u8, filepath: []const u8) any
         self.static_files = std.StringHashMap([]const u8).init(self.allocator);
     }
 
+    // Check if URL already exists and free the old filepath if it does
+    if (self.static_files.?.getPtr(url)) |existing_filepath| {
+        self.allocator.free(existing_filepath.*);
+    }
+
     // copy filepath string to avoid memory issues
     const filepath_copy = try self.allocator.dupe(u8, filepath);
 
@@ -533,6 +546,11 @@ pub inline fn staticDir(self: *Self, url: []const u8, dirpath: []const u8) anyer
     // 确保 static_dirs map 已初始化
     if (self.static_dirs == null) {
         self.static_dirs = std.StringHashMap([]const u8).init(self.allocator);
+    }
+
+    // Check if URL already exists and free the old dirpath if it does
+    if (self.static_dirs.?.getPtr(url)) |existing_dirpath| {
+        self.allocator.free(existing_dirpath.*);
     }
 
     // Copy dirpath string to avoid memory issues

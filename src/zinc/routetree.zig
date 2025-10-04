@@ -38,12 +38,22 @@ pub const RouteTree = struct {
 
     /// Destroy the RouteTree and free memory
     pub fn destroy(self: *RouteTree) void {
+        // First recursively destroy all child nodes (depth-first, bottom-up approach)
         if (self.children != null) {
+            var iter = self.children.?.valueIterator();
+            while (iter.next()) |child| {
+                child.*.destroy();
+            }
             self.children.?.deinit();
         }
 
-        if (self.routes != null) {
-            self.routes.?.deinit();
+        // Then clean up routes in current node (from end to beginning)
+        if (self.routes) |*routes| {
+            // Release routes in reverse order (from end to beginning)
+            for (routes.items) |route| {
+                route.deinit();
+            }
+            routes.deinit();
         }
 
         // self.allocator.free(self.full_path);
@@ -53,35 +63,14 @@ pub const RouteTree = struct {
     }
 
     pub fn destroyTrieTree(self: *RouteTree) void {
-        var stack = std.array_list.Managed(*RouteTree).init(self.allocator);
-        defer stack.deinit();
-
-        const routes = self.getCurrentTreeRoutes();
-        defer routes.deinit();
-        for (routes.items) |route| route.deinit();
-
-        stack.append(self) catch |err| {
-            std.debug.print("destroyTrieTree error: {any}", .{err});
-        };
-
-        while (stack.items.len > 0) {
-            var node: *RouteTree = stack.pop().?;
-            defer node.destroy();
-
-            if (node.children != null) {
-                var iter = node.children.?.valueIterator();
-                while (iter.next()) |child| {
-                    const c: *RouteTree = child.*;
-                    stack.append(c) catch unreachable;
-                }
-            }
-        }
+        // Simply call destroy() which now handles recursive cleanup properly
+        self.destroy();
     }
 
     pub fn isRouteExist(self: *RouteTree, route: *Route) bool {
         if (self.routes != null) {
             for (self.routes.?.items) |r| {
-                if (r == route) {
+                if (r.method == route.method and std.mem.eql(u8, r.path, route.path)) {
                     return true;
                 }
             }
@@ -260,7 +249,7 @@ pub const RouteTree = struct {
 
     // use middleware for this route and all its children
     pub fn use(self: *RouteTree, handlers: []const HandlerFn) anyerror!void {
-        var stack = std.ArrayList(*RouteTree).init(self.allocator);
+        var stack = std.array_list.Managed(*RouteTree).init(self.allocator);
         defer stack.deinit();
 
         stack.append(self) catch unreachable;
@@ -386,16 +375,16 @@ pub const RouteTree = struct {
             // append children routes to the routes
             if (node.routes != null) {
                 const node_routes = node.routes.?.items;
-
                 routes.appendSlice(node_routes) catch continue;
+            }
 
-                if (node.children != null) {
-                    var iter = node.children.?.valueIterator();
+            // Process children regardless of whether current node has routes
+            if (node.children != null) {
+                var iter = node.children.?.valueIterator();
 
-                    while (iter.next()) |child| {
-                        const c: *RouteTree = child.*;
-                        childStack.append(c) catch unreachable;
-                    }
+                while (iter.next()) |child| {
+                    const c: *RouteTree = child.*;
+                    childStack.append(c) catch unreachable;
                 }
             }
         }
@@ -411,8 +400,6 @@ pub const RouteTree = struct {
     /// |       /3  [GET] (path: /test/2/3)
     /// |         /4  [GET] (path: /test/2/3/4)
     pub fn print(self: *RouteTree, indentLevel: usize) void {
-        // const stdout = std.io.getStdOut().writer();
-
         const indentSize: usize = indentLevel * 2;
         var indentBuffer = std.array_list.Managed(u8).init(self.allocator);
         defer indentBuffer.deinit();

@@ -19,7 +19,7 @@ test "route matching error" {
         .method = .GET,
         .path = "/foo",
         .allocator = allocator,
-        .handlers = std.ArrayList(HandlerFn).init(allocator),
+        .handlers = std.array_list.Managed(HandlerFn).init(allocator),
     });
 
     defer foo_route.deinit();

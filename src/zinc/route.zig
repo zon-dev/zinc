@@ -20,6 +20,8 @@ path: []const u8,
 
 handlers: std.array_list.Managed(HandlerFn),
 
+path_owned: bool = false,
+
 pub fn init(self: Self) anyerror!*Route {
     const route = try self.allocator.create(Route);
     errdefer self.allocator.destroy(route);
@@ -29,17 +31,22 @@ pub fn init(self: Self) anyerror!*Route {
         .method = self.method,
         .path = self.path,
         .handlers = std.array_list.Managed(HandlerFn).init(self.allocator),
+        .path_owned = self.path_owned,
     };
 
     return route;
 }
 
 pub fn create(allocator: std.mem.Allocator, path: []const u8, http_method: Method, handlers: []const HandlerFn) anyerror!*Route {
+    const path_copy = try allocator.dupe(u8, path);
+    errdefer allocator.free(path_copy);
+
     var r = try Route.init(.{
         .method = http_method,
-        .path = path,
+        .path = path_copy,
         .allocator = allocator,
         .handlers = std.array_list.Managed(HandlerFn).init(allocator),
+        .path_owned = true,
     });
     try r.handlers.appendSlice(handlers);
     return r;
@@ -49,7 +56,9 @@ pub fn deinit(self: *Self) void {
     if (self.handlers.items.len > 0) {
         self.handlers.deinit();
     }
-    // self.allocator.free(self.path);
+    if (self.path_owned) {
+        self.allocator.free(self.path);
+    }
 
     const allocator = self.allocator;
     allocator.destroy(self);

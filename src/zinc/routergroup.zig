@@ -25,22 +25,23 @@ prefix: []const u8,
 root: bool = false,
 
 fn relativePath(self: *RouterGroup, path: []const u8) anyerror![]const u8 {
-    // Use a simple approach: create a new arena for each call
+    // Use arena allocator to avoid memory leaks
     var arena = std.heap.ArenaAllocator.init(self.allocator);
     defer arena.deinit();
 
-    var slice = std.array_list.Managed(u8).init(arena.allocator());
-    defer slice.deinit();
+    const result = try arena.allocator().alloc(u8, self.prefix.len + path.len);
+    @memcpy(result[0..self.prefix.len], self.prefix);
+    @memcpy(result[self.prefix.len..], path);
 
-    try slice.appendSlice(self.prefix);
-    try slice.appendSlice(path);
-
-    return try slice.toOwnedSlice();
+    // Copy to main allocator to return
+    const owned = try self.allocator.dupe(u8, result);
+    return owned;
 }
 
 /// Create a new RouterGroup.
 pub fn group(self: *Self, prefix: []const u8) anyerror!*RouterGroup {
     const group_path = try self.relativePath(prefix);
+    defer self.allocator.free(group_path);
     return self.router.group(group_path);
 }
 
@@ -56,6 +57,7 @@ pub fn deinit(self: *Self) void {
 /// Create a new RouterGroup.
 pub fn add(self: *RouterGroup, method: std.http.Method, target: []const u8, handler: HandlerFn) anyerror!void {
     const path = try self.relativePath(target);
+    defer self.allocator.free(path);
     try self.router.add(method, path, handler);
 }
 
@@ -64,6 +66,7 @@ pub fn any(self: *RouterGroup, target: []const u8, handler: HandlerFn) anyerror!
     const methods = &[_]std.http.Method{ .GET, .POST, .PUT, .DELETE, .OPTIONS, .HEAD, .PATCH, .CONNECT, .TRACE };
     for (methods) |method| {
         const path = try self.relativePath(target);
+        defer self.allocator.free(path);
         try self.router.add(method, path, handler);
     }
 }
@@ -72,6 +75,7 @@ pub fn any(self: *RouterGroup, target: []const u8, handler: HandlerFn) anyerror!
 pub fn addAny(self: *RouterGroup, methods: []const std.http.Method, target: []const u8, handler: HandlerFn) anyerror!void {
     for (methods) |method| {
         const path = try self.relativePath(target);
+        defer self.allocator.free(path);
         try self.router.add(method, path, handler);
     }
 }
@@ -79,54 +83,63 @@ pub fn addAny(self: *RouterGroup, methods: []const std.http.Method, target: []co
 /// Add a route with the GET method.
 pub fn get(self: *RouterGroup, target: []const u8, handler: HandlerFn) anyerror!void {
     const group_path = try self.relativePath(target);
+    defer self.allocator.free(group_path);
     try self.router.get(group_path, handler);
 }
 
 /// Add a route with the POST method.
 pub fn post(self: *RouterGroup, target: []const u8, handler: HandlerFn) anyerror!void {
     const path = try self.relativePath(target);
+    defer self.allocator.free(path);
     try self.router.post(path, handler);
 }
 
 /// Add a route with the PUT method.
 pub fn put(self: *RouterGroup, target: []const u8, handler: HandlerFn) anyerror!void {
     const path = try self.relativePath(target);
+    defer self.allocator.free(path);
     try self.router.put(path, handler);
 }
 
 /// Add a route with DELETE method.
 pub fn delete(self: *RouterGroup, target: []const u8, handler: HandlerFn) anyerror!void {
     const path = try self.relativePath(target);
+    defer self.allocator.free(path);
     try self.router.delete(path, handler);
 }
 
 /// Add a route that matches all HTTP methods.
 pub fn patch(self: *RouterGroup, target: []const u8, handler: HandlerFn) anyerror!void {
     const path = try self.relativePath(target);
+    defer self.allocator.free(path);
     try self.router.patch(path, handler);
 }
 
 /// Add a route with the OPTIONS method.
 pub fn options(self: *RouterGroup, target: []const u8, handler: HandlerFn) anyerror!void {
     const path = try self.relativePath(target);
+    defer self.allocator.free(path);
     try self.router.options(path, handler);
 }
 
 /// Add a route for the HEAD method.
 pub fn head(self: *RouterGroup, target: []const u8, handler: HandlerFn) anyerror!void {
     const path = try self.relativePath(target);
+    defer self.allocator.free(path);
     try self.router.head(path, handler);
 }
 
 /// Add a route for the CONNECT method.
 pub fn connect(self: *RouterGroup, target: []const u8, handler: HandlerFn) anyerror!void {
     const path = try self.relativePath(target);
+    defer self.allocator.free(path);
     try self.router.connect(path, handler);
 }
 
 /// Add a route for the TRACE method.
 pub fn trace(self: *RouterGroup, target: []const u8, handler: HandlerFn) anyerror!void {
     const path = try self.relativePath(target);
+    defer self.allocator.free(path);
     try self.router.trace(path, handler);
 }
 

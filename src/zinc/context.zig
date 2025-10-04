@@ -114,7 +114,7 @@ pub fn json(self: *Self, value: anytype, conf: Config.Context) anyerror!void {
         try self.setHeader("Connection", "keep-alive");
     }
 
-    var out: std.io.Writer.Allocating = .init(self.allocator);
+    var out: std.Io.Writer.Allocating = .init(self.allocator);
     defer out.deinit();
 
     var stringify = Stringify{
@@ -146,8 +146,9 @@ pub fn file(
 
     // Read the file into a buffer.
     const stat = try f.stat();
-    const buffer = try f.readToEndAlloc(self.allocator, stat.size);
+    const buffer = try self.allocator.alloc(u8, stat.size);
     defer self.allocator.free(buffer);
+    _ = try f.readAll(buffer);
 
     try self.setBody(buffer);
 
@@ -181,8 +182,9 @@ pub fn dir(self: *Self, dir_name: []const u8, conf: Config.Context) anyerror!voi
 
     // Read the file into a buffer.
     const stat = try f.stat();
-    const buffer = try f.readToEndAlloc(self.allocator, stat.size);
+    const buffer = try self.allocator.alloc(u8, stat.size);
     defer self.allocator.free(buffer);
+    _ = try f.readAll(buffer);
 
     try self.setBody(buffer);
     try self.setStatus(conf.status);

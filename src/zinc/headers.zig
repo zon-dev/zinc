@@ -7,12 +7,12 @@ pub const Headers = @This();
 const Self = @This();
 
 allocator: Allocator,
-headers: std.ArrayList(Header) = undefined,
+headers: std.array_list.Managed(Header) = undefined,
 
 pub fn init(self: Self) Headers {
     return .{
         .allocator = self.allocator,
-        .headers = std.ArrayList(Header).init(self.allocator),
+        .headers = std.array_list.Managed(Header).init(self.allocator),
     };
 }
 

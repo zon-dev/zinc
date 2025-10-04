@@ -12,7 +12,7 @@ fn createTree() anyerror!*RouteTree {
         .full_path = "/",
         .allocator = allocator,
         .children = std.StringHashMap(*RouteTree).init(allocator),
-        .routes = std.ArrayList(*Route).init(allocator),
+        .routes = std.array_list.Managed(*Route).init(allocator),
     });
     return root;
 }
