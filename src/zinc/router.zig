@@ -420,21 +420,15 @@ pub fn trace(self: *Self, path: []const u8, handler: HandlerFn) anyerror!void {
     try self.add(.TRACE, path, handler);
 }
 
-fn getRouteTree(self: *Self, target: []const u8) anyerror!*RouteTree {
-    var url = URL.init(.{ .allocator = self.allocator });
-    defer url.deinit();
-
-    const url_target = try url.parseUrl(target);
-    const path = url_target.path;
-
+fn getRouteTree(self: *Self, path: []const u8) anyerror!*RouteTree {
+    // Optimized: accept path directly instead of parsing URL again
+    // The path should already be extracted from the target in getRoute
     if (self.route_tree.find(path)) |f| return f;
 
     return error.NotFound;
 }
 
 pub fn getRoute(self: *Self, method: std.http.Method, target: []const u8) anyerror!*Route {
-    // TODO: Optimize to avoid URL parsing for simple paths
-    // For now, we still need URL parsing because getRouteTree uses it internally
     var url = URL.init(.{ .allocator = self.allocator });
     defer url.deinit();
 
