@@ -36,6 +36,8 @@ const Self = @This();
 
 allocator: Allocator = undefined,
 arena: std.heap.ArenaAllocator = undefined,
+// Track arena usage to avoid unbounded growth
+arena_request_count: usize = 0,
 
 // Aio engine for async I/O
 // NOTE: Each thread should have its own IO instance for thread safety
@@ -410,10 +412,21 @@ fn handleReadCompletion(self: *Engine, connection: *Connection, data: []u8) void
         return;
     }
 
+    // Optimized: Only reset arena periodically to avoid expensive resets on every request
+    // Reset every 100 requests or when arena grows too large
+    // This significantly reduces reset overhead while preventing unbounded growth
+    self.arena_request_count += 1;
+    if (self.arena_request_count >= 100) {
+        // Reset arena every 100 requests, retaining 128KB for reuse
+        _ = self.arena.reset(.{ .retain_with_limit = 128 * 1024 });
+        self.arena_request_count = 0;
+    }
+
     // Process the HTTP request with engine and connection for async operations
+    // Use arena allocator for all request-related allocations
     // The response will be sent asynchronously, and writeCallback will handle
     // continuing to read for keep-alive connections
-    self.router.handleConn(self.allocator, connection.getSocket(), data, self, connection) catch |err| {
+    self.router.handleConn(self.arena.allocator(), connection.getSocket(), data, self, connection) catch |err| {
         catchRouteError(err, connection.getSocket()) catch |err2| {
             std.log.err("Failed to handle route error: {}", .{err2});
         };

@@ -126,6 +126,9 @@ pub fn handleConn(self: *Self, allocator: std.mem.Allocator, conn: std.posix.soc
     res.connection = connection;
 
     const ctx = try Context.init(.{ .request = req, .response = res, .allocator = allocator, .data = self.data });
+    // Note: When using arena allocator, objects are automatically freed when arena is reset.
+    // We still need to call destroy to clean up HashMap/ArrayList internal state,
+    // but the actual memory will be freed by arena reset.
     defer ctx.destroy();
 
     const match_route = self.getRoute(req_method, req_target) catch |err| {
