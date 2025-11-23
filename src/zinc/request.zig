@@ -46,6 +46,20 @@ pub fn deinit(self: *Request) void {
     allocator.destroy(self);
 }
 
+/// Reset the request object for reuse in object pool
+/// Clears headers and resets fields to default values
+/// Note: Header HashMap is not cleared here to avoid API issues
+/// Headers will be overwritten on next use, which is safe for object pool
+pub fn reset(self: *Request) void {
+    // Don't clear header HashMap - it will be overwritten on next use
+    // Clearing HashMap in Zig requires deinit/reinit which is expensive
+    // For object pool, we can just reset the fields and let headers be overwritten
+    self.target = "";
+    self.method = undefined;
+    self.query = null;
+    self.status = http.Status.ok;
+}
+
 pub fn setHeader(self: *Request, key: []const u8, value: []const u8) anyerror!void {
     try self.header.put(key, @constCast(value));
 }

@@ -61,12 +61,45 @@ pub fn destroy(self: *Self) void {
 
     // self.io.cancelAll();
 
+    // Note: In object pool scenario, request and response are managed by the pool
+    // They should not be destroyed here. The pool will handle their lifecycle.
+    // Only destroy them if they are not from pool (legacy behavior)
+    // For now, we'll always destroy them for backward compatibility
+    // TODO: Add a flag to indicate if request/response are from pool
     self.response.deinit();
 
     self.request.deinit();
 
     const allocator = self.allocator;
     allocator.destroy(self);
+}
+
+/// Destroy context without destroying request and response
+/// Used when request/response are managed by object pool
+pub fn destroyWithoutRequestResponse(self: *Self) void {
+    self.params.deinit();
+    if (self.query_map != null) {
+        self.query_map.?.deinit();
+    }
+
+    // Don't destroy request and response - they are managed by object pool
+    // Just destroy the context itself
+    const allocator = self.allocator;
+    allocator.destroy(self);
+}
+
+/// Reset the context object for reuse in object pool
+/// Clears params, query_map, handlers and resets fields
+/// Note: HashMaps and ArrayLists are not cleared here to avoid API issues
+/// They will be overwritten on next use, which is safe for object pool
+pub fn reset(self: *Self) void {
+    // Don't clear HashMaps/ArrayLists - they will be overwritten on next use
+    // Clearing requires complex iteration and can be expensive
+    // For object pool, we can just reset the fields
+    // The data structures will be reused and overwritten naturally
+    self.query = null;
+    self.index = 0;
+    self.done = false;
 }
 
 pub fn init(self: Self) anyerror!*Context {

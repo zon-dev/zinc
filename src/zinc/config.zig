@@ -28,6 +28,10 @@ pub const Engine = struct {
     /// Increased to 32 for maximum performance.
     num_threads: u8 = 32,
 
+    /// The maximum number of connections to accept.
+    /// Default is 10000.
+    max_conn: u32 = 10000,
+
     ///
     tick_ms: u63 = 10,
 

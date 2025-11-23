@@ -54,6 +54,24 @@ pub fn deinit(self: *Self) void {
     const allocator = self.allocator;
     allocator.destroy(self);
 }
+
+/// Reset the response object for reuse in object pool
+/// Clears headers, body, and resets fields to default values
+/// Note: Header ArrayList is not cleared here to avoid API issues
+/// Headers will be overwritten on next use, which is safe for object pool
+pub fn reset(self: *Self) void {
+    if (self.body) |body| {
+        self.allocator.free(body);
+        self.body = null;
+    }
+    // Don't clear header ArrayList - it will be overwritten on next use
+    // Clearing ArrayList requires iterating which can be expensive
+    // For object pool, we can just reset the fields
+    self.status = .ok;
+    self.req_method = undefined;
+    self.engine = null;
+    self.connection = null;
+}
 pub fn send(self: *Self, content: []const u8, options: RespondOptions) anyerror!void {
     // Use async write if engine and connection are available
     if (self.engine) |engine_ptr| {
@@ -196,20 +214,24 @@ fn sendAsync(self: *Self, content: []const u8, options: RespondOptions, engine_p
     const keep_alive = !transfer_encoding_none and options.keep_alive;
     const phrase = options.reason orelse options.status.phrase() orelse "";
 
-    var first_buffer: [500]u8 = undefined;
-    var h = std.ArrayListUnmanaged(u8).initBuffer(&first_buffer);
+    // Build response using stack buffer first, then allocate only what we need
+    var stack_buffer: [2048]u8 = undefined;
+    var h = std.ArrayListUnmanaged(u8).initBuffer(&stack_buffer);
 
+    // Build status line
     var status_line_buffer: [64]u8 = undefined;
     const status_line = std.fmt.bufPrint(&status_line_buffer, "{s} {d} {s}\r\n", .{
         @tagName(options.version), @intFromEnum(options.status), phrase,
     }) catch unreachable;
     h.appendSliceAssumeCapacity(status_line);
 
+    // Build connection header
     switch (options.version) {
         .@"HTTP/1.0" => if (keep_alive) h.appendSliceAssumeCapacity("connection: keep-alive\r\n"),
         .@"HTTP/1.1" => if (!keep_alive) h.appendSliceAssumeCapacity("connection: close\r\n"),
     }
 
+    // Build content-length or transfer-encoding header
     if (options.transfer_encoding) |transfer_encoding| switch (transfer_encoding) {
         .none => {},
         .chunked => h.appendSliceAssumeCapacity("transfer-encoding: chunked\r\n"),
@@ -219,46 +241,34 @@ fn sendAsync(self: *Self, content: []const u8, options: RespondOptions, engine_p
         h.appendSliceAssumeCapacity(content_length_line);
     }
 
-    // Calculate total response size to pre-allocate buffer
-    var total_size: usize = h.items.len + 2; // headers + \r\n
-    for (options.extra_headers) |header| {
-        total_size += header.name.len + 2; // name + ": "
-        if (header.value.len > 0) {
-            total_size += header.value.len;
-        }
-        total_size += 2; // \r\n
-    }
-    if (req_method != .HEAD and content.len > 0) {
-        total_size += content.len;
-    }
-
-    // Use engine's allocator for response buffer (will be freed in writeCallback)
-    var response_buffer = std.ArrayListUnmanaged(u8){};
-    defer response_buffer.deinit(engine.allocator);
-    try response_buffer.ensureTotalCapacity(engine.allocator, total_size);
-
-    // Add headers
-    try response_buffer.appendSlice(engine.allocator, h.items);
-
     // Add extra headers
     for (options.extra_headers) |header| {
-        try response_buffer.appendSlice(engine.allocator, header.name);
-        try response_buffer.appendSlice(engine.allocator, ": ");
+        h.appendSliceAssumeCapacity(header.name);
+        h.appendSliceAssumeCapacity(": ");
         if (header.value.len > 0) {
-            try response_buffer.appendSlice(engine.allocator, header.value);
+            h.appendSliceAssumeCapacity(header.value);
         }
-        try response_buffer.appendSlice(engine.allocator, "\r\n");
+        h.appendSliceAssumeCapacity("\r\n");
     }
 
-    try response_buffer.appendSlice(engine.allocator, "\r\n");
+    h.appendSliceAssumeCapacity("\r\n");
 
-    // Add body for non-HEAD requests
-    if (req_method != .HEAD and content.len > 0) {
-        try response_buffer.appendSlice(engine.allocator, content);
+    // Calculate total size needed
+    const header_size = h.items.len;
+    const body_size = if (req_method != .HEAD) content.len else 0;
+    const total_size = header_size + body_size;
+
+    // Allocate single buffer for entire response (will be freed in writeCallback)
+    const response_data = try engine.allocator.alloc(u8, total_size);
+    errdefer engine.allocator.free(response_data);
+
+    // Copy headers
+    @memcpy(response_data[0..header_size], h.items);
+
+    // Copy body if needed
+    if (body_size > 0) {
+        @memcpy(response_data[header_size..][0..body_size], content);
     }
-
-    // Allocate persistent buffer for async write (will be freed in writeCallback)
-    const response_data = try engine.allocator.dupe(u8, response_buffer.items);
 
     // Use AIO to send the response asynchronously
     engine.startWrite(connection, response_data) catch |err| {

@@ -88,7 +88,9 @@ pub fn listen(address: Io.net.IpAddress, options: ListenOptions) !Server {
 
     // Bind using the sockaddr - ensure we pass const pointer
     try posix.bind(sockfd, @as(*const posix.sockaddr, @ptrCast(&sockaddr_buffer)), socklen);
-    try posix.listen(sockfd, options.kernel_backlog);
+    // Increase kernel backlog for better connection handling under load
+    const backlog = if (options.kernel_backlog < 4096) 4096 else options.kernel_backlog;
+    try posix.listen(sockfd, backlog);
 
     // Get the actual bound address to extract the real port (especially if port was 0)
     var bound_addr: posix.sockaddr = undefined;

@@ -38,6 +38,8 @@ allocator: Allocator = undefined,
 arena: std.heap.ArenaAllocator = undefined,
 
 // Aio engine for async I/O
+// NOTE: Each thread should have its own IO instance for thread safety
+// For now, we use a single IO instance but only one thread runs the event loop
 aio_io: IO = undefined,
 aio_time: Time = undefined,
 
@@ -81,7 +83,7 @@ router: *Router = undefined,
 middlewares: ?std.array_list.Managed(HandlerFn) = undefined,
 
 /// max connections.
-max_conn: u32 = 1024,
+max_conn: u32 = 10000,
 
 // Aio completion for accept operations (global, not per-connection)
 accept_completion: IO.Completion = undefined,
@@ -145,7 +147,9 @@ fn create(conf: Config.Engine) anyerror!*Engine {
     errdefer listener.deinit();
 
     // Initialize aio with larger queue for better performance
-    const aio_io = try IO.init(1024, 0);
+    // Increased queue size to handle high concurrency (400+ connections)
+    // Note: u12 max value is 4095, so we use that instead of 4096
+    const aio_io = try IO.init(4095, 0);
     const aio_time = Time{};
 
     engine.* = Engine{
@@ -265,6 +269,8 @@ pub fn deinit(self: *Self) void {
 }
 
 /// Run the server. This function will block the current thread.
+/// NOTE: AIO IO object is NOT thread-safe. Only one thread should run the event loop.
+/// If you need multiple threads, each thread should have its own IO instance.
 pub fn run(self: *Engine) !void {
     // Removed debug print to avoid interfering with test runner
     try self.worker();
@@ -273,6 +279,8 @@ pub fn run(self: *Engine) !void {
 const res_buffer = "HTTP/1.1 200 OK\r\nContent-Length: 11\r\n\r\nHello World";
 
 /// Allocate server worker threads
+/// CRITICAL: AIO IO object is NOT thread-safe. This worker should only run in ONE thread.
+/// If you need multiple threads, each thread must have its own IO instance.
 fn worker(self: *Engine) anyerror!void {
     const workder_id = self.spawn_count.fetchAdd(1, .monotonic);
     _ = workder_id; // Removed debug print to avoid interfering with test runner
@@ -280,20 +288,18 @@ fn worker(self: *Engine) anyerror!void {
     const listener = self.getSocket();
 
     // Start accepting connections using aio
+    // NOTE: Only ONE thread should call startAccept to avoid accept() race conditions
     try self.startAccept(listener);
 
     while (!self.stopping.isSet()) {
-        // Run aio event loop with error handling
-        // Check stopping flag before and after run to ensure we exit quickly
         if (self.stopping.isSet()) break;
         self.aio_io.run() catch |err| {
-            // Only log errors if we're not stopping
             if (!self.stopping.isSet()) {
                 std.log.err("AIO run error: {}", .{err});
             }
             break;
         };
-        // Check again after run in case stopping was set during run
+
         if (self.stopping.isSet()) break;
     }
 

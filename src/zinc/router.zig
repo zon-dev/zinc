@@ -11,6 +11,7 @@ const Response = zinc.Response;
 const Route = zinc.Route;
 const HandlerFn = zinc.HandlerFn;
 const RouterGroup = zinc.RouterGroup;
+const Engine = zinc.Engine;
 
 const RouteTree = zinc.RouteTree;
 
@@ -118,14 +119,9 @@ pub fn handleConn(self: *Self, allocator: std.mem.Allocator, conn: std.posix.soc
     const req_method = parser.method;
     const req_target = parser.target;
 
-    // Optimized: Create objects with minimal allocations
     const req = try Request.init(.{ .target = req_target, .method = req_method, .allocator = allocator });
     const res = try Response.init(.{ .conn = conn, .allocator = allocator });
-
-    // Set Response's req_method field
     res.req_method = req_method;
-
-    // Set engine and connection for async operations
     res.engine = engine;
     res.connection = connection;
 
@@ -437,11 +433,12 @@ fn getRouteTree(self: *Self, target: []const u8) anyerror!*RouteTree {
 }
 
 pub fn getRoute(self: *Self, method: std.http.Method, target: []const u8) anyerror!*Route {
+    // TODO: Optimize to avoid URL parsing for simple paths
+    // For now, we still need URL parsing because getRouteTree uses it internally
     var url = URL.init(.{ .allocator = self.allocator });
     defer url.deinit();
 
     const url_target = try url.parseUrl(target);
-
     const path: []const u8 = url_target.path;
 
     const rTree = try self.getRouteTree(path);
