@@ -7,7 +7,8 @@ const Self = @This();
 
 allocator: std.mem.Allocator,
 
-conn: std.net.Server.Connection = undefined,
+// Connection is now just a socket fd, not used directly
+conn: std.posix.socket_t = undefined,
 
 header: std.StringArrayHashMap([]u8) = undefined,
 status: http.Status = http.Status.ok,

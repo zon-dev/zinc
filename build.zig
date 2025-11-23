@@ -14,8 +14,13 @@ pub fn build(b: *std.Build) void {
     const url = b.dependency("url", .{});
     module.addImport("url", url.module("url"));
 
-    const aio = b.dependency("aio", .{});
-    module.addImport("aio", aio.module("aio"));
+    // Use local fixed aio library
+    const aio_module = b.addModule("aio", .{
+        .root_source_file = b.path("tmp/aio-fixed/src/aio.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    module.addImport("aio", aio_module);
 
     // Add tests
     const unit_tests = b.addTest(.{
@@ -26,7 +31,7 @@ pub fn build(b: *std.Build) void {
         }),
     });
     unit_tests.root_module.addImport("url", url.module("url"));
-    unit_tests.root_module.addImport("aio", aio.module("aio"));
+    unit_tests.root_module.addImport("aio", aio_module);
     unit_tests.linkLibC();
 
     const run_unit_tests = b.addRunArtifact(unit_tests);

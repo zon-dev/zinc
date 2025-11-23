@@ -57,8 +57,14 @@ test "Zinc with std.heap.ArenaAllocator" {
     defer z.deinit();
 
     const server_thread = try startServer(z);
-    defer server_thread.join();
-    defer z.shutdown(0);
+    // Give server time to start - use posix.nanosleep
+    std.posix.nanosleep(0, 10 * std.time.ns_per_ms);
+    // Shutdown server first
+    z.shutdown(0);
+    // Give server time to stop
+    std.posix.nanosleep(0, 50 * std.time.ns_per_ms);
+    // Then join thread
+    server_thread.join();
 }
 
 test "Zinc with std.heap.page_allocator" {
@@ -70,8 +76,14 @@ test "Zinc with std.heap.page_allocator" {
     defer z.deinit();
 
     const server_thread = try startServer(z);
-    defer server_thread.join();
-    defer z.shutdown(0);
+    // Give server time to start - use posix.nanosleep
+    std.posix.nanosleep(0, 10 * std.time.ns_per_ms);
+    // Shutdown server first
+    z.shutdown(0);
+    // Give server time to stop
+    std.posix.nanosleep(0, 50 * std.time.ns_per_ms);
+    // Then join thread
+    server_thread.join();
 }
 
 test "Zinc Server" {

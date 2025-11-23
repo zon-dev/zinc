@@ -108,7 +108,7 @@ pub fn handleContext(self: *Self, ctx: *Context) anyerror!void {
     try ctx.doRequest();
 }
 // pub fn handleConn(self: *Self, allocator: std.mem.Allocator, conn: std.net.Stream, read_buffer: []const u8) anyerror!void {
-pub fn handleConn(self: *Self, allocator: std.mem.Allocator, conn: std.posix.socket_t, read_buffer: []u8) anyerror!void {
+pub fn handleConn(self: *Self, allocator: std.mem.Allocator, conn: std.posix.socket_t, read_buffer: []u8, engine: ?*anyopaque, connection: ?*anyopaque) anyerror!void {
     // Set global router variable for handler use
     current_router = self;
     defer current_router = null;
@@ -124,6 +124,10 @@ pub fn handleConn(self: *Self, allocator: std.mem.Allocator, conn: std.posix.soc
 
     // Set Response's req_method field
     res.req_method = req_method;
+
+    // Set engine and connection for async operations
+    res.engine = engine;
+    res.connection = connection;
 
     const ctx = try Context.init(.{ .request = req, .response = res, .allocator = allocator, .data = self.data });
     defer ctx.destroy();

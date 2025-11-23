@@ -2,7 +2,7 @@
 
 ----
 
-Zinc is a high-performance web framework written in pure Zig with a focus on usability, security, and extensibility. It features **asynchronous I/O powered by the aio library** for maximum performance across all supported platforms.
+Zinc is a high-performance web framework written in pure Zig with a focus on usability, security, and extensibility. It features **asynchronous I/O powered by the [aio library](https://github.com/zon-dev/aio)** for maximum performance across all supported platforms.
 
 **:rocket: Now with async I/O support via aio library for fast performance!**
 
@@ -12,7 +12,7 @@ Zinc is a high-performance web framework written in pure Zig with a focus on usa
 
 ## 🚀 Key Features
 
-- **⚡ Asynchronous I/O**: Powered by the aio library for maximum performance
+- **⚡ Asynchronous I/O**: Powered by the [aio library](https://github.com/zon-dev/aio) for maximum performance
 - **🔄 Cross-platform**: Linux (io_uring), macOS (kqueue), Windows (IOCP planned)
 - **🧵 Multithreading**: Efficient thread pool management
 - **🔧 Middleware Support**: Flexible middleware system
@@ -24,7 +24,7 @@ Zinc is a high-performance web framework written in pure Zig with a focus on usa
 
 ## 🏗️ Architecture
 
-Zinc uses a modern async/await architecture with the aio library:
+Zinc uses a modern async/await architecture with the [aio library](https://github.com/zon-dev/aio):
 
 - **Event Loop**: Non-blocking I/O operations
 - **Callback-based**: Efficient async callbacks for I/O completion
@@ -177,7 +177,7 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 
 ## 🙏 Acknowledgments
 
-- **aio library**: For providing excellent cross-platform async I/O
+- **[aio library](https://github.com/zon-dev/aio)**: For providing excellent cross-platform async I/O
 - **Zig community**: For the amazing language and ecosystem
 - **Contributors**: Everyone who has helped make zinc better
 

@@ -20,6 +20,10 @@ conn: std.posix.socket_t = undefined,
 // io: *IO = undefined,
 completion: IO.Completion = undefined,
 
+// Engine and connection for async operations
+engine: ?*anyopaque = null, // Will be cast to *Engine when needed
+connection: ?*anyopaque = null, // Will be cast to *Engine.Connection when needed
+
 req_method: ?http.Method = undefined,
 
 version: []const u8 = "HTTP/1.1",
@@ -51,6 +55,14 @@ pub fn deinit(self: *Self) void {
     allocator.destroy(self);
 }
 pub fn send(self: *Self, content: []const u8, options: RespondOptions) anyerror!void {
+    // Use async write if engine and connection are available
+    if (self.engine) |engine_ptr| {
+        if (self.connection) |conn_ptr| {
+            return self.sendAsync(content, options, engine_ptr, conn_ptr);
+        }
+    }
+
+    // Fallback to synchronous write for backward compatibility
     const req_method = self.req_method.?;
 
     const transfer_encoding_none = (options.transfer_encoding orelse .chunked) == .none;
@@ -168,12 +180,16 @@ pub fn send(self: *Self, content: []const u8, options: RespondOptions) anyerror!
         }
     }
 
-    // Use synchronous write for now, but this should be made async
+    // Fallback to synchronous write for backward compatibility
     _ = try std.posix.writev(self.conn, iovecs[0..iovecs_len]);
 }
 
 /// Async version of send that uses AIO for non-blocking response writing
-pub fn sendAsync(self: *Self, content: []const u8, options: RespondOptions, engine: anytype, connection: anytype) anyerror!void {
+fn sendAsync(self: *Self, content: []const u8, options: RespondOptions, engine_ptr: *anyopaque, conn_ptr: *anyopaque) anyerror!void {
+    // Cast to proper types
+    const Engine = @import("../zinc.zig").Engine;
+    const engine: *Engine = @ptrCast(@alignCast(engine_ptr));
+    const connection: *Engine.Connection = @ptrCast(@alignCast(conn_ptr));
     const req_method = self.req_method.?;
 
     const transfer_encoding_none = (options.transfer_encoding orelse .chunked) == .none;
@@ -203,33 +219,50 @@ pub fn sendAsync(self: *Self, content: []const u8, options: RespondOptions, engi
         h.appendSliceAssumeCapacity(content_length_line);
     }
 
-    // Build the complete response buffer
-    var response_buffer = std.ArrayList(u8).init(self.allocator);
-    defer response_buffer.deinit();
+    // Calculate total response size to pre-allocate buffer
+    var total_size: usize = h.items.len + 2; // headers + \r\n
+    for (options.extra_headers) |header| {
+        total_size += header.name.len + 2; // name + ": "
+        if (header.value.len > 0) {
+            total_size += header.value.len;
+        }
+        total_size += 2; // \r\n
+    }
+    if (req_method != .HEAD and content.len > 0) {
+        total_size += content.len;
+    }
+
+    // Use engine's allocator for response buffer (will be freed in writeCallback)
+    var response_buffer = std.ArrayListUnmanaged(u8){};
+    defer response_buffer.deinit(engine.allocator);
+    try response_buffer.ensureTotalCapacity(engine.allocator, total_size);
 
     // Add headers
-    response_buffer.appendSlice(h.items) catch unreachable;
+    try response_buffer.appendSlice(engine.allocator, h.items);
 
     // Add extra headers
     for (options.extra_headers) |header| {
-        response_buffer.appendSlice(header.name) catch unreachable;
-        response_buffer.appendSlice(": ") catch unreachable;
+        try response_buffer.appendSlice(engine.allocator, header.name);
+        try response_buffer.appendSlice(engine.allocator, ": ");
         if (header.value.len > 0) {
-            response_buffer.appendSlice(header.value) catch unreachable;
+            try response_buffer.appendSlice(engine.allocator, header.value);
         }
-        response_buffer.appendSlice("\r\n") catch unreachable;
+        try response_buffer.appendSlice(engine.allocator, "\r\n");
     }
 
-    response_buffer.appendSlice("\r\n") catch unreachable;
+    try response_buffer.appendSlice(engine.allocator, "\r\n");
 
     // Add body for non-HEAD requests
     if (req_method != .HEAD and content.len > 0) {
-        response_buffer.appendSlice(content) catch unreachable;
+        try response_buffer.appendSlice(engine.allocator, content);
     }
 
+    // Allocate persistent buffer for async write (will be freed in writeCallback)
+    const response_data = try engine.allocator.dupe(u8, response_buffer.items);
+
     // Use AIO to send the response asynchronously
-    engine.startWrite(connection, response_buffer.items) catch |err| {
-        std.log.err("Failed to start async write: {}", .{err});
+    engine.startWrite(connection, response_data) catch |err| {
+        engine.allocator.free(response_data);
         return err;
     };
 }

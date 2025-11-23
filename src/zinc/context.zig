@@ -21,7 +21,8 @@ const handlerFn = *const fn (*Context) anyerror!void;
 allocator: std.mem.Allocator,
 
 // TODO, Remove.
-conn: std.net.Stream = undefined,
+// conn is no longer used, we use socket fd directly
+conn: std.posix.socket_t = undefined,
 
 // TODO
 io: *IO = undefined,
@@ -144,11 +145,17 @@ pub fn file(
     var f = try std.fs.cwd().openFile(file_path, .{});
     defer f.close();
 
-    // Read the file into a buffer.
+    // Read the file into a buffer using new I/O API
     const stat = try f.stat();
     const buffer = try self.allocator.alloc(u8, stat.size);
     defer self.allocator.free(buffer);
-    _ = try f.readAll(buffer);
+    // Use read() method instead of readAll()
+    var total_read: usize = 0;
+    while (total_read < stat.size) {
+        const bytes_read = try f.read(buffer[total_read..]);
+        if (bytes_read == 0) break;
+        total_read += bytes_read;
+    }
 
     try self.setBody(buffer);
 
@@ -180,11 +187,17 @@ pub fn dir(self: *Self, dir_name: []const u8, conf: Config.Context) anyerror!voi
     };
     defer f.close();
 
-    // Read the file into a buffer.
+    // Read the file into a buffer using new I/O API
     const stat = try f.stat();
     const buffer = try self.allocator.alloc(u8, stat.size);
     defer self.allocator.free(buffer);
-    _ = try f.readAll(buffer);
+    // Use read() method instead of readAll()
+    var total_read: usize = 0;
+    while (total_read < stat.size) {
+        const bytes_read = try f.read(buffer[total_read..]);
+        if (bytes_read == 0) break;
+        total_read += bytes_read;
+    }
 
     try self.setBody(buffer);
     try self.setStatus(conf.status);
@@ -340,12 +353,15 @@ pub fn getPostFormMap(self: *Self) !?std.StringHashMap([]const u8) {
 
     _ = std.mem.indexOf(u8, content_type, "application/x-www-form-urlencoded") orelse return null;
 
-    var request_reader = self.conn.reader(self.recv_buf);
+    // conn is now posix.socket_t, not a Stream
+    // The body should already be in recv_buf from the request parsing
+    // For now, parse from recv_buf if available
+    // TODO: Implement proper body reading with new I/O API
+    if (self.recv_buf.len < content_length) {
+        return null; // Not enough data in buffer
+    }
 
-    const body_buffer = try self.allocator.alloc(u8, content_length);
-    defer self.allocator.free(body_buffer);
-    _ = try request_reader.file_reader.read(body_buffer);
-
+    const body_buffer = self.recv_buf[0..content_length];
     var form = std.StringHashMap([]const u8).init(self.allocator);
     var form_data = std.mem.splitSequence(u8, body_buffer, "&");
     while (form_data.next()) |data| {

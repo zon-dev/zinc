@@ -2,8 +2,6 @@ const std = @import("std");
 const http = std.http;
 const Status = http.Status;
 const mem = std.mem;
-const net = std.net;
-const proto = http.protocol;
 const Server = http.Server;
 const Allocator = std.mem.Allocator;
 

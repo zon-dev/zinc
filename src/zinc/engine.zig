@@ -3,9 +3,9 @@ const std = @import("std");
 const http = std.http;
 const posix = std.posix;
 const mem = std.mem;
-const net = std.net;
 const Allocator = std.mem.Allocator;
 const Condition = std.Thread.Condition;
+const Io = std.Io;
 
 const URL = @import("url");
 
@@ -42,15 +42,15 @@ aio_time: Time = undefined,
 
 // Server state
 listener_socket: posix.socket_t = -1,
-listener_address: net.Address = undefined,
+listener_address: std.Io.net.IpAddress = undefined,
 
 // Connection management
 connections: std.AutoHashMapUnmanaged(posix.socket_t, *Connection) = .{},
 
 // Thread management
 threads: std.Thread.Pool = undefined,
-stopping: std.Thread.ResetEvent = .{},
-stopped: std.Thread.ResetEvent = .{},
+stopping: std.Thread.ResetEvent = .unset,
+stopped: std.Thread.ResetEvent = .unset,
 mutex: std.Thread.Mutex = .{},
 
 /// see at https://github.com/ziglang/zig/blob/master/lib/std/Thread/Condition.zig
@@ -101,11 +101,14 @@ pub const Connection = struct {
     } = .free,
 
     fd: posix.socket_t = -1,
-    address: net.Address = undefined,
+    address: std.Io.net.IpAddress = undefined,
 
     // Each connection has its own completion objects to avoid race conditions
     read_completion: IO.Completion = undefined,
     write_completion: IO.Completion = undefined,
+
+    // Store write buffer for cleanup after async write completes
+    write_buffer: ?[]u8 = null,
 
     pub fn init() Connection {
         return .{};
@@ -119,7 +122,7 @@ pub const Connection = struct {
         self.fd = fd;
     }
 
-    pub fn setAddress(self: *Connection, addr: net.Address) void {
+    pub fn setAddress(self: *Connection, addr: std.Io.net.IpAddress) void {
         self.address = addr;
     }
 };
@@ -130,7 +133,7 @@ fn create(conf: Config.Engine) anyerror!*Engine {
     const engine = try allocator.create(Engine);
     errdefer allocator.destroy(engine);
 
-    const address = try std.net.Address.parseIp(conf.addr, conf.port);
+    const address = try std.Io.net.IpAddress.parse(conf.addr, conf.port);
     var listener = try server.listen(address, .{
         .reuse_address = true,
         .force_nonblocking = conf.force_nonblocking,
@@ -164,10 +167,10 @@ fn create(conf: Config.Engine) anyerror!*Engine {
         .num_threads = conf.num_threads,
         .stack_size = conf.stack_size,
 
-        .listener_socket = listener.stream.handle,
+        .listener_socket = listener.socket_fd,
         .listener_address = listener.listen_address,
 
-        .connection_pool = std.heap.MemoryPool(Connection).init(allocator),
+        .connection_pool = std.heap.MemoryPool(Connection).empty,
         .read_buffer = try allocator.alloc(u8, 32768), // Increased to 32KB for maximum performance
     };
 
@@ -195,8 +198,7 @@ pub fn deinit(self: *Self) void {
     // Broadcast to all threads to stop.
     self.cond.broadcast();
 
-    // Close test connection if any
-    if (std.net.tcpConnectToAddress(self.getAddress())) |c| c.close() else |_| {}
+    // Close test connection if any (not needed with new API)
 
     // Close listener socket
     if (self.getSocket() >= 0) {
@@ -265,6 +267,8 @@ fn worker(self: *Engine) anyerror!void {
 
     while (!self.stopping.isSet()) {
         // Run aio event loop with error handling
+        // Check stopping flag before and after run to ensure we exit quickly
+        if (self.stopping.isSet()) break;
         self.aio_io.run() catch |err| {
             // Only log errors if we're not stopping
             if (!self.stopping.isSet()) {
@@ -272,6 +276,8 @@ fn worker(self: *Engine) anyerror!void {
             }
             break;
         };
+        // Check again after run in case stopping was set during run
+        if (self.stopping.isSet()) break;
     }
 
     std.debug.print("{d} | worker stop!\r\n", .{workder_id});
@@ -301,7 +307,12 @@ fn startRead(self: *Engine, connection: *Connection) !void {
 }
 
 /// Start writing to a connection
-fn startWrite(self: *Engine, connection: *Connection, data: []const u8) !void {
+/// Note: data must be allocated and will be freed in writeCallback
+pub fn startWrite(self: *Engine, connection: *Connection, data: []const u8) !void {
+    // Store the data buffer for cleanup in writeCallback
+    // Cast const to mutable for storage (we own this memory)
+    connection.write_buffer = @constCast(data);
+
     self.aio_io.send(
         *Engine,
         self,
@@ -318,7 +329,7 @@ fn handleAcceptedConnection(self: *Engine, client_fd: posix.socket_t) void {
     const connection = blk: {
         self.mutex.lock();
         defer self.mutex.unlock();
-        break :blk self.connection_pool.create() catch |err| {
+        break :blk self.connection_pool.create(self.allocator) catch |err| {
             std.log.err("Failed to create connection: {}", .{err});
             posix.close(client_fd);
             return;
@@ -355,8 +366,10 @@ fn handleReadCompletion(self: *Engine, connection: *Connection, data: []u8) void
         return;
     }
 
-    // Process the HTTP request
-    self.router.handleConn(self.allocator, connection.getSocket(), data) catch |err| {
+    // Process the HTTP request with engine and connection for async operations
+    // The response will be sent asynchronously, and writeCallback will handle
+    // continuing to read for keep-alive connections
+    self.router.handleConn(self.allocator, connection.getSocket(), data, self, connection) catch |err| {
         catchRouteError(err, connection.getSocket()) catch |err2| {
             std.log.err("Failed to handle route error: {}", .{err2});
         };
@@ -365,18 +378,22 @@ fn handleReadCompletion(self: *Engine, connection: *Connection, data: []u8) void
         return;
     };
 
-    // Continue reading for keep-alive connections instead of closing immediately
-    // The response will be sent asynchronously by the router
-    self.startRead(connection) catch |err| {
-        std.log.err("Failed to continue reading: {}", .{err});
-        self.closeConnection(connection);
-    };
+    // Note: We don't start reading here because the response is sent asynchronously.
+    // The writeCallback will handle continuing to read after the write completes.
+    // This ensures proper ordering: read -> process -> write -> read (for keep-alive)
 }
 
 /// Handle write completion
 fn handleWriteCompletion(self: *Engine, connection: *Connection, bytes_written: usize) void {
     _ = bytes_written;
-    // Continue reading after write
+
+    // Free the write buffer that was allocated in sendAsync
+    if (connection.write_buffer) |buffer| {
+        self.allocator.free(buffer);
+        connection.write_buffer = null;
+    }
+
+    // Continue reading after write for keep-alive connections
     self.startRead(connection) catch |err| {
         std.log.err("Failed to continue reading after write: {}", .{err});
         self.closeConnection(connection);
@@ -439,26 +456,39 @@ pub fn getSocket(self: *Self) posix.socket_t {
     return self.listener_socket;
 }
 
-pub fn getAcceptAddress(self: *Self) std.net.Address {
+pub fn getAcceptAddress(self: *Self) std.Io.net.IpAddress {
     return self.listener_address;
 }
 
 pub fn getPort(self: *Self) u16 {
-    return self.getAddress().getPort();
+    return self.listener_address.getPort();
 }
 
-pub fn getAddress(self: *Self) net.Address {
+pub fn getAddress(self: *Self) std.Io.net.IpAddress {
     return self.listener_address;
 }
 
 /// Shutdown the server.
 pub fn shutdown(self: *Self, timeout_ns: u64) void {
     _ = timeout_ns; // TODO: Implement timeout
-    // Simple shutdown without sleep
-    if (!self.stopping.isSet()) self.stopping.set();
+    // Set stopping flag to exit event loop
+    if (!self.stopping.isSet()) {
+        self.stopping.set();
+    }
 
+    // Close listener socket to wake up any blocking operations (like kevent)
+    // This is important to unblock aio_io.run() which may be waiting on kevent
+    const listener = self.getSocket();
+    if (listener >= 0) {
+        posix.close(listener);
+        self.listener_socket = -1;
+    }
+
+    // Broadcast to wake up any waiting threads
+    self.cond.broadcast();
+
+    // Signal stopped
     if (!self.stopped.isSet()) {
-        self.cond.broadcast();
         self.stopped.set();
     }
 }
@@ -584,6 +614,11 @@ fn writeCallback(
         // Handle write error
         const connection = engine.getConnection(completion.operation.send.socket);
         if (connection) |conn| {
+            // Free the write buffer on error
+            if (conn.write_buffer) |buffer| {
+                engine.allocator.free(buffer);
+                conn.write_buffer = null;
+            }
             // Log error if not stopping
             if (!engine.stopping.isSet()) {
                 std.log.info("Write error (connection closed): {}", .{err});

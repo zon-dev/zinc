@@ -1,6 +1,5 @@
 const std = @import("std");
 const builtin = @import("builtin");
-const net = std.net;
 const posix = std.posix;
 const assert = std.debug.assert;
 const utils = @import("utils.zig");

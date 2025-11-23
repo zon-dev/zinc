@@ -6,7 +6,7 @@
     .dependencies = .{
         .aio = .{
             .url = "https://github.com/zon-dev/aio/archive/refs/heads/main.zip",
-            .hash = "aio-0.1.2-dev.2-dzJt5DBDBABARkKT5MzgkkKNgx6aZHPIchhQDr6haust",
+            .hash = "aio-0.1.2-dev.2-dzJt5FlDBAB4bkjVU0YZ7vbUCwXzuJMrdJRAgFR9QAuk",
         },
         .url = .{
             .url = "https://github.com/zon-dev/url/archive/refs/heads/main.zip",

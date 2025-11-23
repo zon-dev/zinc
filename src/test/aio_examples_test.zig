@@ -224,9 +224,22 @@ test "aio benchmark example" {
     // JSON response for benchmarking
     try router.get("/bench/json", struct {
         fn handler(ctx: *zinc.Context) anyerror!void {
+            // Get current time in milliseconds using posix.clock_gettime
+            const ts = std.posix.clock_gettime(std.posix.CLOCK.REALTIME) catch {
+                // Fallback to 0 if clock_gettime fails
+                try ctx.json(.{
+                    .message = "Hello, World!",
+                    .timestamp = 0,
+                }, .{});
+                return;
+            };
+            // timespec structure has sec and nsec fields on macOS
+            const sec = @as(i128, @intCast(ts.sec));
+            const nsec = @as(i128, @intCast(ts.nsec));
+            const timestamp_ms = @divTrunc(sec * std.time.ns_per_s + nsec, std.time.ns_per_ms);
             try ctx.json(.{
                 .message = "Hello, World!",
-                .timestamp = std.time.milliTimestamp(),
+                .timestamp = @as(i64, @intCast(timestamp_ms)),
             }, .{});
         }
     }.handler);
