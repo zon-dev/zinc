@@ -249,7 +249,7 @@ pub fn deinit(self: *Self) void {
 
 /// Run the server. This function will block the current thread.
 pub fn run(self: *Engine) !void {
-    std.debug.print("running!\r\n", .{});
+    // Removed debug print to avoid interfering with test runner
     try self.worker();
 }
 
@@ -258,7 +258,7 @@ const res_buffer = "HTTP/1.1 200 OK\r\nContent-Length: 11\r\n\r\nHello World";
 /// Allocate server worker threads
 fn worker(self: *Engine) anyerror!void {
     const workder_id = self.spawn_count.fetchAdd(1, .monotonic);
-    std.debug.print("{d} | worker start!\r\n", .{workder_id});
+    _ = workder_id; // Removed debug print to avoid interfering with test runner
 
     const listener = self.getSocket();
 
@@ -280,7 +280,7 @@ fn worker(self: *Engine) anyerror!void {
         if (self.stopping.isSet()) break;
     }
 
-    std.debug.print("{d} | worker stop!\r\n", .{workder_id});
+    // Removed debug print to avoid interfering with test runner
 }
 
 /// Start accepting connections
@@ -537,7 +537,7 @@ fn acceptCallback(
 
     if (result) |fd| {
         // Handle successful accept
-        std.log.info("Accepted connection: {}", .{fd});
+        // Removed log to avoid interfering with test runner
         engine.handleAcceptedConnection(fd);
 
         // Accept new connection
@@ -566,31 +566,26 @@ fn readCallback(
     completion: *IO.Completion,
     result: IO.RecvError!usize,
 ) void {
-    if (result) |bytes_read| {
-        // Handle successful read
-        if (bytes_read > 0) {
-            std.log.info("Read {} bytes", .{bytes_read});
-
-            // Get the connection from the completion
-            const connection = engine.getConnection(completion.operation.recv.socket);
-            if (connection) |conn| {
-                engine.handleReadCompletion(conn, engine.read_buffer[0..bytes_read]);
-            }
-        } else {
-            // Connection closed by peer
-            const connection = engine.getConnection(completion.operation.recv.socket);
-            if (connection) |conn| {
-                engine.closeConnection(conn);
-            }
-        }
-    } else |err| {
-        // Handle read error
+    const bytes_read = result catch {
+        // Handle read error - just close the connection
         const connection = engine.getConnection(completion.operation.recv.socket);
         if (connection) |conn| {
-            // Log error if not stopping
-            if (!engine.stopping.isSet()) {
-                std.log.info("Read error (connection closed): {}", .{err});
-            }
+            engine.closeConnection(conn);
+        }
+        return;
+    };
+
+    // Handle successful read
+    if (bytes_read > 0) {
+        // Get the connection from the completion
+        const connection = engine.getConnection(completion.operation.recv.socket);
+        if (connection) |conn| {
+            engine.handleReadCompletion(conn, engine.read_buffer[0..bytes_read]);
+        }
+    } else {
+        // Connection closed by peer
+        const connection = engine.getConnection(completion.operation.recv.socket);
+        if (connection) |conn| {
             engine.closeConnection(conn);
         }
     }
@@ -601,17 +596,8 @@ fn writeCallback(
     completion: *IO.Completion,
     result: IO.SendError!usize,
 ) void {
-    if (result) |bytes_written| {
-        // Handle successful write
-        std.log.info("Wrote {} bytes", .{bytes_written});
-
-        // Get the connection from the completion
-        const connection = engine.getConnection(completion.operation.send.socket);
-        if (connection) |conn| {
-            engine.handleWriteCompletion(conn, bytes_written);
-        }
-    } else |err| {
-        // Handle write error
+    const bytes_written = result catch {
+        // Handle write error - free buffer and close connection
         const connection = engine.getConnection(completion.operation.send.socket);
         if (connection) |conn| {
             // Free the write buffer on error
@@ -619,11 +605,15 @@ fn writeCallback(
                 engine.allocator.free(buffer);
                 conn.write_buffer = null;
             }
-            // Log error if not stopping
-            if (!engine.stopping.isSet()) {
-                std.log.info("Write error (connection closed): {}", .{err});
-            }
             engine.closeConnection(conn);
         }
+        return;
+    };
+
+    // Handle successful write
+    // Get the connection from the completion
+    const connection = engine.getConnection(completion.operation.send.socket);
+    if (connection) |conn| {
+        engine.handleWriteCompletion(conn, bytes_written);
     }
 }

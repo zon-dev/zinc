@@ -135,8 +135,7 @@ test "aio platform specific features" {
     // Test platform-specific async I/O features
     try std.testing.expect(z.num_threads == 4);
 
-    // Log platform information
-    std.log.info("Async I/O: enabled", .{});
+    // Removed log to avoid interfering with test runner
 }
 
 // Test handlers for aio async I/O
