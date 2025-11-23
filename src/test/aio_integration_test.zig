@@ -4,7 +4,6 @@ const zinc = @import("../zinc.zig");
 test "aio basic engine initialization" {
     var engine = try zinc.Engine.init(.{
         .port = 0, // Use random port
-        .force_nonblocking = true,
         .num_threads = 1, // Use single thread for testing
     });
     defer engine.deinit();
@@ -44,7 +43,6 @@ test "aio custom configuration" {
 test "aio engine shutdown" {
     var engine = try zinc.Engine.init(.{
         .port = 0,
-        .force_nonblocking = true,
         .num_threads = 1,
     });
 

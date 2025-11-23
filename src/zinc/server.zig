@@ -15,8 +15,6 @@ pub const ListenOptions = struct {
 
     /// For freebsd.
     reuse_port_lb: bool = false,
-
-    force_nonblocking: bool = false,
 };
 
 /// The returned `Server` has an open socket.
@@ -62,7 +60,7 @@ pub fn listen(address: Io.net.IpAddress, options: ListenOptions) !Server {
         },
     }
 
-    const nonblock: u32 = if (options.force_nonblocking) posix.SOCK.NONBLOCK else 0;
+    const nonblock: u32 = posix.SOCK.NONBLOCK;
     const posix_flags: u32 = posix.SOCK.CLOEXEC | nonblock;
     var sock_flags: u32 = posix.SOCK.STREAM | posix.SOCK.CLOEXEC;
     sock_flags |= nonblock;

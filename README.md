@@ -50,7 +50,6 @@ pub fn main() !void {
     var z = try zinc.init(.{ 
         .port = 8080,
         .num_threads = 4,  // Configure thread pool
-        .force_nonblocking = true,  // Enable async I/O
     });
     defer z.deinit();
     
@@ -106,7 +105,6 @@ var z = try zinc.init(.{
     .port = 8080,
     .num_threads = 8,           // Worker threads
     .read_buffer_len = 8192,    // Read buffer size
-    .force_nonblocking = true,  // Enable async I/O
     .stack_size = 1048576,      // Thread stack size
 });
 ```

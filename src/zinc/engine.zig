@@ -136,7 +136,6 @@ fn create(conf: Config.Engine) anyerror!*Engine {
     const address = try std.Io.net.IpAddress.parse(conf.addr, conf.port);
     var listener = try server.listen(address, .{
         .reuse_address = true,
-        .force_nonblocking = conf.force_nonblocking,
     });
 
     errdefer listener.deinit();

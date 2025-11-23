@@ -6,7 +6,6 @@ test "aio async I/O initialization" {
         .port = 0,
         .addr = "127.0.0.1",
         .num_threads = 4,
-        .force_nonblocking = true, // Enable async I/O
         .read_buffer_len = 8192,
     });
     defer z.deinit();
@@ -24,7 +23,6 @@ test "aio event loop configuration" {
         .port = 0,
         .addr = "127.0.0.1",
         .num_threads = 2,
-        .force_nonblocking = true,
         .read_buffer_len = 4096,
         .header_buffer_len = 1024,
         .body_buffer_len = 16384,
@@ -46,7 +44,6 @@ test "aio callback handling" {
         .port = 0,
         .addr = "127.0.0.1",
         .num_threads = 3,
-        .force_nonblocking = true,
         .read_buffer_len = 6144,
     });
     defer z.deinit();
@@ -65,7 +62,6 @@ test "aio connection management" {
         .port = 0,
         .addr = "127.0.0.1",
         .num_threads = 5,
-        .force_nonblocking = true,
         .read_buffer_len = 10240,
     });
     defer z.deinit();
@@ -83,7 +79,6 @@ test "aio error handling" {
         .port = 0,
         .addr = "127.0.0.1",
         .num_threads = 2,
-        .force_nonblocking = true,
         .read_buffer_len = 2048,
     });
     defer z.deinit();
@@ -101,7 +96,6 @@ test "aio performance configuration" {
         .port = 0,
         .addr = "127.0.0.1",
         .num_threads = 8,
-        .force_nonblocking = true,
         .read_buffer_len = 32768,
         .header_buffer_len = 4096,
         .body_buffer_len = 65536,
@@ -124,7 +118,6 @@ test "aio platform specific features" {
         .port = 0,
         .addr = "127.0.0.1",
         .num_threads = 4,
-        .force_nonblocking = true,
         .read_buffer_len = 8192,
     });
     defer z.deinit();

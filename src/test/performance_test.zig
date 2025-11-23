@@ -110,11 +110,7 @@ test "performance benchmark" {
     const elapsed = timer.read();
     const requests_per_second = @as(f64, @floatFromInt(num_requests)) / (@as(f64, @floatFromInt(elapsed)) / @as(f64, @floatFromInt(std.time.ns_per_s)));
 
-    // Removed debug prints to avoid interfering with test runner
-    // Performance: requests_per_second calculated but not printed
-    _ = requests_per_second;
-    // Don't fail the test if performance is low - just log it
-    // try std.testing.expect(requests_per_second > 10000);
+    try std.testing.expect(requests_per_second > 100000);
 
     // Shutdown server and wait for thread to finish
     engine.shutdown(0);

@@ -31,9 +31,6 @@ pub const Engine = struct {
     ///
     tick_ms: u63 = 10,
 
-    /// Whether to force non-blocking mode. Default is true.
-    force_nonblocking: bool = true,
-
     /// Data of any arbitrary type that will be passed down to each Context
     data: *anyopaque = undefined,
 };

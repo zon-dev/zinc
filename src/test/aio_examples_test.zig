@@ -4,7 +4,6 @@ const zinc = @import("../zinc.zig");
 test "aio json example" {
     var engine = try zinc.Engine.init(.{
         .port = 0,
-        .force_nonblocking = true,
         .num_threads = 2,
     });
     defer engine.deinit();
@@ -38,7 +37,6 @@ test "aio json example" {
 test "aio query parameters example" {
     var engine = try zinc.Engine.init(.{
         .port = 0,
-        .force_nonblocking = true,
         .num_threads = 2,
     });
     defer engine.deinit();
@@ -64,7 +62,6 @@ test "aio query parameters example" {
 test "aio path parameters example" {
     var engine = try zinc.Engine.init(.{
         .port = 0,
-        .force_nonblocking = true,
         .num_threads = 2,
     });
     defer engine.deinit();
@@ -100,7 +97,6 @@ test "aio path parameters example" {
 test "aio static files example" {
     var engine = try zinc.Engine.init(.{
         .port = 0,
-        .force_nonblocking = true,
         .num_threads = 2,
     });
     defer engine.deinit();
@@ -117,7 +113,6 @@ test "aio static files example" {
 test "aio redirects example" {
     var engine = try zinc.Engine.init(.{
         .port = 0,
-        .force_nonblocking = true,
         .num_threads = 2,
     });
     defer engine.deinit();
@@ -142,7 +137,6 @@ test "aio redirects example" {
 test "aio cors example" {
     var engine = try zinc.Engine.init(.{
         .port = 0,
-        .force_nonblocking = true,
         .num_threads = 2,
     });
     defer engine.deinit();
@@ -180,7 +174,6 @@ test "aio cors example" {
 test "aio multithreading example" {
     var engine = try zinc.Engine.init(.{
         .port = 0,
-        .force_nonblocking = true,
         .num_threads = 8, // Multiple threads
     });
     defer engine.deinit();
@@ -204,7 +197,6 @@ test "aio multithreading example" {
 test "aio benchmark example" {
     var engine = try zinc.Engine.init(.{
         .port = 0,
-        .force_nonblocking = true,
         .num_threads = 4,
         .read_buffer_len = 16384, // Larger buffer for performance
         .header_buffer_len = 4096,

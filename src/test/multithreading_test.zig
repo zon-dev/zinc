@@ -6,7 +6,6 @@ test "multithreading basic" {
         .port = 0,
         .addr = "127.0.0.1",
         .num_threads = 4,
-        .force_nonblocking = true,
     });
     defer z.deinit();
 
@@ -21,7 +20,6 @@ test "multithreading high concurrency" {
         .port = 0,
         .addr = "127.0.0.1",
         .num_threads = 8,
-        .force_nonblocking = true,
         .read_buffer_len = 16384,
         .stack_size = 2097152, // 2MB stack
     });
@@ -39,7 +37,6 @@ test "multithreading thread pool management" {
         .port = 0,
         .addr = "127.0.0.1",
         .num_threads = 2,
-        .force_nonblocking = true,
     });
     defer z.deinit();
 
@@ -56,7 +53,6 @@ test "multithreading async operations" {
         .port = 0,
         .addr = "127.0.0.1",
         .num_threads = 6,
-        .force_nonblocking = true,
         .read_buffer_len = 8192,
         .header_buffer_len = 1024,
         .body_buffer_len = 32768,
@@ -78,7 +74,6 @@ test "multithreading shutdown" {
         .port = 0,
         .addr = "127.0.0.1",
         .num_threads = 3,
-        .force_nonblocking = true,
     });
     defer z.deinit();
 
@@ -97,7 +92,6 @@ test "multithreading memory management" {
         .port = 0,
         .addr = "127.0.0.1",
         .num_threads = 5,
-        .force_nonblocking = true,
         .read_buffer_len = 4096,
     });
     defer z.deinit();
