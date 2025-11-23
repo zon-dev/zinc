@@ -29,6 +29,7 @@ const Time = aio.Time;
 const server = @import("./server.zig");
 
 const utils = @import("utils.zig");
+const BufferPool = @import("buffer_pool.zig").BufferPool;
 
 pub const Engine = @This();
 const Self = @This();
@@ -85,8 +86,8 @@ max_conn: u32 = 1024,
 // Aio completion for accept operations (global, not per-connection)
 accept_completion: IO.Completion = undefined,
 
-// Read buffer for each connection
-read_buffer: []u8 = undefined,
+// Buffer pool for read buffers
+read_buffer_pool: BufferPool = undefined,
 
 /// Connection wrapper for aio integration
 pub const Connection = struct {
@@ -109,6 +110,9 @@ pub const Connection = struct {
 
     // Store write buffer for cleanup after async write completes
     write_buffer: ?[]u8 = null,
+
+    // Each connection has its own read buffer from the pool
+    read_buffer: ?[]u8 = null,
 
     pub fn init() Connection {
         return .{};
@@ -170,8 +174,16 @@ fn create(conf: Config.Engine) anyerror!*Engine {
         .listener_address = listener.listen_address,
 
         .connection_pool = std.heap.MemoryPool(Connection).empty,
-        .read_buffer = try allocator.alloc(u8, 32768), // Increased to 32KB for maximum performance
+        .read_buffer_pool = undefined, // Will be initialized below
     };
+
+    // Initialize buffer pool after engine is created
+    engine.read_buffer_pool = try BufferPool.init(
+        allocator,
+        conf.read_buffer_len,
+        engine.max_conn, // Pre-allocate buffers for max connections
+        engine.max_conn * 2, // Allow up to 2x max connections in pool
+    );
 
     try engine.threads.init(.{
         .allocator = allocator,
@@ -217,6 +229,12 @@ pub fn deinit(self: *Self) void {
             connection.fd = -1;
         }
 
+        // Return read buffer to pool before destroying connection
+        if (connection.read_buffer) |buffer| {
+            self.read_buffer_pool.release(buffer);
+            connection.read_buffer = null;
+        }
+
         // Destroy connection with mutex protection
         self.mutex.lock();
         self.connection_pool.destroy(@alignCast(connection));
@@ -239,8 +257,8 @@ pub fn deinit(self: *Self) void {
     // Deinit arena
     self.arena.deinit();
 
-    // Free read buffer
-    self.allocator.free(self.read_buffer);
+    // Deinit buffer pool (frees all buffers)
+    self.read_buffer_pool.deinit();
 
     // Destroy engine
     allocator.destroy(self);
@@ -295,13 +313,18 @@ fn startAccept(self: *Engine, socket: posix.socket_t) !void {
 
 /// Start reading from a connection
 fn startRead(self: *Engine, connection: *Connection) !void {
+    // Ensure connection has a read buffer
+    if (connection.read_buffer == null) {
+        connection.read_buffer = try self.read_buffer_pool.acquire();
+    }
+
     self.aio_io.recv(
         *Engine,
         self,
         readCallback,
         &connection.read_completion,
         connection.fd,
-        self.read_buffer,
+        connection.read_buffer.?,
     );
 }
 
@@ -337,9 +360,25 @@ fn handleAcceptedConnection(self: *Engine, client_fd: posix.socket_t) void {
     connection.setSocket(client_fd);
     connection.state = .connected;
 
+    // Acquire read buffer from pool
+    connection.read_buffer = self.read_buffer_pool.acquire() catch |err| {
+        std.log.err("Failed to acquire read buffer: {}", .{err});
+        self.mutex.lock();
+        defer self.mutex.unlock();
+        self.connection_pool.destroy(@alignCast(connection));
+        posix.close(client_fd);
+        return;
+    };
+
     // Add to managed connections (this doesn't need mutex protection)
     self.connections.put(self.allocator, client_fd, connection) catch |err| {
         std.log.err("Failed to add connection: {}", .{err});
+
+        // Return read buffer to pool before destroying connection
+        if (connection.read_buffer) |buffer| {
+            self.read_buffer_pool.release(buffer);
+            connection.read_buffer = null;
+        }
 
         // Destroy connection with mutex protection
         self.mutex.lock();
@@ -404,6 +443,12 @@ fn closeConnection(self: *Engine, connection: *Connection) void {
     if (connection.fd != -1) {
         self.aio_io.close_socket(connection.fd);
         _ = self.connections.remove(connection.fd);
+
+        // Return read buffer to pool before destroying connection
+        if (connection.read_buffer) |buffer| {
+            self.read_buffer_pool.release(buffer);
+            connection.read_buffer = null;
+        }
 
         // Only protect the actual destroy operation
         self.mutex.lock();
@@ -579,7 +624,12 @@ fn readCallback(
         // Get the connection from the completion
         const connection = engine.getConnection(completion.operation.recv.socket);
         if (connection) |conn| {
-            engine.handleReadCompletion(conn, engine.read_buffer[0..bytes_read]);
+            if (conn.read_buffer) |buffer| {
+                engine.handleReadCompletion(conn, buffer[0..bytes_read]);
+            } else {
+                std.log.err("Connection read_buffer is null in readCallback", .{});
+                engine.closeConnection(conn);
+            }
         }
     } else {
         // Connection closed by peer
