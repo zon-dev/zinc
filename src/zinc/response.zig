@@ -263,18 +263,23 @@ fn sendAsync(self: *Self, content: []const u8, options: RespondOptions, engine_p
     // and BufferPool is not thread-safe (designed for single-threaded event loop)
     const response_data = try engine.allocator.alloc(u8, total_size);
     errdefer engine.allocator.free(response_data);
-    
+
     @memcpy(response_data[0..header_size], h.items);
     if (body_size > 0) {
         @memcpy(response_data[header_size..][0..body_size], content);
     }
 
     // Use AIO to send the response asynchronously
-    // Buffer will be freed in handleWriteCompletionWorker after write completes
+    // queueWriteToWorker will copy the data, so we can free the original buffer here
+    // The copied buffer will be freed in handleWriteCompletionWorker after write completes
     engine.startWrite(connection, response_data) catch |err| {
         engine.allocator.free(response_data);
         return err;
     };
+
+    // Free the original buffer since queueWriteToWorker has copied it
+    // The copied buffer will be managed by the write queue and freed after completion
+    engine.allocator.free(response_data);
 }
 
 pub fn write(self: *Self, content: []const u8, options: RespondOptions) anyerror!void {

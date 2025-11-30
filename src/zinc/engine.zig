@@ -158,7 +158,7 @@ pub const Worker = struct {
         while (self.write_queue.pop()) |write_op| {
             allocator.free(write_op.data);
         }
-        
+
         // Free any remaining queued requests
         while (self.request_queue.pop()) |ctx| {
             allocator.free(ctx.data);
@@ -229,7 +229,6 @@ event_wait_timeout_ns: u63 = 1 * std.time.ns_per_ms,
 workers: []Worker = undefined,
 worker_threads: ?[]std.Thread = null, // null if threads haven't been started yet
 threads_started: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
-
 
 /// Create a new engine.
 fn create(conf: Config.Engine) anyerror!*Engine {
@@ -317,28 +316,25 @@ fn create(conf: Config.Engine) anyerror!*Engine {
         // Calculate reasonable buffer counts to avoid excessive memory usage
         // For high thread counts, use smaller initial pools that can grow as needed
         const estimated_conns_per_thread = @max(engine.max_conn / conf.num_threads, 100);
-        
+
         // Calculate initial read buffers per thread
         const initial_read_buffers = if (conf.initial_read_buffers_per_thread) |count|
             count
         else
             @min(estimated_conns_per_thread, conf.max_initial_read_buffers);
         const max_read_buffers = initial_read_buffers * conf.max_read_buffers_multiplier;
-        
+
         worker.read_buffer_pool = try BufferPool.init(
             allocator,
             conf.read_buffer_len,
             initial_read_buffers,
             max_read_buffers,
         );
-        
+
         // Write buffer pool: calculate based on read buffers ratio
-        const initial_write_buffers = @min(
-            @as(usize, @intFromFloat(@as(f64, @floatFromInt(initial_read_buffers)) * conf.initial_write_buffers_ratio)),
-            conf.max_initial_write_buffers
-        );
+        const initial_write_buffers = @min(@as(usize, @intFromFloat(@as(f64, @floatFromInt(initial_read_buffers)) * conf.initial_write_buffers_ratio)), conf.max_initial_write_buffers);
         const max_write_buffers = initial_write_buffers * conf.max_write_buffers_multiplier;
-        
+
         worker.write_buffer_pool = try BufferPool.init(
             allocator,
             conf.write_buffer_size,
@@ -472,11 +468,15 @@ fn workerThread(worker: *Worker) void {
             startWriteWorker(worker, write_op.connection, write_op.data) catch |write_err| {
                 std.log.err("Failed to start queued write: {}", .{write_err});
                 engine.allocator.free(write_op.data);
+                engine.allocator.destroy(write_op);
+                continue;
             };
+            // Free WriteOp structure after queuing the write operation
+            // The data buffer will be freed in handleWriteCompletionWorker after write completes
+            engine.allocator.destroy(write_op);
             writes_processed += 1;
         }
-        
-        
+
         // Process request queue in batches to reduce Thread.Pool spawn overhead
         // Process ALL available requests immediately, even if less than batch size
         // This ensures requests don't wait for batch to fill
@@ -486,12 +486,12 @@ fn workerThread(worker: *Worker) void {
                 std.log.err("Failed to submit request batch: {}", .{err});
             };
         }
-        
+
         // Run AIO event loop with balanced timeout
         // Use reasonable timeout to balance latency and CPU usage
         // Process writes immediately, but don't spin CPU with very short timeouts
         const timeout = engine.event_wait_timeout_ns;
-        
+
         worker.aio_io.run_for_ns(timeout) catch |err| {
             if (err != error.TimeoutTooBig and !engine.stopping.isSet()) {
                 std.log.err("AIO run_for_ns error: {}", .{err});
@@ -561,7 +561,7 @@ pub fn startWrite(self: *Engine, connection: *Connection, data: []const u8) !voi
         }
         return error.ConnectionNotFound;
     };
-    
+
     return queueWriteToWorker(worker, connection, data);
 }
 
@@ -575,7 +575,7 @@ fn queueWriteToWorker(worker: *Worker, connection: *Connection, data: []const u8
         return err; // Fast failure path
     };
     @memcpy(data_copy, data);
-    
+
     // Create write operation - use single allocation for WriteOp
     const write_op = worker.engine.allocator.create(WriteOp) catch |err| {
         worker.engine.allocator.free(data_copy); // Cleanup on failure
@@ -585,7 +585,7 @@ fn queueWriteToWorker(worker: *Worker, connection: *Connection, data: []const u8
         .connection = connection,
         .data = data_copy,
     };
-    
+
     // Queue write operation (worker thread will process it in event loop)
     // QueueType.push is lock-free and very fast
     worker.write_queue.push(write_op);
@@ -771,7 +771,7 @@ fn handleReadCompletionWorker(worker: *Worker, connection: *Connection, data: []
     // Worker thread will batch requests and submit them together
     worker.request_queue.push(ctx);
     const queue_size = worker.request_queue_size.fetchAdd(1, .monotonic) + 1;
-    
+
     // Submit batch if queue reaches batch size OR if this is the first request in queue
     // This ensures requests are processed immediately even if batch doesn't fill
     const batch_size = 20;
@@ -794,7 +794,7 @@ fn submitRequestBatch(worker: *Worker, engine: *Engine) !void {
     const batch_size = 20; // Optimal batch size for reducing spawn overhead
     var batch: [batch_size]*RequestContext = undefined;
     var batch_count: usize = 0;
-    
+
     // Collect up to batch_size requests, but process whatever is available
     // This ensures requests don't wait for batch to fill
     while (batch_count < batch_size) {
@@ -806,7 +806,7 @@ fn submitRequestBatch(worker: *Worker, engine: *Engine) !void {
             break; // No more requests
         }
     }
-    
+
     // Submit batch if we have requests (even if less than batch_size)
     // This ensures requests are processed immediately, not waiting for batch to fill
     if (batch_count > 0) {
@@ -842,12 +842,12 @@ fn processRequestBatch(batch: []*RequestContext) void {
     if (batch.len == 0) {
         return;
     }
-    
+
     // Process all requests in batch
     for (batch) |ctx| {
         processRequestAsync(ctx);
     }
-    
+
     // Free batch array
     const engine = batch[0].worker.engine;
     engine.allocator.free(batch);
@@ -909,7 +909,7 @@ fn closeConnectionWorker(worker: *Worker, connection: *Connection) void {
     const engine = worker.engine;
     if (connection.fd != -1) {
         const fd = connection.fd;
-        
+
         // Close socket first - this will cancel any pending operations
         // Note: close_socket should handle cleanup of pending operations
         worker.aio_io.close_socket(fd);
@@ -1123,7 +1123,7 @@ fn readCallbackWorker(
         std.log.err("readCallbackWorker: completion operation is not recv", .{});
         return;
     }
-    
+
     const bytes_read = result catch {
         // Handle read error
         const connection = getConnectionWorker(worker, completion.operation.recv.socket);
@@ -1174,15 +1174,15 @@ fn writeCallbackWorker(
         std.log.err("writeCallbackWorker: completion operation is not send", .{});
         return;
     }
-    
+
     const bytes_written = result catch {
         // Handle write error
         const connection = getConnectionWorker(worker, completion.operation.send.socket);
         if (connection) |conn| {
             if (conn.write_buffer) |buffer| {
-                // Return buffer to pool (release always succeeds)
-                // If buffer is not from pool, it will be freed by the pool's release logic
-                worker.write_buffer_pool.release(buffer);
+                // Free buffer allocated in queueWriteToWorker (not from pool)
+                // Buffer was allocated with engine.allocator, not from write_buffer_pool
+                worker.engine.allocator.free(buffer);
                 conn.write_buffer = null;
             }
             closeConnectionWorker(worker, conn);
