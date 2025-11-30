@@ -154,6 +154,24 @@ fn sendRequest(address: std.Io.net.IpAddress) !void {
         if (bytes_read == 0) break; // Connection closed
         total_read += bytes_read;
     }
+    
+    // Verify we received a response
+    if (total_read == 0) {
+        return error.NoResponse;
+    }
+    
+    // Verify it's a valid HTTP response (starts with "HTTP/")
+    if (total_read < 5 or !std.mem.eql(u8, buffer[0..5], "HTTP/")) {
+        return error.InvalidResponse;
+    }
+    
+    // Verify status code is 200 (look for "200" after "HTTP/1.x ")
+    // HTTP/1.1 200 OK\r\n
+    const status_line_end = std.mem.indexOf(u8, buffer[0..total_read], "\r\n") orelse return error.InvalidResponse;
+    const status_line = buffer[0..status_line_end];
+    if (std.mem.indexOf(u8, status_line, " 200 ") == null) {
+        return error.BadStatusCode;
+    }
 }
 
 fn plaintext(ctx: *zinc.Context) anyerror!void {

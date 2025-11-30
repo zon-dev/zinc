@@ -80,14 +80,7 @@ pub const Engine = struct {
     /// Too long timeout causes high latency.
     event_wait_timeout_ns: u63 = 1 * std.time.ns_per_ms,
 
-    /// Request batch size for Thread.Pool processing. Default is 100.
-    /// Batching requests reduces Thread.Pool spawn overhead.
-    request_batch_size: usize = 100,
-
-    /// Minimum batch size to submit immediately. Default is 10.
-    /// If batch reaches this size, submit immediately even if not full.
-    /// This reduces latency for small batches while still benefiting from batching.
-    request_min_batch_size: usize = 1000,
+    // Removed request_batch_size - requests processed directly in worker threads
 
     ///
     tick_ms: u63 = 10,

@@ -258,65 +258,21 @@ fn sendAsync(self: *Self, content: []const u8, options: RespondOptions, engine_p
     const body_size = if (req_method != .HEAD) content.len else 0;
     const total_size = header_size + body_size;
 
-    // Get worker from connection for buffer pool access
-    const worker = connection.worker orelse {
-        // Fallback: allocate directly if worker not set (shouldn't happen)
-        const response_data = try engine.allocator.alloc(u8, total_size);
-        errdefer engine.allocator.free(response_data);
-        @memcpy(response_data[0..header_size], h.items);
-        if (body_size > 0) {
-            @memcpy(response_data[header_size..][0..body_size], content);
-        }
-        engine.startWrite(connection, response_data) catch |err| {
-            engine.allocator.free(response_data);
-            return err;
-        };
-        return;
-    };
-
-    // Try to get buffer from write buffer pool (much faster than allocation)
-    var response_data = worker.write_buffer_pool.acquire() catch {
-        // Pool exhausted or buffer too small - allocate directly
-        // This should be rare if pool is sized correctly
-        const fallback_buffer = try engine.allocator.alloc(u8, total_size);
-        errdefer engine.allocator.free(fallback_buffer);
-        @memcpy(fallback_buffer[0..header_size], h.items);
-        if (body_size > 0) {
-            @memcpy(fallback_buffer[header_size..][0..body_size], content);
-        }
-        engine.startWrite(connection, fallback_buffer) catch |err2| {
-            engine.allocator.free(fallback_buffer);
-            return err2;
-        };
-        return;
-    };
-
-    // Check if buffer is large enough
-    if (response_data.len < total_size) {
-        // Buffer too small - return to pool and allocate larger one
-        worker.write_buffer_pool.release(response_data);
-        const large_buffer = try engine.allocator.alloc(u8, total_size);
-        errdefer engine.allocator.free(large_buffer);
-        @memcpy(large_buffer[0..header_size], h.items);
-        if (body_size > 0) {
-            @memcpy(large_buffer[header_size..][0..body_size], content);
-        }
-        engine.startWrite(connection, large_buffer) catch |err| {
-            engine.allocator.free(large_buffer);
-            return err;
-        };
-        return;
-    }
-
-    // Use the buffer from pool (will be returned to pool in writeCallback)
+    // Allocate response buffer directly
+    // Cannot use worker.write_buffer_pool here because sendAsync is called from Thread.Pool
+    // and BufferPool is not thread-safe (designed for single-threaded event loop)
+    const response_data = try engine.allocator.alloc(u8, total_size);
+    errdefer engine.allocator.free(response_data);
+    
     @memcpy(response_data[0..header_size], h.items);
     if (body_size > 0) {
         @memcpy(response_data[header_size..][0..body_size], content);
     }
 
     // Use AIO to send the response asynchronously
-    engine.startWrite(connection, response_data[0..total_size]) catch |err| {
-        worker.write_buffer_pool.release(response_data);
+    // Buffer will be freed in handleWriteCompletionWorker after write completes
+    engine.startWrite(connection, response_data) catch |err| {
+        engine.allocator.free(response_data);
         return err;
     };
 }
