@@ -120,6 +120,11 @@ pub const Worker = struct {
     // Worker thread processes this queue in its event loop
     write_queue: QueueType(WriteOp) = undefined,
 
+    // Request queue for batching requests to reduce Thread.Pool spawn overhead
+    // Requests are batched before submitting to Thread.Pool
+    request_queue: QueueType(RequestContext) = undefined,
+    request_queue_size: std.atomic.Value(usize) = std.atomic.Value(usize).init(0),
+
     // Reference to shared engine (read-only after init)
     engine: *Engine = undefined,
 
@@ -152,6 +157,12 @@ pub const Worker = struct {
         // Free any remaining queued writes
         while (self.write_queue.pop()) |write_op| {
             allocator.free(write_op.data);
+        }
+        
+        // Free any remaining queued requests
+        while (self.request_queue.pop()) |ctx| {
+            allocator.free(ctx.data);
+            allocator.destroy(ctx);
         }
 
         if (self.accept_completions.len > 0) {
@@ -296,6 +307,8 @@ fn create(conf: Config.Engine) anyerror!*Engine {
             .listener_socket = listener.socket_fd,
             .arena = std.heap.ArenaAllocator.init(allocator),
             .write_queue = QueueType(WriteOp).init(.{ .name = "write_queue" }),
+            .request_queue = QueueType(RequestContext).init(.{ .name = "request_queue" }),
+            .request_queue_size = std.atomic.Value(usize).init(0),
             .engine = engine,
         };
 
@@ -448,24 +461,42 @@ fn workerThread(worker: *Worker) void {
     }
 
     // Event loop for this worker thread
-    // Use reasonable timeout to balance latency and CPU usage
-    // Too short timeout causes excessive CPU usage and system calls
-    // Too long timeout causes high latency
+    // Process write queue first to minimize latency for queued writes
+    // Then run AIO event loop with reasonable timeout
     while (!engine.stopping.isSet()) {
-        worker.aio_io.run_for_ns(engine.event_wait_timeout_ns) catch |err| {
-            if (err != error.TimeoutTooBig and !engine.stopping.isSet()) {
-                std.log.err("AIO run_for_ns error: {}", .{err});
-            }
-        };
-        
-        // Process queued write operations from Thread.Pool threads
-        // This allows Thread.Pool threads to submit writes without directly accessing aio_io
+        // Process ALL queued write operations from Thread.Pool threads FIRST
+        // This minimizes latency - writes are processed immediately when available
+        // Process all available writes as fast as possible for maximum throughput
+        var writes_processed: usize = 0;
         while (worker.write_queue.pop()) |write_op| {
             startWriteWorker(worker, write_op.connection, write_op.data) catch |write_err| {
                 std.log.err("Failed to start queued write: {}", .{write_err});
                 engine.allocator.free(write_op.data);
             };
+            writes_processed += 1;
         }
+        
+        
+        // Process request queue in batches to reduce Thread.Pool spawn overhead
+        // Process ALL available requests immediately, even if less than batch size
+        // This ensures requests don't wait for batch to fill
+        const queue_size_before = worker.request_queue_size.load(.monotonic);
+        if (queue_size_before > 0) {
+            submitRequestBatch(worker, engine) catch |err| {
+                std.log.err("Failed to submit request batch: {}", .{err});
+            };
+        }
+        
+        // Run AIO event loop with balanced timeout
+        // Use reasonable timeout to balance latency and CPU usage
+        // Process writes immediately, but don't spin CPU with very short timeouts
+        const timeout = engine.event_wait_timeout_ns;
+        
+        worker.aio_io.run_for_ns(timeout) catch |err| {
+            if (err != error.TimeoutTooBig and !engine.stopping.isSet()) {
+                std.log.err("AIO run_for_ns error: {}", .{err});
+            }
+        };
     }
 }
 
@@ -536,19 +567,27 @@ pub fn startWrite(self: *Engine, connection: *Connection, data: []const u8) !voi
 
 /// Queue write operation to worker thread (thread-safe)
 /// This allows Thread.Pool threads to submit writes without directly accessing aio_io
+/// Optimized for performance: minimal allocations and fast queue operations
 fn queueWriteToWorker(worker: *Worker, connection: *Connection, data: []const u8) !void {
     // Copy data since it may be freed before worker thread processes it
-    const data_copy = try worker.engine.allocator.alloc(u8, data.len);
+    // Use try/catch for fast path - allocation should rarely fail
+    const data_copy = worker.engine.allocator.alloc(u8, data.len) catch |err| {
+        return err; // Fast failure path
+    };
     @memcpy(data_copy, data);
     
-    // Create write operation
-    const write_op = try worker.engine.allocator.create(WriteOp);
+    // Create write operation - use single allocation for WriteOp
+    const write_op = worker.engine.allocator.create(WriteOp) catch |err| {
+        worker.engine.allocator.free(data_copy); // Cleanup on failure
+        return err;
+    };
     write_op.* = .{
         .connection = connection,
         .data = data_copy,
     };
     
     // Queue write operation (worker thread will process it in event loop)
+    // QueueType.push is lock-free and very fast
     worker.write_queue.push(write_op);
 }
 
@@ -691,6 +730,7 @@ fn handleAcceptedConnection(self: *Engine, client_fd: posix.socket_t) void {
 
 /// Request context for async processing
 const RequestContext = struct {
+    link: QueueType(@This()).Link = .{},
     worker: *Worker,
     connection: *Connection,
     data: []u8,
@@ -727,16 +767,90 @@ fn handleReadCompletionWorker(worker: *Worker, connection: *Connection, data: []
         .data = data_copy,
     };
 
-    // Submit to thread pool for async processing - don't block event loop
-    engine.threads.spawn(processRequestAsync, .{ctx}) catch |spawn_err| {
-        std.log.err("Failed to spawn request: {}", .{spawn_err});
-        engine.allocator.free(data_copy);
-        engine.allocator.destroy(ctx);
-        closeConnectionWorker(worker, connection);
-    };
+    // Queue request for batch processing to reduce Thread.Pool spawn overhead
+    // Worker thread will batch requests and submit them together
+    worker.request_queue.push(ctx);
+    const queue_size = worker.request_queue_size.fetchAdd(1, .monotonic) + 1;
+    
+    // Submit batch if queue reaches batch size OR if this is the first request in queue
+    // This ensures requests are processed immediately even if batch doesn't fill
+    const batch_size = 20;
+    if (queue_size >= batch_size or queue_size == 1) {
+        // Queue reached batch size OR first request - submit batch immediately
+        // This ensures low latency: first request doesn't wait, and batches are processed promptly
+        submitRequestBatch(worker, engine) catch |err| {
+            std.log.err("Failed to submit request batch: {}", .{err});
+        };
+    }
 
-    // Event loop continues immediately - request will be processed by thread pool
+    // Event loop continues immediately - request will be processed in batch by thread pool
     // The read buffer can be reused for the next read operation
+}
+
+/// Submit queued requests to Thread.Pool in batches
+/// Reduces spawn overhead by batching multiple requests
+/// Processes ALL available requests immediately, even if less than batch size
+fn submitRequestBatch(worker: *Worker, engine: *Engine) !void {
+    const batch_size = 20; // Optimal batch size for reducing spawn overhead
+    var batch: [batch_size]*RequestContext = undefined;
+    var batch_count: usize = 0;
+    
+    // Collect up to batch_size requests, but process whatever is available
+    // This ensures requests don't wait for batch to fill
+    while (batch_count < batch_size) {
+        if (worker.request_queue.pop()) |ctx| {
+            batch[batch_count] = ctx;
+            batch_count += 1;
+            _ = worker.request_queue_size.fetchSub(1, .monotonic);
+        } else {
+            break; // No more requests
+        }
+    }
+    
+    // Submit batch if we have requests (even if less than batch_size)
+    // This ensures requests are processed immediately, not waiting for batch to fill
+    if (batch_count > 0) {
+        if (batch_count == 1) {
+            // Single request - submit directly for minimal latency
+            engine.threads.spawn(processRequestAsync, .{batch[0]}) catch |spawn_err| {
+                std.log.err("Failed to spawn request: {}", .{spawn_err});
+                engine.allocator.free(batch[0].data);
+                engine.allocator.destroy(batch[0]);
+            };
+        } else {
+            // Multiple requests - submit as batch to reduce spawn overhead
+            const batch_copy = try engine.allocator.alloc(*RequestContext, batch_count);
+            @memcpy(batch_copy, batch[0..batch_count]);
+            engine.threads.spawn(processRequestBatch, .{batch_copy}) catch {
+                // Fallback: process individually
+                for (batch[0..batch_count]) |ctx| {
+                    engine.threads.spawn(processRequestAsync, .{ctx}) catch |spawn_err2| {
+                        std.log.err("Failed to spawn request: {}", .{spawn_err2});
+                        engine.allocator.free(ctx.data);
+                        engine.allocator.destroy(ctx);
+                    };
+                }
+                engine.allocator.free(batch_copy);
+            };
+        }
+    }
+}
+
+/// Process a batch of requests in thread pool
+/// Reduces spawn overhead by processing multiple requests together
+fn processRequestBatch(batch: []*RequestContext) void {
+    if (batch.len == 0) {
+        return;
+    }
+    
+    // Process all requests in batch
+    for (batch) |ctx| {
+        processRequestAsync(ctx);
+    }
+    
+    // Free batch array
+    const engine = batch[0].worker.engine;
+    engine.allocator.free(batch);
 }
 
 /// Process HTTP request asynchronously in thread pool
