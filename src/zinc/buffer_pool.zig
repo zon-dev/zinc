@@ -2,12 +2,12 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 
 /// Buffer pool for managing read buffers
-/// Uses a mutex-protected ArrayList for thread-safe buffer management
+/// Lock-free implementation for single-threaded event loop
 pub const BufferPool = struct {
     allocator: Allocator,
     buffer_size: usize,
     available: std.array_list.Managed([]u8),
-    mutex: std.Thread.Mutex,
+    // Removed mutex - single-threaded event loop, no locking needed
     total_allocated: usize = 0,
     max_buffers: usize,
 
@@ -17,7 +17,6 @@ pub const BufferPool = struct {
             .allocator = allocator,
             .buffer_size = buffer_size,
             .available = std.array_list.Managed([]u8).init(allocator),
-            .mutex = .{},
             .max_buffers = max_buffers,
         };
 
@@ -32,34 +31,38 @@ pub const BufferPool = struct {
     }
 
     /// Acquire a buffer from the pool
-    /// Returns a buffer from the pool if available, or allocates a new one if under max limit
+    /// Returns a buffer from the pool if available, or allocates a new one
+    /// Lock-free implementation for single-threaded event loop
+    /// Always succeeds - allows dynamic growth beyond max_buffers to handle bursts
     pub fn acquire(self: *BufferPool) ![]u8 {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        // No mutex needed - single-threaded event loop
 
         // Try to get a buffer from the pool (pop from the end)
         if (self.available.items.len > 0) {
             return self.available.orderedRemove(self.available.items.len - 1);
         }
 
-        // Pool is empty, allocate a new buffer if we haven't reached max
-        if (self.total_allocated < self.max_buffers) {
-            const buffer = try self.allocator.alloc(u8, self.buffer_size);
-            self.total_allocated += 1;
-            return buffer;
+        // Pool is empty, allocate a new buffer
+        // Allow dynamic growth beyond max_buffers to handle connection bursts
+        // This prevents connection rejections during high load
+        const buffer = try self.allocator.alloc(u8, self.buffer_size);
+        self.total_allocated += 1;
+
+        // Log warning only if we significantly exceed the soft limit
+        // This helps identify when buffer pool sizing needs adjustment
+        if (self.total_allocated > self.max_buffers and
+            self.total_allocated % 100 == 0)
+        { // Log every 100 buffers to avoid spam
+            std.log.warn("Buffer pool exceeded soft limit: {}/{} buffers allocated", .{ self.total_allocated, self.max_buffers });
         }
 
-        // Max buffers reached, wait for one to become available
-        // In practice, this should rarely happen if max_buffers is set correctly
-        // For now, we'll allocate anyway but log a warning
-        std.log.warn("Buffer pool exhausted, allocating new buffer beyond max limit", .{});
-        return try self.allocator.alloc(u8, self.buffer_size);
+        return buffer;
     }
 
     /// Release a buffer back to the pool
+    /// Lock-free implementation for single-threaded event loop
     pub fn release(self: *BufferPool, buffer: []u8) void {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        // No mutex needed - single-threaded event loop
 
         // Return buffer to pool
         self.available.append(buffer) catch {
@@ -69,9 +72,9 @@ pub const BufferPool = struct {
     }
 
     /// Deinitialize the buffer pool and free all buffers
+    /// Lock-free implementation for single-threaded event loop
     pub fn deinit(self: *BufferPool) void {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        // No mutex needed - single-threaded event loop
 
         // Free all buffers in the pool
         for (self.available.items) |buffer| {

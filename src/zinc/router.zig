@@ -432,11 +432,26 @@ fn getRouteTree(self: *Self, path: []const u8) anyerror!*RouteTree {
 }
 
 pub fn getRoute(self: *Self, method: std.http.Method, target: []const u8) anyerror!*Route {
-    var url = URL.init(.{ .allocator = self.allocator });
-    defer url.deinit();
-
-    const url_target = try url.parseUrl(target);
-    const path: []const u8 = url_target.path;
+    // Optimized: For simple paths (no query string), extract path directly
+    // This avoids expensive URL parsing for common cases like "/plaintext"
+    const path: []const u8 = if (std.mem.indexOfScalar(u8, target, '?')) |_| blk: {
+        // Has query string, need to parse URL
+        var url = URL.init(.{ .allocator = self.allocator });
+        defer url.deinit();
+        const url_target = try url.parseUrl(target);
+        break :blk url_target.path;
+    } else blk: {
+        // No query string, path is the target (or target up to space/fragment)
+        // Handle cases like "GET /plaintext HTTP/1.1" -> "/plaintext"
+        if (std.mem.indexOfScalar(u8, target, ' ')) |space_pos| {
+            break :blk target[0..space_pos];
+        }
+        // Also handle fragments (though rare in HTTP requests)
+        if (std.mem.indexOfScalar(u8, target, '#')) |frag_pos| {
+            break :blk target[0..frag_pos];
+        }
+        break :blk target;
+    };
 
     const rTree = try self.getRouteTree(path);
 

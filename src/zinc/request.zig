@@ -10,7 +10,9 @@ allocator: std.mem.Allocator,
 // Connection is now just a socket fd, not used directly
 conn: std.posix.socket_t = undefined,
 
-header: std.StringArrayHashMap([]u8) = undefined,
+// Lazy initialization: only initialize header HashMap when actually needed
+header: ?std.StringArrayHashMap([]u8) = null,
+header_initialized: bool = false,
 status: http.Status = http.Status.ok,
 
 target: []const u8 = "",
@@ -25,7 +27,8 @@ pub fn init(self: Self) anyerror!*Request {
     errdefer self.allocator.destroy(request);
     request.* = .{
         .allocator = self.allocator,
-        .header = std.StringArrayHashMap([]u8).init(self.allocator),
+        .header = null, // Lazy initialization - only init when needed
+        .header_initialized = false,
         .status = self.status,
         .head = self.head,
         .conn = self.conn,
@@ -40,7 +43,9 @@ pub fn init(self: Self) anyerror!*Request {
 }
 
 pub fn deinit(self: *Request) void {
-    self.header.deinit();
+    if (self.header_initialized) {
+        self.header.?.deinit();
+    }
 
     const allocator = self.allocator;
     allocator.destroy(self);
@@ -60,12 +65,21 @@ pub fn reset(self: *Request) void {
     self.status = http.Status.ok;
 }
 
+fn ensureHeaderInitialized(self: *Request) !void {
+    if (!self.header_initialized) {
+        self.header = std.StringArrayHashMap([]u8).init(self.allocator);
+        self.header_initialized = true;
+    }
+}
+
 pub fn setHeader(self: *Request, key: []const u8, value: []const u8) anyerror!void {
-    try self.header.put(key, @constCast(value));
+    try self.ensureHeaderInitialized();
+    try self.header.?.put(key, @constCast(value));
 }
 
 pub fn getHeader(self: *Request, key: []const u8) ?[]const u8 {
-    return self.header.get(key);
+    if (!self.header_initialized) return null;
+    return self.header.?.get(key);
 }
 
 pub fn setStatus(self: *Request, status: http.Status) void {

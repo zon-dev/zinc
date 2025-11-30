@@ -258,21 +258,65 @@ fn sendAsync(self: *Self, content: []const u8, options: RespondOptions, engine_p
     const body_size = if (req_method != .HEAD) content.len else 0;
     const total_size = header_size + body_size;
 
-    // Allocate single buffer for entire response (will be freed in writeCallback)
-    const response_data = try engine.allocator.alloc(u8, total_size);
-    errdefer engine.allocator.free(response_data);
+    // Get worker from connection for buffer pool access
+    const worker = connection.worker orelse {
+        // Fallback: allocate directly if worker not set (shouldn't happen)
+        const response_data = try engine.allocator.alloc(u8, total_size);
+        errdefer engine.allocator.free(response_data);
+        @memcpy(response_data[0..header_size], h.items);
+        if (body_size > 0) {
+            @memcpy(response_data[header_size..][0..body_size], content);
+        }
+        engine.startWrite(connection, response_data) catch |err| {
+            engine.allocator.free(response_data);
+            return err;
+        };
+        return;
+    };
 
-    // Copy headers
+    // Try to get buffer from write buffer pool (much faster than allocation)
+    var response_data = worker.write_buffer_pool.acquire() catch {
+        // Pool exhausted or buffer too small - allocate directly
+        // This should be rare if pool is sized correctly
+        const fallback_buffer = try engine.allocator.alloc(u8, total_size);
+        errdefer engine.allocator.free(fallback_buffer);
+        @memcpy(fallback_buffer[0..header_size], h.items);
+        if (body_size > 0) {
+            @memcpy(fallback_buffer[header_size..][0..body_size], content);
+        }
+        engine.startWrite(connection, fallback_buffer) catch |err2| {
+            engine.allocator.free(fallback_buffer);
+            return err2;
+        };
+        return;
+    };
+
+    // Check if buffer is large enough
+    if (response_data.len < total_size) {
+        // Buffer too small - return to pool and allocate larger one
+        worker.write_buffer_pool.release(response_data);
+        const large_buffer = try engine.allocator.alloc(u8, total_size);
+        errdefer engine.allocator.free(large_buffer);
+        @memcpy(large_buffer[0..header_size], h.items);
+        if (body_size > 0) {
+            @memcpy(large_buffer[header_size..][0..body_size], content);
+        }
+        engine.startWrite(connection, large_buffer) catch |err| {
+            engine.allocator.free(large_buffer);
+            return err;
+        };
+        return;
+    }
+
+    // Use the buffer from pool (will be returned to pool in writeCallback)
     @memcpy(response_data[0..header_size], h.items);
-
-    // Copy body if needed
     if (body_size > 0) {
         @memcpy(response_data[header_size..][0..body_size], content);
     }
 
     // Use AIO to send the response asynchronously
-    engine.startWrite(connection, response_data) catch |err| {
-        engine.allocator.free(response_data);
+    engine.startWrite(connection, response_data[0..total_size]) catch |err| {
+        worker.write_buffer_pool.release(response_data);
         return err;
     };
 }
@@ -411,7 +455,13 @@ pub fn setStatus(self: *Self, status: std.http.Status) void {
     self.status = status;
 }
 
+fn ensureHeaderInitialized(self: *Self) !void {
+    // Header is always initialized in init(), so this is a no-op
+    _ = self;
+}
+
 pub fn setHeader(self: *Self, key: []const u8, value: []const u8) anyerror!void {
+    try self.ensureHeaderInitialized();
     try self.header.append(.{ .name = key, .value = value });
 }
 
@@ -431,17 +481,29 @@ pub fn isKeepAlive(self: *Self) bool {
 }
 
 pub fn setBody(self: *Self, body: []const u8) anyerror!void {
-    var new_body = std.array_list.Managed(u8).init(self.allocator);
-    defer self.allocator.free(new_body.items);
-
+    // Free old body if exists
     if (self.body) |old_body| {
-        defer self.allocator.free(old_body);
-        try new_body.appendSlice(old_body);
+        self.allocator.free(old_body);
+        self.body = null; // Clear before allocating new one
     }
 
-    try new_body.appendSlice(body);
-    const slice = try new_body.toOwnedSlice();
+    // Allocate and copy new body
+    const slice = try self.allocator.dupe(u8, body);
     self.body = slice;
+}
+
+/// Append to existing body (for middleware chain support)
+pub fn appendBody(self: *Self, content: []const u8) anyerror!void {
+    if (self.body) |existing_body| {
+        // Append mode: concatenate with existing body
+        const new_body = try std.fmt.allocPrint(self.allocator, "{s}{s}", .{ existing_body, content });
+        self.allocator.free(existing_body);
+        self.body = new_body;
+    } else {
+        // No existing body, just set it
+        const slice = try self.allocator.dupe(u8, content);
+        self.body = slice;
+    }
 }
 
 pub fn sendStatus(self: *Self, status: Status) anyerror!void {

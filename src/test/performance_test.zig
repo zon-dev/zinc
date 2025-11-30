@@ -30,7 +30,7 @@ test "performance benchmark" {
     const address = try Io.net.IpAddress.parse("127.0.0.1", port);
 
     // Benchmark: Send 1000 requests
-    const num_requests = 1000;
+    const num_requests = 10000;
     var timer = try std.time.Timer.start();
 
     for (0..num_requests) |_| {

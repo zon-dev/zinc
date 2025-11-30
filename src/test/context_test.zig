@@ -62,7 +62,9 @@ test "context response" {
     try std.testing.expectEqualStrings(ctx.response.body.?, "Hello Zinc!");
 
     try ctx.setHeader("Accept", "application/json");
-    try std.testing.expectEqualStrings(ctx.response.header.items[0].name, "Accept");
+    const headers = ctx.response.getHeaders();
+    try std.testing.expect(headers.len > 0);
+    try std.testing.expectEqualStrings(headers[0].name, "Accept");
 
     try ctx.text("Hi Zinc!", .{ .status = .ok });
     try std.testing.expectEqual(ctx.response.status, .ok);
@@ -116,6 +118,109 @@ test "context postFormMap function signature change" {
     // This tests the function signature change from the recent modifications
     const result = try ctx.postFormMap("user");
     try std.testing.expect(result == null); // Should return null for no content type
+}
+
+test "context json" {
+    const allocator = std.testing.allocator;
+    var ctx = try createContext(allocator, "/");
+    defer ctx.destroy();
+
+    // Test JSON response with simple object
+    const TestData = struct {
+        message: []const u8,
+        count: i32,
+        active: bool,
+    };
+
+    try ctx.json(TestData{
+        .message = "Hello, Zinc!",
+        .count = 42,
+        .active = true,
+    }, .{ .status = .ok });
+
+    try std.testing.expectEqual(ctx.response.status, .ok);
+
+    // Verify Content-Type header
+    const headers = ctx.response.getHeaders();
+    var found_content_type = false;
+    for (headers) |header| {
+        if (std.ascii.eqlIgnoreCase(header.name, "Content-Type")) {
+            try std.testing.expectEqualStrings(header.value, "application/json");
+            found_content_type = true;
+            break;
+        }
+    }
+    try std.testing.expect(found_content_type);
+
+    // Verify JSON body contains expected fields
+    const body = ctx.response.body orelse {
+        return try std.testing.expect(false);
+    };
+    try std.testing.expect(std.mem.indexOf(u8, body, "Hello, Zinc!") != null);
+    try std.testing.expect(std.mem.indexOf(u8, body, "42") != null);
+    try std.testing.expect(std.mem.indexOf(u8, body, "true") != null);
+}
+
+test "context json with nested object" {
+    const allocator = std.testing.allocator;
+    var ctx = try createContext(allocator, "/");
+    defer ctx.destroy();
+
+    // Test JSON response with nested object
+    const NestedData = struct {
+        user: struct {
+            name: []const u8,
+            age: i32,
+        },
+        status: []const u8,
+    };
+
+    try ctx.json(NestedData{
+        .user = .{
+            .name = "Zinc User",
+            .age = 25,
+        },
+        .status = "active",
+    }, .{ .status = .created });
+
+    try std.testing.expectEqual(ctx.response.status, .created);
+
+    // Verify JSON body contains nested fields
+    const body = ctx.response.body orelse {
+        return try std.testing.expect(false);
+    };
+    try std.testing.expect(std.mem.indexOf(u8, body, "Zinc User") != null);
+    try std.testing.expect(std.mem.indexOf(u8, body, "25") != null);
+    try std.testing.expect(std.mem.indexOf(u8, body, "active") != null);
+}
+
+test "context json with array" {
+    const allocator = std.testing.allocator;
+    var ctx = try createContext(allocator, "/");
+    defer ctx.destroy();
+
+    // Test JSON response with array
+    const ArrayData = struct {
+        items: []const []const u8,
+        total: i32,
+    };
+
+    const items = [_][]const u8{ "item1", "item2", "item3" };
+    try ctx.json(ArrayData{
+        .items = &items,
+        .total = 3,
+    }, .{ .status = .ok });
+
+    try std.testing.expectEqual(ctx.response.status, .ok);
+
+    // Verify JSON body contains array elements
+    const body = ctx.response.body orelse {
+        return try std.testing.expect(false);
+    };
+    try std.testing.expect(std.mem.indexOf(u8, body, "item1") != null);
+    try std.testing.expect(std.mem.indexOf(u8, body, "item2") != null);
+    try std.testing.expect(std.mem.indexOf(u8, body, "item3") != null);
+    try std.testing.expect(std.mem.indexOf(u8, body, "3") != null);
 }
 
 fn createContext(allocator: std.mem.Allocator, target: []const u8) anyerror!*Context {

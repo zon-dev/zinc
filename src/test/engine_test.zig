@@ -15,9 +15,9 @@ fn startServer(z: *zinc.Engine) !std.Thread {
     return try std.Thread.spawn(.{}, zinc.Engine.run, .{z});
 }
 
-test "Zinc with std.heap.GeneralPurposeAllocator" {
-    const allocator = std.testing.allocator;
-
+/// Test helper function to verify Zinc works with different allocators
+fn testZincWithAllocator(comptime AllocatorType: type, allocator: AllocatorType, comptime _name: []const u8) !void {
+    _ = _name; // Parameter name for documentation purposes
     var z = try zinc.init(.{
         .allocator = allocator,
         .addr = "127.0.0.1",
@@ -28,11 +28,21 @@ test "Zinc with std.heap.GeneralPurposeAllocator" {
 
     try std.testing.expect(z.getPort() > 0);
     try std.testing.expect(z.num_threads == 1);
+
+    // Test router functionality
+    var router = z.getRouter();
+    try router.get("/test", testHandle);
+    const routes = router.getRoutes();
+    defer routes.deinit();
+    try std.testing.expectEqual(1, routes.items.len);
 }
 
-test "Zinc with std.testing.allocator" {
+/// Test helper function for allocators that need server thread testing
+/// Uses connection retry to verify server is ready instead of nanosleep
+fn testZincWithAllocatorAndServer(comptime AllocatorType: type, allocator: AllocatorType, comptime _name: []const u8) !void {
+    _ = _name; // Parameter name for documentation purposes
     var z = try zinc.init(.{
-        .allocator = std.testing.allocator,
+        .allocator = allocator,
         .addr = "127.0.0.1",
         .port = 0,
         .num_threads = 1,
@@ -41,47 +51,67 @@ test "Zinc with std.testing.allocator" {
 
     try std.testing.expect(z.getPort() > 0);
     try std.testing.expect(z.num_threads == 1);
+
+    // Add a test route
+    var router = z.getRouter();
+    try router.get("/test", testHandle);
+
+    const server_thread = try startServer(z);
+    defer {
+        z.shutdown(0);
+        server_thread.join();
+    }
+
+    // Verify server is ready by attempting to connect (with retry)
+    // This is much faster than nanosleep and actually verifies functionality
+    const port = z.getPort();
+
+    // Convert IPv4 address to sockaddr (simplified for testing)
+    var sa: std.posix.sockaddr.in = undefined;
+    sa.family = std.posix.AF.INET;
+    sa.port = std.mem.nativeToBig(u16, port);
+    // 127.0.0.1 in network byte order
+    sa.addr = std.mem.nativeToBig(u32, 0x7f000001);
+
+    // Try to connect with a few retries (fast, non-blocking)
+    var connected = false;
+    for (0..10) |_| {
+        const sockfd = try std.posix.socket(std.posix.AF.INET, std.posix.SOCK.STREAM | std.posix.SOCK.CLOEXEC, std.posix.IPPROTO.TCP);
+        defer std.posix.close(sockfd);
+
+        const sockaddr: *const std.posix.sockaddr = @ptrCast(&sa);
+        std.posix.connect(sockfd, sockaddr, @sizeOf(std.posix.sockaddr.in)) catch |err| {
+            if (err == error.ConnectionRefused) {
+                // Server not ready yet, continue to next iteration
+                continue;
+            }
+            return err;
+        };
+        connected = true;
+        break;
+    }
+
+    // Verify we could connect (server is ready)
+    try std.testing.expect(connected);
 }
 
-test "Zinc with std.heap.ArenaAllocator" {
+test "Zinc with different allocators" {
+    // Test with std.testing.allocator (GeneralPurposeAllocator with leak detection)
+    try testZincWithAllocator(std.mem.Allocator, std.testing.allocator, "std.testing.allocator");
+
+    // Test with GeneralPurposeAllocator
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+    try testZincWithAllocator(std.mem.Allocator, gpa.allocator(), "std.heap.GeneralPurposeAllocator");
+
+    // Test with ArenaAllocator
     const page_allocator = std.heap.page_allocator;
     var arena = std.heap.ArenaAllocator.init(page_allocator);
-    const allocator = arena.allocator();
+    defer arena.deinit();
+    try testZincWithAllocator(std.mem.Allocator, arena.allocator(), "std.heap.ArenaAllocator");
 
-    var z = try zinc.init(.{
-        .allocator = allocator,
-        .num_threads = 255,
-    });
-    defer z.deinit();
-
-    const server_thread = try startServer(z);
-    // Give server time to start - use posix.nanosleep
-    std.posix.nanosleep(0, 10 * std.time.ns_per_ms);
-    // Shutdown server first
-    z.shutdown(0);
-    // Give server time to stop
-    std.posix.nanosleep(0, 50 * std.time.ns_per_ms);
-    // Then join thread
-    server_thread.join();
-}
-
-test "Zinc with std.heap.page_allocator" {
-    const allocator = std.heap.page_allocator;
-    var z = try zinc.init(.{
-        .allocator = allocator,
-        .num_threads = 255,
-    });
-    defer z.deinit();
-
-    const server_thread = try startServer(z);
-    // Give server time to start - use posix.nanosleep
-    std.posix.nanosleep(0, 10 * std.time.ns_per_ms);
-    // Shutdown server first
-    z.shutdown(0);
-    // Give server time to stop
-    std.posix.nanosleep(0, 50 * std.time.ns_per_ms);
-    // Then join thread
-    server_thread.join();
+    // Test with page_allocator (requires server thread test)
+    try testZincWithAllocatorAndServer(std.mem.Allocator, std.heap.page_allocator, "std.heap.page_allocator");
 }
 
 test "Zinc Server" {

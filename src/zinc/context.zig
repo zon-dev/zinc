@@ -58,6 +58,9 @@ pub fn destroy(self: *Self) void {
     if (self.query_map != null) {
         self.query_map.?.deinit();
     }
+    // Don't deinit handlers - they may be borrowed from route
+    // The route/router will handle deinit of handlers
+    // This prevents double-free when handlers are assigned from route.handlers
 
     // self.io.cancelAll();
 
@@ -139,7 +142,9 @@ pub fn text(self: *Self, content: []const u8, conf: Config.Context) anyerror!voi
         try self.setHeader("Connection", "keep-alive");
     }
     try self.setHeader("Content-Type", "text/plain");
-    try self.setBody(content);
+    // Always append to existing body in middleware chain
+    // This allows middleware to build up the response body
+    try self.response.appendBody(content);
     try self.setStatus(conf.status);
 }
 
@@ -266,14 +271,15 @@ pub fn getHeaders(self: *Self) []std.http.Header {
 }
 
 /// Run the next middleware or handler in the chain.
+/// This increments the index and recursively calls the handler
 pub fn next(self: *Context) anyerror!void {
     self.index += 1;
 
     if (self.index >= self.handlers.items.len) return;
     const handler = self.handlers.items[self.index];
     try handler(self);
-
-    self.index += 1;
+    // After handler returns, if it called next(), the chain continues
+    // If it didn't call next(), we're done with this handler
 }
 
 pub fn redirect(self: *Self, http_status: std.http.Status, url: []const u8) anyerror!void {
@@ -438,13 +444,17 @@ pub fn postFormMap(self: *Self, map_key: []const u8) !?std.StringHashMap([]const
 pub fn handlersProcess(self: *Self) anyerror!void {
     if (self.handlers.items.len == 0) return;
 
-    for (self.handlers.items, 0..) |handler, index| {
-        // Ignore handlers that have already been processed.
-        if (index < self.index) {
-            continue;
-        }
+    // Reset index to start from the beginning
+    self.index = 0;
+
+    // Process handlers sequentially
+    // Each handler can call next() to proceed to the next handler
+    // The first handler is called here, and it can call next() to continue the chain
+    if (self.handlers.items.len > 0) {
+        const handler = self.handlers.items[0];
         try handler(self);
     }
+    // After the chain completes, all handlers have been executed
 }
 
 // pub fn routeHanlde(self: *Self, route: *Route) anyerror!void {
