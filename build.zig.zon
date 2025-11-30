@@ -1,16 +1,16 @@
 .{
     .name = .zinc,
-    .version = "0.2.1-alpha.1",
+    .version = "0.2.2-alpha.2",
     .fingerprint = 0x4d051980cd34bdb8,
     .minimum_zig_version = "0.15.0",
     .dependencies = .{
-        .aio = .{
-            .url = "https://github.com/zon-dev/aio/archive/refs/heads/main.zip",
-            .hash = "aio-0.1.2-dev.2-dzJt5FlDBAB4bkjVU0YZ7vbUCwXzuJMrdJRAgFR9QAuk",
-        },
         .url = .{
             .url = "https://github.com/zon-dev/url/archive/refs/heads/main.zip",
             .hash = "url-0.1.3-niLQwoU-AADuCggCBxol0MK6dwBra0gJ25BpUdfqOhMA",
+        },
+        .aio = .{
+            .url = "https://github.com/zon-dev/aio/archive/refs/tags/0.1.3-alpha.2.tar.gz",
+            .hash = "aio-0.1.3-alpha.2-dzJt5HiCBAC0k7L30mFm8JvD8HIwc0S_nWLjzn0pnZkf",
         },
     },
     .paths = .{

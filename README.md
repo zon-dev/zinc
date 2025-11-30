@@ -98,17 +98,6 @@ try router.staticFile("/favicon.ico", "public/favicon.ico");
 try router.staticDir("/assets", "public/assets");
 ```
 
-### Async I/O Configuration
-
-```zig
-var z = try zinc.init(.{
-    .port = 8080,
-    .num_threads = 8,           // Worker threads
-    .read_buffer_len = 8192,    // Read buffer size
-    .stack_size = 1048576,      // Thread stack size
-});
-```
-
 ## 🖥️ Platform Support
 
 ### Linux
@@ -151,12 +140,11 @@ All tests pass with zero memory leaks and full async I/O coverage.
 
 ## 🔧 Development
 
-### Building
+### Clone project
 
 ```bash
 git clone https://github.com/zon-dev/zinc.git
 cd zinc
-zig build
 ```
 
 ### Running Tests

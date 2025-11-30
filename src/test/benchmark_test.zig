@@ -28,7 +28,7 @@ test "benchmark: plaintext performance" {
     }
 
     // Wait for server to start
-    std.time.sleep(200 * std.time.ns_per_ms);
+    std.time.sleep(100 * std.time.ns_per_ms);
 
     // Get server address
     const address = z.getAddress();
@@ -145,9 +145,15 @@ fn sendRequest(address: std.Io.net.IpAddress) !void {
     const request = "GET /plaintext HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n";
     _ = try posix.write(sockfd, request);
 
-    // Read response
-    var buffer: [512]u8 = undefined;
-    _ = try posix.read(sockfd, &buffer);
+    // Read complete response - read until connection closes
+    // This ensures we wait for the full response, similar to real-world usage
+    var buffer: [1024]u8 = undefined;
+    var total_read: usize = 0;
+    while (total_read < buffer.len) {
+        const bytes_read = try posix.read(sockfd, buffer[total_read..]);
+        if (bytes_read == 0) break; // Connection closed
+        total_read += bytes_read;
+    }
 }
 
 fn plaintext(ctx: *zinc.Context) anyerror!void {

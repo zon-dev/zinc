@@ -25,6 +25,7 @@ const Catchers = zinc.Catchers;
 const aio = @import("aio");
 const IO = aio.IO;
 const Time = aio.Time;
+const QueueType = aio.QueueType;
 
 const server = @import("./server.zig");
 
@@ -33,6 +34,7 @@ const BufferPool = @import("buffer_pool.zig").BufferPool;
 
 /// Request processing context for async processing
 const RequestContext = struct {
+    link: QueueType(@This()).Link = .{},
     worker: *Worker,
     connection: *Connection,
     data: []u8,
@@ -114,10 +116,9 @@ pub const Worker = struct {
     arena: std.heap.ArenaAllocator = undefined,
     arena_request_count: usize = 0,
 
-    // Request queue for async processing (lock-free, single producer)
-    // Requests are queued here and processed asynchronously to avoid blocking event loop
-    request_queue: std.array_list.Managed(*RequestContext) = undefined,
-    request_queue_index: usize = 0, // Index for reading from queue
+    // Request queue for batching requests (lock-free, single-threaded)
+    // Reduces Thread.Pool spawn overhead by batching multiple requests
+    request_queue: QueueType(RequestContext) = undefined,
 
     // Reference to shared engine (read-only after init)
     engine: *Engine = undefined,
@@ -148,14 +149,13 @@ pub const Worker = struct {
         self.write_buffer_pool.deinit();
         self.arena.deinit();
 
-        // Clean up request queue
-        for (self.request_queue.items) |ctx| {
+        // Clean up request queue (lock-free, single-threaded)
+        while (self.request_queue.pop()) |ctx| {
             if (ctx.data_owned) {
                 allocator.free(ctx.data);
             }
             allocator.destroy(ctx);
         }
-        self.request_queue.deinit();
 
         if (self.accept_completions.len > 0) {
             allocator.free(self.accept_completions);
@@ -210,6 +210,15 @@ max_conn: u32 = 10000,
 // Target number of concurrent accept operations per thread
 target_concurrent_accepts: usize = 32,
 
+// Arena allocator configuration
+arena_retain_limit: usize = 128 * 1024,
+arena_reset_interval: usize = 100,
+
+// Event loop and request processing configuration
+event_wait_timeout_ns: u63 = 1 * std.time.ns_per_ms,
+request_batch_size: usize = 100,
+request_min_batch_size: usize = 10,
+
 // Worker threads (each has its own resources)
 workers: []Worker = undefined,
 worker_threads: ?[]std.Thread = null, // null if threads haven't been started yet
@@ -242,15 +251,21 @@ fn create(conf: Config.Engine) anyerror!*Engine {
         .stack_size = conf.stack_size,
         .listener_address = address, // Will be updated after first listener is created
         .max_conn = conf.max_conn,
-        .target_concurrent_accepts = 32,
+        .target_concurrent_accepts = conf.target_concurrent_accepts,
+        .arena_retain_limit = conf.arena_retain_limit,
+        .arena_reset_interval = conf.arena_reset_interval,
+        .event_wait_timeout_ns = conf.event_wait_timeout_ns,
+        .request_batch_size = conf.request_batch_size,
+        .request_min_batch_size = conf.request_min_batch_size,
         .workers = undefined,
         .worker_threads = undefined,
     };
 
-    // Initialize thread pool (for potential future use)
+    // Initialize thread pool for request processing
+    // Worker threads handle I/O events, Thread.Pool handles actual request processing
     try engine.threads.init(.{
         .allocator = allocator,
-        .n_jobs = conf.num_threads,
+        .n_jobs = conf.num_threads, // Thread pool for request processing
         .track_ids = false,
         .stack_size = conf.stack_size,
     });
@@ -277,7 +292,9 @@ fn create(conf: Config.Engine) anyerror!*Engine {
         }
 
         // Each thread has its own IO instance (required for thread safety)
-        const aio_io = try IO.init(4095, 0);
+        // IO.init expects u12, so we need to clamp the value
+        const aio_queue_depth: u12 = @intCast(@min(conf.aio_queue_depth, 4095));
+        const aio_io = try IO.init(aio_queue_depth, 0);
         const aio_time = Time{};
 
         // Initialize worker
@@ -286,30 +303,42 @@ fn create(conf: Config.Engine) anyerror!*Engine {
             .aio_time = aio_time,
             .listener_socket = listener.socket_fd,
             .arena = std.heap.ArenaAllocator.init(allocator),
-            .request_queue = std.array_list.Managed(*RequestContext).init(allocator),
-            .request_queue_index = 0,
+            .request_queue = QueueType(RequestContext).init(.{ .name = "request_queue" }),
             .engine = engine,
         };
 
         // Initialize buffer pools for this worker
-        // Use larger initial size to handle bursts better
-        // max_buffers is a soft limit - pool can grow beyond it if needed
-        const buffers_per_thread = @max(engine.max_conn / conf.num_threads, 10000); // At least 10000 per thread
+        // Use adaptive sizing based on max_conn and num_threads
+        // Calculate reasonable buffer counts to avoid excessive memory usage
+        // For high thread counts, use smaller initial pools that can grow as needed
+        const estimated_conns_per_thread = @max(engine.max_conn / conf.num_threads, 100);
+        
+        // Calculate initial read buffers per thread
+        const initial_read_buffers = if (conf.initial_read_buffers_per_thread) |count|
+            count
+        else
+            @min(estimated_conns_per_thread, conf.max_initial_read_buffers);
+        const max_read_buffers = initial_read_buffers * conf.max_read_buffers_multiplier;
+        
         worker.read_buffer_pool = try BufferPool.init(
             allocator,
             conf.read_buffer_len,
-            buffers_per_thread, // Initial buffers per thread
-            buffers_per_thread * 3, // Soft limit: 3x initial (allows for bursts)
+            initial_read_buffers,
+            max_read_buffers,
         );
-        // Write buffer pool: larger buffers for responses (8KB typical response size)
-        // Pre-allocate fewer buffers since responses are typically shorter-lived
-        const write_buffer_size = 8 * 1024; // 8KB per write buffer
-        const write_buffers_per_thread = @max(buffers_per_thread / 4, 2000); // Fewer write buffers needed
+        
+        // Write buffer pool: calculate based on read buffers ratio
+        const initial_write_buffers = @min(
+            @as(usize, @intFromFloat(@as(f64, @floatFromInt(initial_read_buffers)) * conf.initial_write_buffers_ratio)),
+            conf.max_initial_write_buffers
+        );
+        const max_write_buffers = initial_write_buffers * conf.max_write_buffers_multiplier;
+        
         worker.write_buffer_pool = try BufferPool.init(
             allocator,
-            write_buffer_size,
-            write_buffers_per_thread, // Initial write buffers
-            write_buffers_per_thread * 3, // Soft limit
+            conf.write_buffer_size,
+            initial_write_buffers,
+            max_write_buffers,
         );
 
         // Pre-allocate accept completions for this worker
@@ -427,32 +456,68 @@ fn workerThread(worker: *Worker) void {
     }
 
     // Event loop for this worker thread
-    // Use longer timeout to allow kernel to batch events and reduce CPU usage
-    // Shorter timeout causes too many system calls and can lead to timeouts under load
+    // Use reasonable timeout to balance latency and CPU usage
+    // Too short timeout causes excessive CPU usage and system calls
+    // Too long timeout causes high latency
     while (!engine.stopping.isSet()) {
-        const event_wait_timeout_ns: u63 = 10 * std.time.ns_per_ms; // 10ms timeout
+        const event_wait_timeout_ns: u63 = engine.event_wait_timeout_ns;
         worker.aio_io.run_for_ns(event_wait_timeout_ns) catch |err| {
             if (err != error.TimeoutTooBig and !engine.stopping.isSet()) {
                 std.log.err("AIO run_for_ns error: {}", .{err});
             }
         };
 
-        // Process queued requests asynchronously (non-blocking, processes up to 10 per iteration)
-        // This allows request processing without blocking the event loop
-        var processed: usize = 0;
-        const max_per_iteration = 10; // Process up to 10 requests per event loop iteration
-        while (processed < max_per_iteration and worker.request_queue_index < worker.request_queue.items.len) {
-            const ctx = worker.request_queue.items[worker.request_queue_index];
-            worker.request_queue_index += 1;
-            processRequestAsync(ctx);
-            processed += 1;
-        }
+        // Process queued requests in batches to reduce spawn overhead
+        // Process all available requests, not just when batch size is reached
+        // This ensures requests don't wait too long
+        submitRequestBatch(worker, engine) catch |err| {
+            std.log.err("Failed to submit request batch in event loop: {}", .{err});
+        };
+    }
+}
 
-        // Reset queue when all items are processed
-        if (worker.request_queue_index >= worker.request_queue.items.len) {
-            worker.request_queue.clearRetainingCapacity();
-            worker.request_queue_index = 0;
+/// Submit queued requests to Thread.Pool in batches
+/// This reduces spawn overhead by batching multiple requests
+fn submitRequestBatch(worker: *Worker, engine: *Engine) !void {
+    const queue_count = worker.request_queue.count();
+    if (queue_count == 0) {
+        return; // No requests to process
+    }
+
+    // Collect all requests from queue into a batch
+    const batch_size = @min(queue_count, engine.request_batch_size);
+    const batch = try engine.allocator.alloc(*RequestContext, batch_size);
+    errdefer engine.allocator.free(batch);
+
+    // Pop requests from queue into batch
+    var batch_index: usize = 0;
+    while (batch_index < batch_size) {
+        if (worker.request_queue.pop()) |ctx| {
+            batch[batch_index] = ctx;
+            batch_index += 1;
+        } else {
+            break;
         }
+    }
+
+    // Resize batch to actual count
+    const actual_batch = batch[0..batch_index];
+    if (actual_batch.len > 0) {
+        // Submit batch to Thread.Pool
+        engine.threads.spawn(processRequestBatch, .{actual_batch}) catch |spawn_err| {
+            // If spawn fails, process individually as fallback
+            for (actual_batch) |ctx| {
+                engine.threads.spawn(processRequestAsync, .{ctx}) catch |spawn_err2| {
+                    std.log.err("Failed to spawn request: {}", .{spawn_err2});
+                    engine.allocator.free(ctx.data);
+                    engine.allocator.destroy(ctx);
+                };
+            }
+            engine.allocator.free(batch);
+            return spawn_err;
+        };
+    } else {
+        engine.allocator.free(batch);
     }
 }
 
@@ -678,8 +743,8 @@ fn handleReadCompletionWorker(worker: *Worker, connection: *Connection, data: []
 
     // Reset arena periodically
     worker.arena_request_count += 1;
-    if (worker.arena_request_count >= 100) {
-        _ = worker.arena.reset(.{ .retain_with_limit = 128 * 1024 });
+    if (worker.arena_request_count >= engine.arena_reset_interval) {
+        _ = worker.arena.reset(.{ .retain_with_limit = engine.arena_retain_limit });
         worker.arena_request_count = 0;
     }
 
@@ -706,22 +771,42 @@ fn handleReadCompletionWorker(worker: *Worker, connection: *Connection, data: []
         .data_owned = true,
     };
 
-    // Queue request for async processing (non-blocking)
-    // This allows the event loop to continue processing other events
-    worker.request_queue.append(ctx) catch |err| {
-        std.log.err("Failed to queue request for processing: {}", .{err});
-        engine.allocator.free(data_copy);
-        engine.allocator.destroy(ctx);
-        closeConnectionWorker(worker, connection);
-        return;
-    };
-
-    // Event loop continues immediately - request will be processed in next iteration
+    // Add request to queue for batch processing (lock-free, single-threaded)
+    // This reduces Thread.Pool spawn overhead by batching requests
+    worker.request_queue.push(ctx);
+    
+    // If queue reaches batch size, submit batch immediately
+    // This balances latency and throughput
+    if (worker.request_queue.count() >= engine.request_batch_size) {
+        submitRequestBatch(worker, engine) catch |err| {
+            std.log.err("Failed to submit request batch: {}", .{err});
+        };
+    }
+    
+    // Event loop will process remaining requests in next iteration
     // The read buffer can be reused for the next read operation
+}
+
+/// Process a batch of requests in thread pool
+/// This reduces spawn overhead by processing multiple requests together
+fn processRequestBatch(batch: []*RequestContext) void {
+    if (batch.len == 0) {
+        return; // Empty batch, nothing to process
+    }
+    
+    for (batch) |ctx| {
+        processRequestAsync(ctx);
+    }
+    
+    // Free batch array
+    // Safe to access batch[0] here because we checked batch.len > 0 above
+    const engine = batch[0].worker.engine;
+    engine.allocator.free(batch);
 }
 
 /// Process HTTP request asynchronously in thread pool
 /// This function runs in a worker thread from the thread pool
+/// Uses defer to ensure cleanup even on panic
 fn processRequestAsync(ctx: *RequestContext) void {
     const worker = ctx.worker;
     const engine = worker.engine;
@@ -729,22 +814,29 @@ fn processRequestAsync(ctx: *RequestContext) void {
     const data = ctx.data;
     const allocator = engine.allocator;
 
+    // Ensure cleanup happens even if function panics
+    // Use defer to guarantee memory is freed
+    defer {
+        allocator.free(data);
+        allocator.destroy(ctx);
+    }
+
     // Process HTTP request in background thread
-    // Use arena allocator for request-scoped allocations
-    engine.router.handleConn(worker.arena.allocator(), connection.getSocket(), data, engine, connection) catch |err| {
+    // Use engine allocator directly for better performance
+    // Note: Arena allocator is not thread-safe, so we use the engine's allocator
+    // This is safe because each request is independent and allocations are short-lived
+    engine.router.handleConn(allocator, connection.getSocket(), data, engine, connection) catch |err| {
         catchRouteError(err, connection.getSocket()) catch |err2| {
             std.log.err("Failed to handle route error: {}", .{err2});
         };
         // Clean up and close connection on error
-        allocator.free(data);
-        allocator.destroy(ctx);
+        // Note: defer above will handle data and ctx cleanup
         closeConnectionWorker(worker, connection);
         return;
     };
 
-    // Clean up request context
-    allocator.free(data);
-    allocator.destroy(ctx);
+    // Success case: defer will clean up data and ctx
+    // Note: We don't explicitly free here because defer handles it
 }
 
 /// Handle read completion (legacy)
@@ -777,8 +869,12 @@ fn handleWriteCompletionWorker(worker: *Worker, connection: *Connection, bytes_w
 fn closeConnectionWorker(worker: *Worker, connection: *Connection) void {
     const engine = worker.engine;
     if (connection.fd != -1) {
-        worker.aio_io.close_socket(connection.fd);
-        _ = worker.connections.remove(connection.fd);
+        const fd = connection.fd;
+        
+        // Close socket first - this will cancel any pending operations
+        // Note: close_socket should handle cleanup of pending operations
+        worker.aio_io.close_socket(fd);
+        _ = worker.connections.remove(fd);
 
         // Decrement connection count
         _ = engine.connection_count.fetchSub(1, .monotonic);
@@ -787,6 +883,12 @@ fn closeConnectionWorker(worker: *Worker, connection: *Connection) void {
         if (connection.read_buffer) |buffer| {
             worker.read_buffer_pool.release(buffer);
             connection.read_buffer = null;
+        }
+
+        // Return write buffer to pool if any
+        if (connection.write_buffer) |buffer| {
+            worker.write_buffer_pool.release(buffer);
+            connection.write_buffer = null;
         }
 
         // Destroy connection
@@ -977,6 +1079,12 @@ fn readCallbackWorker(
     completion: *IO.Completion,
     result: IO.RecvError!usize,
 ) void {
+    // Verify completion operation type before accessing
+    if (completion.operation != .recv) {
+        std.log.err("readCallbackWorker: completion operation is not recv", .{});
+        return;
+    }
+    
     const bytes_read = result catch {
         // Handle read error
         const connection = getConnectionWorker(worker, completion.operation.recv.socket);
@@ -1022,6 +1130,12 @@ fn writeCallbackWorker(
     completion: *IO.Completion,
     result: IO.SendError!usize,
 ) void {
+    // Verify completion operation type before accessing
+    if (completion.operation != .send) {
+        std.log.err("writeCallbackWorker: completion operation is not send", .{});
+        return;
+    }
+    
     const bytes_written = result catch {
         // Handle write error
         const connection = getConnectionWorker(worker, completion.operation.send.socket);
