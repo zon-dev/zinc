@@ -21,12 +21,6 @@ const harness = @import("harness.zig");
 
 const is_debug = builtin.mode == .debug;
 
-const Bar = struct {
-    name: []const u8,
-    rps: f64,
-    measured: bool = false,
-};
-
 /// Zinc keep-alive plaintext throughput recorded before inline handlers and
 /// send-now. Same loopback / Content-Length / keep-alive workload as this file.
 const baseline_rps: f64 = 34_892;
@@ -34,35 +28,11 @@ const baseline_rps: f64 = 34_892;
 /// Hard regression gate for concurrent keep-alive in ReleaseFast.
 const min_rps_release: f64 = 10_000;
 
-const bar_width = 50;
-
-fn printChart(measured_rps: f64) void {
-    const bars = [_]Bar{
-        .{ .name = "baseline", .rps = baseline_rps },
-        .{ .name = "zinc", .rps = measured_rps, .measured = true },
-    };
-
-    var max: f64 = 1;
-    for (bars) |b| max = @max(max, b.rps);
-
-    std.debug.print("\n  keep-alive plaintext throughput [{s}]\n", .{@tagName(builtin.mode)});
-    for (bars) |b| {
-        const filled: usize = @intFromFloat(@round(b.rps / max * @as(f64, bar_width)));
-        std.debug.print("  {s: <9}│", .{b.name});
-        for (0..filled) |_| std.debug.print("█", .{});
-        for (filled..bar_width) |_| std.debug.print(" ", .{});
-        std.debug.print(" {d:.0} req/s{s}\n", .{ b.rps, if (b.measured) "  <- this run" else "" });
-    }
-
+fn printSummary(measured_rps: f64) void {
     const ratio = measured_rps / @max(baseline_rps, 1);
-    if (measured_rps >= baseline_rps) {
-        std.debug.print("  baseline: {d:.0} req/s  this run {d:.2}x\n", .{ baseline_rps, ratio });
-    } else {
-        std.debug.print(
-            "  baseline: {d:.0} req/s  this run {d:.1}% ({d:.2}x slower)\n",
-            .{ baseline_rps, ratio * 100, 1 / @max(ratio, 0.001) },
-        );
-    }
+    std.debug.print("\n  keep-alive plaintext [{s}]\n", .{@tagName(builtin.mode)});
+    std.debug.print("  this run: {d:.0} req/s\n", .{measured_rps});
+    std.debug.print("  baseline: {d:.0} req/s ({d:.2}x)\n", .{ baseline_rps, ratio });
 }
 
 fn stdIo() std.Io {
@@ -453,7 +423,7 @@ test "perf: keep-alive throughput vs baseline" {
         }
     }
 
-    printChart(best);
+    printSummary(best);
     std.debug.print(
         "  best {d:.0} req/s at {d} connection(s); {d} stalled response(s) across the sweep\n",
         .{ best, best_clients, total_stalls },
