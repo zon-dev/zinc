@@ -6,6 +6,10 @@ const RespondOptions = std.http.Server.Request.RespondOptions;
 
 const Config = @import("config.zig").Config;
 
+/// Zig 0.17 removed the thin `std.posix` syscall wrappers; `posix_compat` restores
+/// the subset needed here.
+const compat = @import("posix_compat.zig");
+
 pub const Response = @This();
 const Self = @This();
 
@@ -14,7 +18,7 @@ const IO = zinc.AIO.IO;
 
 allocator: std.mem.Allocator,
 // conn: std.net.Stream = undefined,
-conn: std.posix.socket_t = undefined,
+conn: std.posix.socket_t = IO.INVALID_SOCKET,
 
 // TODO
 // io: *IO = undefined,
@@ -24,7 +28,7 @@ completion: IO.Completion = undefined,
 engine: ?*anyopaque = null, // Will be cast to *Engine when needed
 connection: ?*anyopaque = null, // Will be cast to *Engine.Connection when needed
 
-req_method: ?http.Method = undefined,
+req_method: ?http.Method = null,
 
 version: []const u8 = "HTTP/1.1",
 status: std.http.Status = .ok,
@@ -40,6 +44,7 @@ pub fn init(self: Self) anyerror!*Response {
         .allocator = self.allocator,
         .header = std.array_list.Managed(std.http.Header).init(self.allocator),
         .conn = self.conn,
+        .req_method = self.req_method,
         // .io = self.io,
     };
     return response;
@@ -68,7 +73,7 @@ pub fn reset(self: *Self) void {
     // Clearing ArrayList requires iterating which can be expensive
     // For object pool, we can just reset the fields
     self.status = .ok;
-    self.req_method = undefined;
+    self.req_method = null;
     self.engine = null;
     self.connection = null;
 }
@@ -81,7 +86,7 @@ pub fn send(self: *Self, content: []const u8, options: RespondOptions) anyerror!
     }
 
     // Fallback to synchronous write for backward compatibility
-    const req_method = self.req_method.?;
+    const req_method = self.req_method orelse .GET;
 
     const transfer_encoding_none = (options.transfer_encoding orelse .chunked) == .none;
     const keep_alive = !transfer_encoding_none and options.keep_alive;
@@ -198,8 +203,9 @@ pub fn send(self: *Self, content: []const u8, options: RespondOptions) anyerror!
         }
     }
 
-    // Fallback to synchronous write for backward compatibility
-    _ = try std.posix.writev(self.conn, iovecs[0..iovecs_len]);
+    // Fallback to synchronous write for backward compatibility.
+    if (self.conn == IO.INVALID_SOCKET) return error.NotOpenForWriting;
+    _ = try compat.writev(self.conn, iovecs[0..iovecs_len]);
 }
 
 /// Async version of send that uses AIO for non-blocking response writing
@@ -208,7 +214,7 @@ fn sendAsync(self: *Self, content: []const u8, options: RespondOptions, engine_p
     const Engine = @import("../zinc.zig").Engine;
     const engine: *Engine = @ptrCast(@alignCast(engine_ptr));
     const connection: *Engine.Connection = @ptrCast(@alignCast(conn_ptr));
-    const req_method = self.req_method.?;
+    const req_method = self.req_method orelse .GET;
 
     const transfer_encoding_none = (options.transfer_encoding orelse .chunked) == .none;
     const keep_alive = !transfer_encoding_none and options.keep_alive;
@@ -283,7 +289,7 @@ fn sendAsync(self: *Self, content: []const u8, options: RespondOptions, engine_p
 }
 
 pub fn write(self: *Self, content: []const u8, options: RespondOptions) anyerror!void {
-    const req_method = self.req_method.?;
+    const req_method = self.req_method orelse .GET;
 
     const transfer_encoding_none = (options.transfer_encoding orelse .chunked) == .none;
     const keep_alive = !transfer_encoding_none and options.keep_alive;
@@ -409,7 +415,8 @@ pub fn write(self: *Self, content: []const u8, options: RespondOptions) anyerror
         }
     }
     // try self.conn.write(iovecs[0..iovecs_len]);
-    _ = try std.posix.writev(self.conn, iovecs[0..iovecs_len]);
+    if (self.conn == IO.INVALID_SOCKET) return error.NotOpenForWriting;
+    _ = try compat.writev(self.conn, iovecs[0..iovecs_len]);
 }
 
 pub fn setStatus(self: *Self, status: std.http.Status) void {

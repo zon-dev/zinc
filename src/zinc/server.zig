@@ -2,6 +2,10 @@ const std = @import("std");
 const posix = std.posix;
 const Io = std.Io;
 
+/// Zig 0.17 removed the thin `std.posix` syscall wrappers; `posix_compat` restores
+/// the subset needed here.
+const compat = @import("posix_compat.zig");
+
 pub const ListenOptions = struct {
     /// How many connections the kernel will accept on the application's behalf.
     /// If more than this many connections pool in the kernel, clients will start
@@ -66,14 +70,14 @@ pub fn listen(address: Io.net.IpAddress, options: ListenOptions) !Server {
     sock_flags |= nonblock;
 
     const proto: u32 = if (family == posix.AF.UNIX) 0 else posix.IPPROTO.TCP;
-    const sockfd = try posix.socket(family, sock_flags, proto);
+    const sockfd = try compat.socket(family, sock_flags, proto);
 
     var s: Server = .{
         .flags = posix_flags,
         .listen_address = undefined,
         .socket_fd = sockfd,
     };
-    errdefer posix.close(sockfd);
+    errdefer compat.close(sockfd);
 
     if (options.reuse_address or options.reuse_port or options.reuse_port_lb) {
         try posix.setsockopt(sockfd, posix.SOL.SOCKET, posix.SO.REUSEADDR, &std.mem.toBytes(@as(c_int, 1)));
@@ -87,15 +91,15 @@ pub fn listen(address: Io.net.IpAddress, options: ListenOptions) !Server {
     }
 
     // Bind using the sockaddr - ensure we pass const pointer
-    try posix.bind(sockfd, @as(*const posix.sockaddr, @ptrCast(&sockaddr_buffer)), socklen);
+    try compat.bind(sockfd, @as(*const posix.sockaddr, @ptrCast(&sockaddr_buffer)), socklen);
     // Increase kernel backlog for better connection handling under load
     const backlog = if (options.kernel_backlog < 4096) 4096 else options.kernel_backlog;
-    try posix.listen(sockfd, backlog);
+    try compat.listen(sockfd, backlog);
 
     // Get the actual bound address to extract the real port (especially if port was 0)
     var bound_addr: posix.sockaddr = undefined;
     var bound_len: posix.socklen_t = @sizeOf(posix.sockaddr);
-    try posix.getsockname(sockfd, &bound_addr, &bound_len);
+    try compat.getsockname(sockfd, &bound_addr, &bound_len);
 
     // Extract the actual port from bound_addr and update the address
     const actual_port: u16 = switch (bound_addr.family) {
@@ -139,16 +143,16 @@ pub const Server = struct {
     };
 
     pub fn deinit(s: *Server) void {
-        posix.close(s.socket_fd);
+        compat.close(s.socket_fd);
         s.* = undefined;
     }
 
-    pub const AcceptError = posix.AcceptError;
+    pub const AcceptError = compat.AcceptError;
 
-    pub fn accept(s: *Server) AcceptError!Connection {
+    pub fn accept(s: *Server) !Connection {
         var accepted_addr: posix.sockaddr = undefined;
         var addr_len: posix.socklen_t = @sizeOf(posix.sockaddr);
-        const fd = try posix.accept(s.socket_fd, &accepted_addr, &addr_len, s.flags);
+        const fd = try compat.accept(s.socket_fd, &accepted_addr, &addr_len, s.flags);
 
         // Convert sockaddr to IpAddress
         // For now, create a default address since we don't need the client address for our use case

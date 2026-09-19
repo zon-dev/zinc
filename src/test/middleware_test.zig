@@ -1,418 +1,410 @@
+//! Tests for the middleware chain and the built-in `zinc.Middleware`.
+//!
+//! The contract: a middleware receives the context, may act before and after
+//! calling `ctx.next()`, and stops the chain by simply not calling it.
+//! Middleware registered with `Router.use` is prepended to every route's
+//! handler list, so the handler always runs last.
+
 const std = @import("std");
+const testing = std.testing;
+
 const zinc = @import("../zinc.zig");
-const expect = std.testing.expect;
-
 const Context = zinc.Context;
-const Request = zinc.Request;
-const Response = zinc.Response;
+const Router = zinc.Router;
 
-test "Middleware: basic chain with before and after" {
-    const allocator = std.testing.allocator;
+const harness = @import("harness.zig");
 
-    var router = try zinc.Router.init(.{
-        .allocator = allocator,
-    });
+fn newRouter() !*Router {
+    return Router.init(.{ .allocator = testing.allocator });
+}
+
+/// Register `handlers` as middleware plus `handler` on GET /test, then run the
+/// resulting chain against a fresh context and hand it back to the caller.
+fn runTest(
+    router: *Router,
+    middlewares: []const zinc.HandlerFn,
+    handler: zinc.HandlerFn,
+) !harness.TestContext {
+    try router.use(middlewares);
+    try router.get("/test", handler);
+
+    var tc = try harness.newContext(testing.allocator, .{ .method = .GET, .target = "/test" });
+    errdefer tc.deinit();
+
+    const route = try router.getRoute(.GET, "/test");
+    try harness.runChain(tc.ctx, route);
+    return tc;
+}
+
+test "Middleware: a before/after pair wraps the handler" {
+    var router = try newRouter();
     defer router.deinit();
 
     const mid1 = struct {
-        fn middle(ctx: *zinc.Context) anyerror!void {
+        fn middle(ctx: *Context) anyerror!void {
             try ctx.text("Hello ", .{});
             try ctx.next();
         }
     }.middle;
 
     const mid2 = struct {
-        fn middle(ctx: *zinc.Context) anyerror!void {
+        fn middle(ctx: *Context) anyerror!void {
             try ctx.next();
             try ctx.text("!", .{});
         }
     }.middle;
 
-    const handle = struct {
-        fn anyHandle(ctx: *zinc.Context) anyerror!void {
-            try ctx.text("world", .{});
-        }
-    }.anyHandle;
-
     try router.use(&.{ mid1, mid2 });
-    try router.get("/test", handle);
+    try router.get("/test", harness.textHandler("world"));
 
     const routes = router.getRoutes();
     defer routes.deinit();
+    try testing.expectEqual(@as(usize, 1), routes.items.len);
+    try testing.expectEqual(@as(usize, 3), routes.items[0].handlers.items.len);
 
-    try std.testing.expectEqual(1, routes.items.len);
-    try std.testing.expectEqual(3, routes.items[0].handlers.items.len);
+    var tc = try harness.newContext(testing.allocator, .{ .method = .GET, .target = "/test" });
+    defer tc.deinit();
 
-    var ctx_get = try createContext(allocator, .GET, "/test");
-    defer ctx_get.destroy();
+    const route = try router.getRoute(.GET, "/test");
+    try harness.runChain(tc.ctx, route);
 
-    const route = try router.getRoute(ctx_get.request.method, ctx_get.request.target);
-    ctx_get.handlers = route.handlers;
-    try ctx_get.handlersProcess();
-    try std.testing.expectEqual(.ok, ctx_get.response.status);
-    try std.testing.expectEqual(3, ctx_get.handlers.items.len);
-    try std.testing.expectEqualStrings("Hello world!", ctx_get.response.body orelse "");
+    try harness.expectStatus(tc.ctx, .ok);
+    try testing.expectEqual(@as(usize, 3), tc.ctx.handlers.items.len);
+    try harness.expectBody(tc.ctx, "Hello world!");
 }
 
-test "Middleware: single middleware" {
-    const allocator = std.testing.allocator;
-
-    var router = try zinc.Router.init(.{
-        .allocator = allocator,
-    });
+test "Middleware: a single middleware can set a header" {
+    var router = try newRouter();
     defer router.deinit();
 
     const mid = struct {
-        fn middle(ctx: *zinc.Context) anyerror!void {
+        fn middle(ctx: *Context) anyerror!void {
             try ctx.setHeader("X-Middleware", "applied");
             try ctx.next();
         }
     }.middle;
 
-    const handle = struct {
-        fn anyHandle(ctx: *zinc.Context) anyerror!void {
-            try ctx.text("OK", .{});
-        }
-    }.anyHandle;
+    var tc = try runTest(router, &.{mid}, harness.textHandler("OK"));
+    defer tc.deinit();
 
-    try router.use(&.{mid});
-    try router.get("/test", handle);
-
-    var ctx_get = try createContext(allocator, .GET, "/test");
-    defer ctx_get.destroy();
-
-    const route = try router.getRoute(ctx_get.request.method, ctx_get.request.target);
-    ctx_get.handlers = route.handlers;
-    try ctx_get.handlersProcess();
-
-    const headers = ctx_get.response.getHeaders();
-    var found_header = false;
-    for (headers) |header| {
-        if (std.ascii.eqlIgnoreCase(header.name, "X-Middleware")) {
-            try std.testing.expectEqualStrings(header.value, "applied");
-            found_header = true;
-            break;
-        }
-    }
-    try std.testing.expect(found_header);
-    try std.testing.expectEqualStrings(ctx_get.response.body orelse "", "OK");
+    try harness.expectHeader(tc.ctx, "X-Middleware", "applied");
+    try harness.expectBody(tc.ctx, "OK");
 }
 
-test "Middleware: early termination without next()" {
-    const allocator = std.testing.allocator;
-
-    var router = try zinc.Router.init(.{
-        .allocator = allocator,
-    });
+test "Middleware: not calling next stops the chain" {
+    var router = try newRouter();
     defer router.deinit();
 
     const mid = struct {
-        fn middle(ctx: *zinc.Context) anyerror!void {
+        fn middle(ctx: *Context) anyerror!void {
             try ctx.text("Blocked", .{ .status = .forbidden });
-            // Don't call next() - this should stop the chain
+            // Deliberately no `next()`: the handler must never run.
         }
     }.middle;
 
-    const handle = struct {
-        fn anyHandle(ctx: *zinc.Context) anyerror!void {
-            try ctx.text("Should not reach here", .{});
-        }
-    }.anyHandle;
+    var tc = try runTest(router, &.{mid}, harness.textHandler("Should not reach here"));
+    defer tc.deinit();
 
-    try router.use(&.{mid});
-    try router.get("/test", handle);
-
-    var ctx_get = try createContext(allocator, .GET, "/test");
-    defer ctx_get.destroy();
-
-    const route = try router.getRoute(ctx_get.request.method, ctx_get.request.target);
-    ctx_get.handlers = route.handlers;
-    try ctx_get.handlersProcess();
-
-    try std.testing.expectEqual(.forbidden, ctx_get.response.status);
-    try std.testing.expectEqualStrings(ctx_get.response.body orelse "", "Blocked");
+    try harness.expectStatus(tc.ctx, .forbidden);
+    try harness.expectBody(tc.ctx, "Blocked");
 }
 
-test "Middleware: multiple middlewares in sequence" {
-    const allocator = std.testing.allocator;
-
-    var router = try zinc.Router.init(.{
-        .allocator = allocator,
-    });
+test "Middleware: several middlewares run in registration order" {
+    var router = try newRouter();
     defer router.deinit();
 
     const mid1 = struct {
-        fn middle(ctx: *zinc.Context) anyerror!void {
+        fn middle(ctx: *Context) anyerror!void {
             try ctx.text("1", .{});
             try ctx.next();
         }
     }.middle;
-
     const mid2 = struct {
-        fn middle(ctx: *zinc.Context) anyerror!void {
+        fn middle(ctx: *Context) anyerror!void {
             try ctx.text("2", .{});
             try ctx.next();
         }
     }.middle;
-
     const mid3 = struct {
-        fn middle(ctx: *zinc.Context) anyerror!void {
+        fn middle(ctx: *Context) anyerror!void {
             try ctx.text("3", .{});
             try ctx.next();
         }
     }.middle;
 
-    const handle = struct {
-        fn anyHandle(ctx: *zinc.Context) anyerror!void {
-            try ctx.text("handler", .{});
-        }
-    }.anyHandle;
+    var tc = try runTest(router, &.{ mid1, mid2, mid3 }, harness.textHandler("H"));
+    defer tc.deinit();
 
-    try router.use(&.{ mid1, mid2, mid3 });
-    try router.get("/test", handle);
-
-    var ctx_get = try createContext(allocator, .GET, "/test");
-    defer ctx_get.destroy();
-
-    const route = try router.getRoute(ctx_get.request.method, ctx_get.request.target);
-    ctx_get.handlers = route.handlers;
-    try ctx_get.handlersProcess();
-
-    try std.testing.expectEqualStrings(ctx_get.response.body orelse "", "123handler");
+    try harness.expectBody(tc.ctx, "123H");
 }
 
-test "Middleware: modify response status" {
-    const allocator = std.testing.allocator;
+test "Middleware: after-hooks unwind in reverse order" {
+    var router = try newRouter();
+    defer router.deinit();
 
-    var router = try zinc.Router.init(.{
-        .allocator = allocator,
+    harness.Trace.reset();
+
+    var tc = try runTest(
+        router,
+        &.{ harness.tracingMiddleware("a"), harness.tracingMiddleware("b") },
+        harness.tracingHandler("handler", "done"),
+    );
+    defer tc.deinit();
+
+    try harness.Trace.expectOrder(&.{
+        "a:before",
+        "b:before",
+        "handler",
+        "b:after",
+        "a:after",
     });
+}
+
+test "Middleware: can modify the response status" {
+    var router = try newRouter();
     defer router.deinit();
 
     const mid = struct {
-        fn middle(ctx: *zinc.Context) anyerror!void {
-            try ctx.setStatus(.ok);
+        fn middle(ctx: *Context) anyerror!void {
             try ctx.next();
-            // After next() returns, handler might have changed status
-            // So we set it again after the chain completes to ensure middleware wins
-            try ctx.setStatus(.unauthorized);
+            try ctx.setStatus(.accepted);
         }
     }.middle;
 
-    const handle = struct {
-        fn anyHandle(ctx: *zinc.Context) anyerror!void {
-            // Use text() but middleware will override status after next() returns
-            try ctx.text("Content", .{ .status = .ok });
-        }
-    }.anyHandle;
+    var tc = try runTest(router, &.{mid}, harness.textHandler("body"));
+    defer tc.deinit();
 
-    try router.use(&.{mid});
-    try router.get("/test", handle);
-
-    var ctx_get = try createContext(allocator, .GET, "/test");
-    defer ctx_get.destroy();
-
-    const route = try router.getRoute(ctx_get.request.method, ctx_get.request.target);
-    ctx_get.handlers = route.handlers;
-    try ctx_get.handlersProcess();
-
-    // Middleware should have the final say on status
-    try std.testing.expectEqual(.unauthorized, ctx_get.response.status);
+    // The middleware's post-hook wins over the handler's status.
+    try harness.expectStatus(tc.ctx, .accepted);
 }
 
-test "Middleware: add multiple headers" {
-    const allocator = std.testing.allocator;
-
-    var router = try zinc.Router.init(.{
-        .allocator = allocator,
-    });
+test "Middleware: can add several headers" {
+    var router = try newRouter();
     defer router.deinit();
 
     const mid = struct {
-        fn middle(ctx: *zinc.Context) anyerror!void {
-            try ctx.setHeader("X-Custom-1", "value1");
-            try ctx.setHeader("X-Custom-2", "value2");
+        fn middle(ctx: *Context) anyerror!void {
+            try ctx.setHeader("X-First", "1");
+            try ctx.setHeader("X-Second", "2");
+            try ctx.setHeader("X-Third", "3");
             try ctx.next();
         }
     }.middle;
 
-    const handle = struct {
-        fn anyHandle(ctx: *zinc.Context) anyerror!void {
-            try ctx.text("OK", .{});
-        }
-    }.anyHandle;
+    var tc = try runTest(router, &.{mid}, harness.textHandler("OK"));
+    defer tc.deinit();
 
-    try router.use(&.{mid});
-    try router.get("/test", handle);
-
-    var ctx_get = try createContext(allocator, .GET, "/test");
-    defer ctx_get.destroy();
-
-    const route = try router.getRoute(ctx_get.request.method, ctx_get.request.target);
-    ctx_get.handlers = route.handlers;
-    try ctx_get.handlersProcess();
-
-    const headers = ctx_get.response.getHeaders();
-    var found_header1 = false;
-    var found_header2 = false;
-    for (headers) |header| {
-        if (std.ascii.eqlIgnoreCase(header.name, "X-Custom-1")) {
-            try std.testing.expectEqualStrings(header.value, "value1");
-            found_header1 = true;
-        }
-        if (std.ascii.eqlIgnoreCase(header.name, "X-Custom-2")) {
-            try std.testing.expectEqualStrings(header.value, "value2");
-            found_header2 = true;
-        }
-    }
-    try std.testing.expect(found_header1);
-    try std.testing.expect(found_header2);
+    try harness.expectHeader(tc.ctx, "X-First", "1");
+    try harness.expectHeader(tc.ctx, "X-Second", "2");
+    try harness.expectHeader(tc.ctx, "X-Third", "3");
 }
 
-test "Middleware: complex chain with before and after" {
-    const allocator = std.testing.allocator;
-
-    var router = try zinc.Router.init(.{
-        .allocator = allocator,
-    });
+test "Middleware: a complex chain composes before and after work" {
+    var router = try newRouter();
     defer router.deinit();
 
-    const mid1 = struct {
-        fn middle(ctx: *zinc.Context) anyerror!void {
+    const outer = struct {
+        fn middle(ctx: *Context) anyerror!void {
+            try ctx.setHeader("X-Outer", "in");
             try ctx.text("[", .{});
             try ctx.next();
             try ctx.text("]", .{});
         }
     }.middle;
-
-    const mid2 = struct {
-        fn middle(ctx: *zinc.Context) anyerror!void {
+    const inner = struct {
+        fn middle(ctx: *Context) anyerror!void {
             try ctx.text("(", .{});
             try ctx.next();
             try ctx.text(")", .{});
         }
     }.middle;
 
-    const handle = struct {
-        fn anyHandle(ctx: *zinc.Context) anyerror!void {
-            try ctx.text("content", .{});
-        }
-    }.anyHandle;
+    var tc = try runTest(router, &.{ outer, inner }, harness.textHandler("core"));
+    defer tc.deinit();
 
-    try router.use(&.{ mid1, mid2 });
-    try router.get("/test", handle);
-
-    var ctx_get = try createContext(allocator, .GET, "/test");
-    defer ctx_get.destroy();
-
-    const route = try router.getRoute(ctx_get.request.method, ctx_get.request.target);
-    ctx_get.handlers = route.handlers;
-    try ctx_get.handlersProcess();
-
-    // Expected: [(content)]
-    try std.testing.expectEqualStrings(ctx_get.response.body orelse "", "[(content)]");
+    try harness.expectBody(tc.ctx, "[(core)]");
+    try harness.expectHeader(tc.ctx, "X-Outer", "in");
 }
 
-test "Middleware: no middleware" {
-    const allocator = std.testing.allocator;
-
-    var router = try zinc.Router.init(.{
-        .allocator = allocator,
-    });
+test "Middleware: a route with no middleware runs just its handler" {
+    var router = try newRouter();
     defer router.deinit();
 
-    const handle = struct {
-        fn anyHandle(ctx: *zinc.Context) anyerror!void {
-            try ctx.text("Direct", .{});
-        }
-    }.anyHandle;
+    try router.get("/test", harness.textHandler("bare"));
 
-    try router.get("/test", handle);
+    var tc = try harness.newContext(testing.allocator, .{ .method = .GET, .target = "/test" });
+    defer tc.deinit();
 
-    var ctx_get = try createContext(allocator, .GET, "/test");
-    defer ctx_get.destroy();
+    const route = try router.getRoute(.GET, "/test");
+    try testing.expectEqual(@as(usize, 1), route.handlers.items.len);
 
-    const route = try router.getRoute(ctx_get.request.method, ctx_get.request.target);
-    ctx_get.handlers = route.handlers;
-    try ctx_get.handlersProcess();
-
-    try std.testing.expectEqual(1, ctx_get.handlers.items.len);
-    try std.testing.expectEqualStrings(ctx_get.response.body orelse "", "Direct");
+    try harness.runChain(tc.ctx, route);
+    try harness.expectBody(tc.ctx, "bare");
 }
 
-test "Middleware: multiple routes share middleware" {
-    const allocator = std.testing.allocator;
-
-    var router = try zinc.Router.init(.{
-        .allocator = allocator,
-    });
+test "Middleware: several routes share the same middleware" {
+    var router = try newRouter();
     defer router.deinit();
 
     const mid = struct {
-        fn middle(ctx: *zinc.Context) anyerror!void {
-            // Verify middleware is called by checking headers
-            try ctx.setHeader("X-Middleware-Applied", "true");
+        fn middle(ctx: *Context) anyerror!void {
+            try ctx.setHeader("X-Middleware-Applied", "yes");
             try ctx.next();
         }
     }.middle;
 
-    const handle1 = struct {
-        fn anyHandle(ctx: *zinc.Context) anyerror!void {
-            try ctx.text("route1", .{});
-        }
-    }.anyHandle;
-
-    const handle2 = struct {
-        fn anyHandle(ctx: *zinc.Context) anyerror!void {
-            try ctx.text("route2", .{});
-        }
-    }.anyHandle;
-
     try router.use(&.{mid});
-    try router.get("/route1", handle1);
-    try router.get("/route2", handle2);
+    try router.get("/route1", harness.textHandler("route1"));
+    try router.get("/route2", harness.textHandler("route2"));
 
-    // Test route1
-    var ctx1 = try createContext(allocator, .GET, "/route1");
-    defer ctx1.destroy();
-    const route1 = try router.getRoute(ctx1.request.method, ctx1.request.target);
-    ctx1.handlers = route1.handlers;
-    try ctx1.handlersProcess();
-    try std.testing.expectEqualStrings(ctx1.response.body orelse "", "route1");
+    {
+        var tc = try harness.newContext(testing.allocator, .{ .target = "/route1" });
+        defer tc.deinit();
+        try harness.runChain(tc.ctx, try router.getRoute(.GET, "/route1"));
 
-    // Verify middleware was applied
-    const headers1 = ctx1.response.getHeaders();
-    var found_middleware1 = false;
-    for (headers1) |header| {
-        if (std.ascii.eqlIgnoreCase(header.name, "X-Middleware-Applied")) {
-            found_middleware1 = true;
-            break;
-        }
+        try harness.expectBody(tc.ctx, "route1");
+        try harness.expectHeader(tc.ctx, "X-Middleware-Applied", "yes");
     }
-    try std.testing.expect(found_middleware1);
+    {
+        var tc = try harness.newContext(testing.allocator, .{ .target = "/route2" });
+        defer tc.deinit();
+        try harness.runChain(tc.ctx, try router.getRoute(.GET, "/route2"));
 
-    // Test route2
-    var ctx2 = try createContext(allocator, .GET, "/route2");
-    defer ctx2.destroy();
-    const route2 = try router.getRoute(ctx2.request.method, ctx2.request.target);
-    ctx2.handlers = route2.handlers;
-    try ctx2.handlersProcess();
-    try std.testing.expectEqualStrings(ctx2.response.body orelse "", "route2");
-
-    // Verify middleware was applied
-    const headers2 = ctx2.response.getHeaders();
-    var found_middleware2 = false;
-    for (headers2) |header| {
-        if (std.ascii.eqlIgnoreCase(header.name, "X-Middleware-Applied")) {
-            found_middleware2 = true;
-            break;
-        }
+        try harness.expectBody(tc.ctx, "route2");
+        try harness.expectHeader(tc.ctx, "X-Middleware-Applied", "yes");
     }
-    try std.testing.expect(found_middleware2);
 }
 
-fn createContext(allocator: std.mem.Allocator, method: std.http.Method, target: []const u8) anyerror!*Context {
-    const req = try Request.init(.{ .allocator = allocator, .method = method, .target = target });
-    const res = try Response.init(.{ .allocator = allocator });
-    return try Context.init(.{ .allocator = allocator, .request = req, .response = res });
+test "Middleware: an error in a middleware aborts the chain" {
+    var router = try newRouter();
+    defer router.deinit();
+
+    harness.Trace.reset();
+
+    try router.use(&.{harness.failingHandler(error.MiddlewareRejected)});
+    try router.get("/test", harness.tracingHandler("handler", "never"));
+
+    var tc = try harness.newContext(testing.allocator, .{ .target = "/test" });
+    defer tc.deinit();
+
+    const route = try router.getRoute(.GET, "/test");
+    try testing.expectError(error.MiddlewareRejected, harness.runChain(tc.ctx, route));
+
+    // The handler must not have run.
+    try harness.Trace.expectOrder(&.{});
+}
+
+test "Middleware: an error in the handler propagates out through middleware" {
+    var router = try newRouter();
+    defer router.deinit();
+
+    harness.Trace.reset();
+
+    try router.use(&.{harness.tracingMiddleware("mw")});
+    try router.get("/test", harness.failingHandler(error.HandlerFailed));
+
+    var tc = try harness.newContext(testing.allocator, .{ .target = "/test" });
+    defer tc.deinit();
+
+    const route = try router.getRoute(.GET, "/test");
+    try testing.expectError(error.HandlerFailed, harness.runChain(tc.ctx, route));
+
+    // The middleware's after-hook is skipped, since `try next()` propagates.
+    try harness.Trace.expectOrder(&.{"mw:before"});
+}
+
+// ---------------------------------------------------------------------------
+// Built-in CORS middleware
+// ---------------------------------------------------------------------------
+
+test "Middleware.cors: echoes a wildcard origin when none is supplied" {
+    var router = try newRouter();
+    defer router.deinit();
+
+    var tc = try runTest(router, &.{zinc.Middleware.cors()}, harness.textHandler("body"));
+    defer tc.deinit();
+
+    try harness.expectHeader(tc.ctx, "Access-Control-Allow-Origin", "*");
+    try harness.expectBody(tc.ctx, "body");
+}
+
+test "Middleware.cors: echoes the request's Origin header" {
+    var router = try newRouter();
+    defer router.deinit();
+
+    try router.use(&.{zinc.Middleware.cors()});
+    try router.get("/test", harness.textHandler("body"));
+
+    var tc = try harness.newContext(testing.allocator, .{ .method = .GET, .target = "/test" });
+    defer tc.deinit();
+
+    try tc.ctx.request.setHeader("Origin", "https://example.com");
+    try harness.runChain(tc.ctx, try router.getRoute(.GET, "/test"));
+
+    try harness.expectHeader(tc.ctx, "Access-Control-Allow-Origin", "https://example.com");
+}
+
+test "Middleware.cors: answers a preflight without running the handler" {
+    var router = try newRouter();
+    defer router.deinit();
+
+    harness.Trace.reset();
+
+    try router.use(&.{zinc.Middleware.cors()});
+    try router.get("/test", harness.tracingHandler("handler", "should not run"));
+
+    var tc = try harness.newContext(testing.allocator, .{ .method = .OPTIONS, .target = "/test" });
+    defer tc.deinit();
+
+    // An OPTIONS request resolves to the GET route (the router's CORS
+    // affordance), and the middleware short-circuits it.
+    try harness.runChain(tc.ctx, try router.getRoute(.OPTIONS, "/test"));
+
+    try harness.expectStatus(tc.ctx, .no_content);
+    try harness.expectHeader(tc.ctx, "Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+    try harness.expectHeader(tc.ctx, "Access-Control-Allow-Headers", "Content-Type");
+    try harness.expectHeader(tc.ctx, "Access-Control-Allow-Private-Network", "true");
+    try harness.Trace.expectOrder(&.{});
+    try harness.expectNoBody(tc.ctx);
+}
+
+test "Middleware.cors: a non-preflight request reaches the handler" {
+    var router = try newRouter();
+    defer router.deinit();
+
+    harness.Trace.reset();
+
+    var tc = try runTest(
+        router,
+        &.{zinc.Middleware.cors()},
+        harness.tracingHandler("handler", "reached"),
+    );
+    defer tc.deinit();
+
+    try harness.Trace.expectOrder(&.{"handler"});
+    try harness.expectBody(tc.ctx, "reached");
+    try harness.expectNoHeader(tc.ctx, "Access-Control-Allow-Methods");
+}
+
+test "Middleware.cors: composes with another middleware" {
+    var router = try newRouter();
+    defer router.deinit();
+
+    const tagger = struct {
+        fn middle(ctx: *Context) anyerror!void {
+            try ctx.setHeader("X-Tagged", "1");
+            try ctx.next();
+        }
+    }.middle;
+
+    var tc = try runTest(
+        router,
+        &.{ zinc.Middleware.cors(), tagger },
+        harness.textHandler("body"),
+    );
+    defer tc.deinit();
+
+    try harness.expectHeader(tc.ctx, "Access-Control-Allow-Origin", "*");
+    try harness.expectHeader(tc.ctx, "X-Tagged", "1");
+    try harness.expectBody(tc.ctx, "body");
 }

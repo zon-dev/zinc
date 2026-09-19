@@ -4,6 +4,10 @@ const builtin = @import("builtin");
 const assert = std.debug.assert;
 const posix = std.posix;
 
+/// Zig 0.17 removed the thin `std.posix` syscall wrappers; `posix_compat` restores
+/// the subset needed here.
+const compat = @import("posix_compat.zig");
+
 const conn_mode = enum {
     IO_Uring,
     KQueue,
@@ -44,6 +48,6 @@ pub fn response(status: std.http.Status, conn: std.posix.socket_t) anyerror!void
         },
     }
 
-    _ = try std.posix.write(conn, text);
-    // defer std.posix.close(conn);
+    _ = try compat.write(conn, text);
+    // defer compat.close(conn);
 }

@@ -87,11 +87,11 @@ pub const RouteTree = struct {
             return current;
         }
 
-        var value = path;
-
-        if (path[0] == '/') {
-            value = path[1..];
-        }
+        // Indices below run over `value`, the path without its leading slash. `offset`
+        // converts them back into indices of `path`, so a path registered without a
+        // leading slash does not slice one byte past the end.
+        const offset: usize = if (path[0] == '/') 1 else 0;
+        const value = path[offset..];
 
         // ignore / at the beginning
         for (value, 0..) |c, i| {
@@ -101,7 +101,7 @@ pub const RouteTree = struct {
                 }
 
                 const segment = value[start..i];
-                const full_path = path[0 .. i + 1];
+                const full_path = path[0 .. i + offset];
                 current = try current.handleSegment(segment, full_path);
                 start = i + 1;
             }
@@ -110,7 +110,7 @@ pub const RouteTree = struct {
         // Handle the last segment after the loop
         if (start < value.len) {
             const last_segment = value[start..]; // Get the last segment
-            const full_path = path[0 .. start + last_segment.len + 1]; // Get the full path
+            const full_path = path[0 .. start + last_segment.len + offset]; // Get the full path
             current = try current.handleSegment(last_segment, full_path); // Insert the last segment
         }
 

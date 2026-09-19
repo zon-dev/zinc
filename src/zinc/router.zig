@@ -115,7 +115,7 @@ pub fn handleConn(self: *Self, allocator: std.mem.Allocator, conn: std.posix.soc
     defer current_router = null;
 
     var parser = Router.Parser.init(read_buffer);
-    _ = try parser.parse();
+    if (!try parser.parse()) return error.InvalidRequestTarget;
     const req_method = parser.method;
     const req_target = parser.target;
 
@@ -162,8 +162,8 @@ pub const Parser = struct {
     }
 
     pub fn parse(self: *Parser) !bool {
-        _ = try self.parseMethod(self.buf);
-        _ = try self.parseTarget(self.buf);
+        if (!try self.parseMethod(self.buf)) return false;
+        if (!try self.parseTarget(self.buf)) return false;
         return true;
     }
 
@@ -279,12 +279,7 @@ pub const Parser = struct {
 };
 
 /// converts ascii to unsigned int of appropriate size
-fn asUint(comptime string: anytype) @Type(std.builtin.Type{
-    .int = .{
-        .bits = @bitSizeOf(@TypeOf(string.*)) - 8, // (- 8) to exclude sentinel 0
-        .signedness = .unsigned,
-    },
-}) {
+fn asUint(comptime string: anytype) @Int(.unsigned, @bitSizeOf(@TypeOf(string.*)) - 8) { // (- 8) to exclude sentinel 0
     const byteLength = @bitSizeOf(@TypeOf(string.*)) / 8 - 1;
     const expectedType = *const [byteLength:0]u8;
     if (@TypeOf(string) != expectedType) {
@@ -345,7 +340,9 @@ pub fn getRoutes(self: *Self) std.array_list.Managed(*Route) {
 }
 
 pub fn add(self: *Self, method: std.http.Method, path: []const u8, handler: HandlerFn) anyerror!void {
-    _ = self.getRoute(method, path) catch {
+    // Must use the exact lookup: the CORS fallback would report an existing GET route
+    // as a match for OPTIONS and silently skip registering the OPTIONS route.
+    _ = self.getRouteExact(method, path) catch {
         var handlers = std.array_list.Managed(HandlerFn).init(self.allocator);
         defer handlers.deinit();
         try handlers.appendSlice(self.middlewares.items);
@@ -432,6 +429,24 @@ fn getRouteTree(self: *Self, path: []const u8) anyerror!*RouteTree {
 }
 
 pub fn getRoute(self: *Self, method: std.http.Method, target: []const u8) anyerror!*Route {
+    return self.findRoute(method, target, true);
+}
+
+/// Looks up a route without the CORS OPTIONS fallback, so callers that need to know
+/// whether a method is *actually* registered (such as `add`) are not told that an
+/// OPTIONS route exists just because a GET route does.
+fn getRouteExact(self: *Self, method: std.http.Method, target: []const u8) anyerror!*Route {
+    return self.findRoute(method, target, false);
+}
+
+/// `options_fallback` enables returning a path's GET route for an OPTIONS lookup,
+/// which keeps CORS preflight requests working during request handling.
+fn findRoute(
+    self: *Self,
+    method: std.http.Method,
+    target: []const u8,
+    options_fallback: bool,
+) anyerror!*Route {
     // Optimized: For simple paths (no query string), extract path directly
     // This avoids expensive URL parsing for common cases like "/plaintext"
     const path: []const u8 = if (std.mem.indexOfScalar(u8, target, '?')) |_| blk: {
@@ -467,14 +482,20 @@ pub fn getRoute(self: *Self, method: std.http.Method, target: []const u8) anyerr
             }
         }
 
+        // An exact method match always wins, regardless of registration order.
         for (routes.items) |r| {
             if (r.method == method) {
                 return r;
             }
+        }
 
-            // enable for CORS
-            if (r.method == .GET and method == .OPTIONS) {
-                return r;
+        // Only when the path has no OPTIONS route of its own, fall back to its GET
+        // route so CORS preflight requests still succeed.
+        if (options_fallback and method == .OPTIONS) {
+            for (routes.items) |r| {
+                if (r.method == .GET) {
+                    return r;
+                }
             }
         }
 

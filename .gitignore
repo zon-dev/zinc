@@ -30,3 +30,8 @@ zig-out
 
 # custom
 /tmp
+
+/zig-pkg
+
+test_*
+root

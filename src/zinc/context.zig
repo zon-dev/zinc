@@ -44,7 +44,7 @@ query: ?std.Uri.Component = null,
 
 params: std.StringHashMap(Param) = undefined,
 
-query_map: ?std.StringHashMap(std.array_list.Managed([]const u8)) = null,
+query_map: ?std.StringHashMap(std.ArrayList([]const u8)) = null,
 
 // Slice of optional function pointers
 handlers: std.array_list.Managed(handlerFn) = undefined,
@@ -160,7 +160,7 @@ pub fn json(self: *Self, value: anytype, conf: Config.Context) anyerror!void {
         .writer = &out.writer,
         .options = .{},
     };
-    try stringify.write(value);
+    try writeJson(&stringify, value);
 
     try self.setHeader("Content-Type", "application/json");
     try self.setBody(out.written());
@@ -176,24 +176,20 @@ pub fn file(
     file_path: []const u8,
     conf: Config.Context,
 ) anyerror!void {
-    if (std.fs.path.basename(file_path).len == 0) {
+    if (!isFilePath(file_path)) {
         return error.NotFound;
     }
 
-    var f = try std.fs.cwd().openFile(file_path, .{});
-    defer f.close();
+    const io = std.Io.Threaded.global_single_threaded.io();
+    var f = try std.Io.Dir.cwd().openFile(io, file_path, .{});
+    defer f.close(io);
 
-    // Read the file into a buffer using new I/O API
-    const stat = try f.stat();
+    // Read the file into a buffer using the 0.17 std.Io API
+    const stat = try f.stat(io);
+    if (stat.kind == .directory) return error.NotFound;
     const buffer = try self.allocator.alloc(u8, stat.size);
     defer self.allocator.free(buffer);
-    // Use read() method instead of readAll()
-    var total_read: usize = 0;
-    while (total_read < stat.size) {
-        const bytes_read = try f.read(buffer[total_read..]);
-        if (bytes_read == 0) break;
-        total_read += bytes_read;
-    }
+    _ = try f.readPositionalAll(io, buffer, 0);
 
     try self.setBody(buffer);
 
@@ -220,22 +216,17 @@ pub fn dir(self: *Self, dir_name: []const u8, conf: Config.Context) anyerror!voi
     }
     defer self.allocator.free(sub_path);
 
-    var f = std.fs.cwd().openFile(sub_path, .{}) catch |err| {
+    const io = std.Io.Threaded.global_single_threaded.io();
+    var f = std.Io.Dir.cwd().openFile(io, sub_path, .{}) catch |err| {
         return err;
     };
-    defer f.close();
+    defer f.close(io);
 
-    // Read the file into a buffer using new I/O API
-    const stat = try f.stat();
+    // Read the file into a buffer using the 0.17 std.Io API
+    const stat = try f.stat(io);
     const buffer = try self.allocator.alloc(u8, stat.size);
     defer self.allocator.free(buffer);
-    // Use read() method instead of readAll()
-    var total_read: usize = 0;
-    while (total_read < stat.size) {
-        const bytes_read = try f.read(buffer[total_read..]);
-        if (bytes_read == 0) break;
-        total_read += bytes_read;
-    }
+    _ = try f.readPositionalAll(io, buffer, 0);
 
     try self.setBody(buffer);
     try self.setStatus(conf.status);
@@ -318,9 +309,9 @@ pub fn queryString(self: *Self, name: []const u8) anyerror![]const u8 {
 /// e.g /post?name=foo => queryValues("name") => ["foo"]
 /// e.g /post?name=foo&name=bar => queryValues("name") => ["foo", "bar"]
 /// e.g /post?name=foo&name=bar => queryValues("any") => queryError.Empty
-pub fn queryValues(self: *Self, name: []const u8) anyerror!std.array_list.Managed([]const u8) {
+pub fn queryValues(self: *Self, name: []const u8) anyerror!std.ArrayList([]const u8) {
     const query_map = self.getQueryMap() orelse return queryError.InvalidValue;
-    const values: std.array_list.Managed([]const u8) = query_map.get(name) orelse return queryError.NotFound;
+    const values: std.ArrayList([]const u8) = query_map.get(name) orelse return queryError.NotFound;
 
     if (values.items.len == 0) {
         return queryError.Empty;
@@ -331,12 +322,12 @@ pub fn queryValues(self: *Self, name: []const u8) anyerror!std.array_list.Manage
 
 /// e.g /query?ids[a]=1234&ids[b]=hello&ids[b]=world
 /// queryMap("ids") => {"a": ["1234"], "b": ["hello", "world"]}
-pub fn queryMap(self: *Self, map_key: []const u8) ?std.StringHashMap(std.array_list.Managed([]const u8)) {
-    var qm: std.StringHashMap(std.array_list.Managed([]const u8)) = self.getQueryMap() orelse return null;
+pub fn queryMap(self: *Self, map_key: []const u8) ?std.StringHashMap(std.ArrayList([]const u8)) {
+    var qm: std.StringHashMap(std.ArrayList([]const u8)) = self.getQueryMap() orelse return null;
     // defer qm.deinit();
 
     var qit = qm.iterator();
-    var inner_map: std.StringHashMap(std.array_list.Managed([]const u8)) = std.StringHashMap(std.array_list.Managed([]const u8)).init(self.allocator);
+    var inner_map: std.StringHashMap(std.ArrayList([]const u8)) = std.StringHashMap(std.ArrayList([]const u8)).init(self.allocator);
 
     // defer inner_map.deinit();
 
@@ -363,7 +354,7 @@ pub fn queryMap(self: *Self, map_key: []const u8) ?std.StringHashMap(std.array_l
 
 /// Get the query values as a map.
 /// e.g /post?name=foo&name=bar => getQueryMap() => {"name": ["foo", "bar"]}
-pub fn getQueryMap(self: *Self) ?std.StringHashMap(std.array_list.Managed([]const u8)) {
+pub fn getQueryMap(self: *Self) ?std.StringHashMap(std.ArrayList([]const u8)) {
     if (self.query_map != null) {
         return self.query_map;
     }
@@ -376,7 +367,7 @@ pub fn getQueryMap(self: *Self) ?std.StringHashMap(std.array_list.Managed([]cons
 
 pub fn queryArray(self: *Self, name: []const u8) anyerror![][]const u8 {
     const query_map = self.getQueryMap() orelse return queryError.InvalidValue;
-    const values: std.array_list.Managed([]const u8) = query_map.get(name) orelse return queryError.NotFound;
+    const values: std.ArrayList([]const u8) = query_map.get(name) orelse return queryError.NotFound;
     if (values.items.len == 0) {
         return error.Empty;
     }
@@ -491,4 +482,25 @@ pub fn getBody(self: *Self) []const u8 {
 
 pub fn getMethod(self: *Self) std.http.Method {
     return self.request.method;
+}
+
+/// `.{}` is an empty tuple, which `std.json.Stringify` emits as `[]`.
+/// `json()` callers mean an empty object, so treat that case as `{}`.
+fn writeJson(stringify: *Stringify, value: anytype) !void {
+    const info = @typeInfo(@TypeOf(value));
+    if (info == .@"struct" and info.@"struct".is_tuple and info.@"struct".field_names.len == 0) {
+        try stringify.beginObject();
+        try stringify.endObject();
+        return;
+    }
+    try stringify.write(value);
+}
+
+/// True when `path` names a file rather than a directory or the filesystem root.
+/// Zig 0.17's `std.fs.path.basename` returns the last component even when the
+/// path ends with a separator, so a trailing `/` has to be checked separately.
+fn isFilePath(path: []const u8) bool {
+    if (path.len == 0) return false;
+    if (std.fs.path.isSep(path[path.len - 1])) return false;
+    return std.fs.path.basename(path).len != 0;
 }

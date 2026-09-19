@@ -4,8 +4,23 @@ const http = std.http;
 const posix = std.posix;
 const mem = std.mem;
 const Allocator = std.mem.Allocator;
-const Condition = std.Thread.Condition;
 const Io = std.Io;
+
+/// Set-once flag replacing std.Thread.ResetEvent, which Zig 0.17 removed.
+/// Only the set/isSet subset the engine uses is provided; there is no wait().
+const Flag = struct {
+    state: std.atomic.Value(bool),
+
+    const unset: Flag = .{ .state = .init(false) };
+
+    fn set(f: *Flag) void {
+        f.state.store(true, .release);
+    }
+
+    fn isSet(f: *const Flag) bool {
+        return f.state.load(.acquire);
+    }
+};
 
 const URL = @import("url");
 
@@ -31,6 +46,10 @@ const server = @import("./server.zig");
 
 const utils = @import("utils.zig");
 const BufferPool = @import("buffer_pool.zig").BufferPool;
+
+/// Zig 0.17 removed the thin `std.posix` syscall wrappers; `posix_compat` restores
+/// the subset the engine needs for the descriptors it owns directly.
+const compat = @import("posix_compat.zig");
 
 // Forward declaration - Connection is defined later
 pub const Connection = struct {
@@ -145,7 +164,7 @@ pub const Worker = struct {
 
         // Close listener
         if (self.listener_socket >= 0) {
-            posix.close(self.listener_socket);
+            compat.close(self.listener_socket);
         }
 
         // Deinit resources
@@ -184,12 +203,15 @@ listener_address: std.Io.net.IpAddress = undefined,
 connection_count: std.atomic.Value(usize) = std.atomic.Value(usize).init(0),
 
 // Thread management
-threads: std.Thread.Pool = undefined,
-stopping: std.Thread.ResetEvent = .unset,
-stopped: std.Thread.ResetEvent = .unset,
+// Zig 0.17 removed std.Thread.Pool in favour of std.Io; `io_impl` owns the
+// worker threads and `task_group` replaces the old pool's fire-and-forget spawn.
+io_impl: std.Io.Threaded = undefined,
+task_group: std.Io.Group = .init,
+stopping: Flag = .unset,
+stopped: Flag = .unset,
 
 /// see at https://github.com/ziglang/zig/blob/master/lib/std/Thread/Condition.zig
-cond: Condition = .{},
+cond: Io.Condition = .init,
 num_threads: usize = 0,
 spawn_count: std.atomic.Value(usize) = std.atomic.Value(usize).init(0),
 
@@ -250,7 +272,7 @@ fn create(conf: Config.Engine) anyerror!*Engine {
             .data = conf.data,
         }),
         .middlewares = std.array_list.Managed(HandlerFn).init(allocator),
-        .threads = undefined,
+        .io_impl = undefined,
         .num_threads = conf.num_threads,
         .stack_size = conf.stack_size,
         .listener_address = address, // Will be updated after first listener is created
@@ -263,14 +285,13 @@ fn create(conf: Config.Engine) anyerror!*Engine {
         .worker_threads = undefined,
     };
 
-    // Initialize thread pool for request processing
-    // Worker threads handle I/O events, Thread.Pool handles actual request processing
-    try engine.threads.init(.{
-        .allocator = allocator,
-        .n_jobs = conf.num_threads, // Thread pool for request processing
-        .track_ids = false,
+    // Initialize the std.Io implementation used for request processing.
+    // Worker threads handle I/O events; this thread pool runs the handlers.
+    engine.io_impl = std.Io.Threaded.init(allocator, .{
         .stack_size = conf.stack_size,
+        .concurrent_limit = .limited(conf.num_threads),
     });
+    engine.task_group = .init;
 
     // Create workers for each thread
     // Each worker has its own IO instance, listener socket, and resources
@@ -283,7 +304,7 @@ fn create(conf: Config.Engine) anyerror!*Engine {
     for (engine.workers, 0..) |*worker, i| {
         // Each thread gets its own listener socket with SO_REUSEPORT
         // This allows the kernel to distribute connections across threads
-        var listener = try server.listen(address, .{
+        const listener = try server.listen(address, .{
             .reuse_address = true,
             .reuse_port = true, // Critical for multi-threading
         });
@@ -361,7 +382,7 @@ pub fn deinit(self: *Self) void {
     if (!self.stopping.isSet()) self.stopping.set();
 
     // Broadcast to all threads to stop.
-    self.cond.broadcast();
+    self.cond.broadcast(self.io_impl.io());
 
     // Close test connection if any (not needed with new API)
 
@@ -372,7 +393,7 @@ pub fn deinit(self: *Self) void {
     if (self.threads_started.load(.acquire)) {
         if (self.worker_threads) |threads| {
             // Give threads a moment to check stopping flag and exit
-            std.posix.nanosleep(0, 50 * std.time.ns_per_ms);
+            self.io_impl.io().sleep(.fromMilliseconds(50), .awake) catch {};
             for (threads) |thread| {
                 thread.join();
             }
@@ -390,8 +411,9 @@ pub fn deinit(self: *Self) void {
         allocator.free(self.workers);
     }
 
-    // Wait for thread pool to finish
-    self.threads.deinit();
+    // Wait for in-flight request tasks, then tear down the thread pool.
+    self.task_group.cancel(self.io_impl.io());
+    self.io_impl.deinit();
 
     // Deinit middlewares
     if (self.middlewares) |*m| m.deinit();
@@ -607,14 +629,14 @@ fn handleAcceptedConnectionWorker(worker: *Worker, client_fd: posix.socket_t) vo
         if (current_connections % 1000 == 0) { // Log every 1000 rejections to avoid spam
             std.log.warn("Connection limit reached: {}/{}, rejecting new connection", .{ current_connections, engine.max_conn });
         }
-        posix.close(client_fd);
+        compat.close(client_fd);
         return;
     }
 
     // Create new connection
     const connection = allocator.create(Connection) catch |err| {
         std.log.warn("Failed to allocate connection: {}", .{err});
-        posix.close(client_fd);
+        compat.close(client_fd);
         return;
     };
     connection.* = Connection.init();
@@ -627,7 +649,7 @@ fn handleAcceptedConnectionWorker(worker: *Worker, client_fd: posix.socket_t) vo
         // This should never happen now, but keep error handling for safety
         std.log.err("Critical: Failed to allocate read buffer: {}", .{err});
         allocator.destroy(connection);
-        posix.close(client_fd);
+        compat.close(client_fd);
         return;
     };
 
@@ -641,7 +663,7 @@ fn handleAcceptedConnectionWorker(worker: *Worker, client_fd: posix.socket_t) vo
             worker.read_buffer_pool.release(buffer);
         }
         allocator.destroy(connection);
-        posix.close(client_fd);
+        compat.close(client_fd);
         return;
     };
 
@@ -673,7 +695,7 @@ fn handleAcceptedConnection(self: *Engine, client_fd: posix.socket_t) void {
     if (current_connections >= self.max_conn) {
         // Connection limit reached, close immediately
         // This is better than accepting and then closing, which causes errors on client side
-        posix.close(client_fd);
+        compat.close(client_fd);
         return;
     }
 
@@ -682,7 +704,7 @@ fn handleAcceptedConnection(self: *Engine, client_fd: posix.socket_t) void {
     const connection = self.allocator.create(Connection) catch |err| {
         // Allocation failed - close the socket to avoid client errors
         std.log.warn("Failed to allocate connection: {}", .{err});
-        posix.close(client_fd);
+        compat.close(client_fd);
         return;
     };
     // Initialize connection with default values
@@ -696,7 +718,7 @@ fn handleAcceptedConnection(self: *Engine, client_fd: posix.socket_t) void {
         std.log.warn("Read buffer pool exhausted, rejecting new connection: {}", .{err});
         // No mutex needed - single-threaded
         self.allocator.destroy(connection);
-        posix.close(client_fd);
+        compat.close(client_fd);
         return;
     };
 
@@ -714,7 +736,7 @@ fn handleAcceptedConnection(self: *Engine, client_fd: posix.socket_t) void {
         // Destroy connection - no mutex needed, single-threaded
         self.allocator.destroy(connection);
 
-        posix.close(client_fd);
+        compat.close(client_fd);
         return;
     };
 
@@ -812,7 +834,7 @@ fn submitRequestBatch(worker: *Worker, engine: *Engine) !void {
     if (batch_count > 0) {
         if (batch_count == 1) {
             // Single request - submit directly for minimal latency
-            engine.threads.spawn(processRequestAsync, .{batch[0]}) catch |spawn_err| {
+            engine.task_group.concurrent(engine.io_impl.io(), processRequestAsync, .{batch[0]}) catch |spawn_err| {
                 std.log.err("Failed to spawn request: {}", .{spawn_err});
                 engine.allocator.free(batch[0].data);
                 engine.allocator.destroy(batch[0]);
@@ -821,10 +843,10 @@ fn submitRequestBatch(worker: *Worker, engine: *Engine) !void {
             // Multiple requests - submit as batch to reduce spawn overhead
             const batch_copy = try engine.allocator.alloc(*RequestContext, batch_count);
             @memcpy(batch_copy, batch[0..batch_count]);
-            engine.threads.spawn(processRequestBatch, .{batch_copy}) catch {
+            engine.task_group.concurrent(engine.io_impl.io(), processRequestBatch, .{batch_copy}) catch {
                 // Fallback: process individually
                 for (batch[0..batch_count]) |ctx| {
-                    engine.threads.spawn(processRequestAsync, .{ctx}) catch |spawn_err2| {
+                    engine.task_group.concurrent(engine.io_impl.io(), processRequestAsync, .{ctx}) catch |spawn_err2| {
                         std.log.err("Failed to spawn request: {}", .{spawn_err2});
                         engine.allocator.free(ctx.data);
                         engine.allocator.destroy(ctx);
@@ -1018,7 +1040,7 @@ pub fn shutdown(self: *Self, timeout_ns: u64) void {
     // Listeners are closed in worker.deinit()
 
     // Broadcast to wake up any waiting threads
-    self.cond.broadcast();
+    self.cond.broadcast(self.io_impl.io());
 
     // Signal stopped
     if (!self.stopped.isSet()) {

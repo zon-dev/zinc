@@ -3,6 +3,7 @@ const testing = std.testing;
 const http = std.http;
 
 const zinc = @import("../zinc.zig");
+const compat = @import("../zinc/posix_compat.zig");
 const Request = zinc.Request;
 const Response = zinc.Response;
 const Context = zinc.Context;
@@ -76,11 +77,11 @@ fn testZincWithAllocatorAndServer(comptime AllocatorType: type, allocator: Alloc
     // Try to connect with a few retries (fast, non-blocking)
     var connected = false;
     for (0..10) |_| {
-        const sockfd = try std.posix.socket(std.posix.AF.INET, std.posix.SOCK.STREAM | std.posix.SOCK.CLOEXEC, std.posix.IPPROTO.TCP);
-        defer std.posix.close(sockfd);
+        const sockfd = try compat.socket(std.posix.AF.INET, std.posix.SOCK.STREAM | std.posix.SOCK.CLOEXEC, std.posix.IPPROTO.TCP);
+        defer compat.close(sockfd);
 
         const sockaddr: *const std.posix.sockaddr = @ptrCast(&sa);
-        std.posix.connect(sockfd, sockaddr, @sizeOf(std.posix.sockaddr.in)) catch |err| {
+        compat.connect(sockfd, sockaddr, @sizeOf(std.posix.sockaddr.in)) catch |err| {
             if (err == error.ConnectionRefused) {
                 // Server not ready yet, continue to next iteration
                 continue;
@@ -99,10 +100,10 @@ test "Zinc with different allocators" {
     // Test with std.testing.allocator (GeneralPurposeAllocator with leak detection)
     try testZincWithAllocator(std.mem.Allocator, std.testing.allocator, "std.testing.allocator");
 
-    // Test with GeneralPurposeAllocator
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    // Test with DebugAllocator (renamed from GeneralPurposeAllocator)
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
     defer _ = gpa.deinit();
-    try testZincWithAllocator(std.mem.Allocator, gpa.allocator(), "std.heap.GeneralPurposeAllocator");
+    try testZincWithAllocator(std.mem.Allocator, gpa.allocator(), "std.heap.DebugAllocator");
 
     // Test with ArenaAllocator
     const page_allocator = std.heap.page_allocator;
@@ -146,8 +147,8 @@ test "Zinc Server" {
     try router.options("/test", testHandle);
     const routes3 = router.getRoutes();
     defer routes3.deinit();
-    // OPTIONS method is added to the existing route, not creating a new one
-    try std.testing.expectEqual(1, routes3.items.len);
+    // A route carries a single method, so OPTIONS registers its own route on /test.
+    try std.testing.expectEqual(2, routes3.items.len);
 
     // Test additional middleware without running server
     const mid1 = struct {
@@ -174,7 +175,8 @@ test "Zinc Server" {
     try router.get("/mid", handle);
     const routes4 = router.getRoutes();
     defer routes4.deinit();
-    try std.testing.expectEqual(2, routes4.items.len); // /test and /mid
+    // /test GET, /test OPTIONS, /mid GET
+    try std.testing.expectEqual(3, routes4.items.len);
 }
 
 fn testHandle(ctx: *Context) anyerror!void {
