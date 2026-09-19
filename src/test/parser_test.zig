@@ -115,3 +115,20 @@ test "Parser: the same buffer can be parsed repeatedly" {
         try testing.expectEqualStrings("/idempotent", parser.target);
     }
 }
+
+test "Parser: keep-alive defaults and Connection header" {
+    const Case = struct { line: []const u8, keep: bool };
+    const cases = [_]Case{
+        .{ .line = "GET / HTTP/1.1\r\nHost: x\r\n\r\n", .keep = true },
+        .{ .line = "GET / HTTP/1.1\r\nConnection: keep-alive\r\n\r\n", .keep = true },
+        .{ .line = "GET / HTTP/1.1\r\nConnection: close\r\n\r\n", .keep = false },
+        .{ .line = "GET / HTTP/1.0\r\nHost: x\r\n\r\n", .keep = false },
+        .{ .line = "GET / HTTP/1.0\r\nConnection: keep-alive\r\n\r\n", .keep = true },
+        .{ .line = "GET / HTTP/1.1\r\nconnection: CLOSE\r\n\r\n", .keep = false },
+    };
+    inline for (cases) |c| {
+        var buf: [c.line.len]u8 = c.line[0..c.line.len].*;
+        const parser = try harness.parseInto(&buf);
+        try testing.expectEqual(c.keep, parser.keep_alive);
+    }
+}

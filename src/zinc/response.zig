@@ -208,84 +208,63 @@ pub fn send(self: *Self, content: []const u8, options: RespondOptions) anyerror!
     _ = try compat.writev(self.conn, iovecs[0..iovecs_len]);
 }
 
-/// Async version of send that uses AIO for non-blocking response writing
+/// Serialize and submit the response. Bytes live in `connection.arena` until
+/// the write completes — `startWrite` does not copy, so this buffer must not
+/// be freed here.
 fn sendAsync(self: *Self, content: []const u8, options: RespondOptions, engine_ptr: *anyopaque, conn_ptr: *anyopaque) anyerror!void {
-    // Cast to proper types
     const Engine = @import("../zinc.zig").Engine;
     const engine: *Engine = @ptrCast(@alignCast(engine_ptr));
     const connection: *Engine.Connection = @ptrCast(@alignCast(conn_ptr));
+    const alloc = connection.arena.allocator();
     const req_method = self.req_method orelse .GET;
 
     const transfer_encoding_none = (options.transfer_encoding orelse .chunked) == .none;
     const keep_alive = !transfer_encoding_none and options.keep_alive;
     const phrase = options.reason orelse options.status.phrase() orelse "";
 
-    // Build response using stack buffer first, then allocate only what we need
-    var stack_buffer: [2048]u8 = undefined;
-    var h = std.ArrayListUnmanaged(u8).initBuffer(&stack_buffer);
+    var extra_len: usize = 0;
+    for (options.extra_headers) |header| {
+        extra_len += header.name.len + header.value.len + 4;
+    }
+    const body_len: usize = if (req_method != .HEAD) content.len else 0;
 
-    // Build status line
+    var buf: std.ArrayListUnmanaged(u8) = .empty;
+    try buf.ensureTotalCapacity(alloc, 128 + extra_len + body_len);
+
     var status_line_buffer: [64]u8 = undefined;
     const status_line = std.fmt.bufPrint(&status_line_buffer, "{s} {d} {s}\r\n", .{
         @tagName(options.version), @intFromEnum(options.status), phrase,
     }) catch unreachable;
-    h.appendSliceAssumeCapacity(status_line);
+    buf.appendSliceAssumeCapacity(status_line);
 
-    // Build connection header
     switch (options.version) {
-        .@"HTTP/1.0" => if (keep_alive) h.appendSliceAssumeCapacity("connection: keep-alive\r\n"),
-        .@"HTTP/1.1" => if (!keep_alive) h.appendSliceAssumeCapacity("connection: close\r\n"),
+        .@"HTTP/1.0" => if (keep_alive) buf.appendSliceAssumeCapacity("connection: keep-alive\r\n"),
+        .@"HTTP/1.1" => if (!keep_alive) buf.appendSliceAssumeCapacity("connection: close\r\n"),
     }
 
-    // Build content-length or transfer-encoding header
     if (options.transfer_encoding) |transfer_encoding| switch (transfer_encoding) {
         .none => {},
-        .chunked => h.appendSliceAssumeCapacity("transfer-encoding: chunked\r\n"),
+        .chunked => buf.appendSliceAssumeCapacity("transfer-encoding: chunked\r\n"),
     } else {
         var content_length_buffer: [32]u8 = undefined;
         const content_length_line = std.fmt.bufPrint(&content_length_buffer, "content-length: {d}\r\n", .{content.len}) catch unreachable;
-        h.appendSliceAssumeCapacity(content_length_line);
+        buf.appendSliceAssumeCapacity(content_length_line);
     }
 
-    // Add extra headers
     for (options.extra_headers) |header| {
-        h.appendSliceAssumeCapacity(header.name);
-        h.appendSliceAssumeCapacity(": ");
+        buf.appendSliceAssumeCapacity(header.name);
+        buf.appendSliceAssumeCapacity(": ");
         if (header.value.len > 0) {
-            h.appendSliceAssumeCapacity(header.value);
+            buf.appendSliceAssumeCapacity(header.value);
         }
-        h.appendSliceAssumeCapacity("\r\n");
+        buf.appendSliceAssumeCapacity("\r\n");
+    }
+    buf.appendSliceAssumeCapacity("\r\n");
+    if (body_len > 0) {
+        buf.appendSliceAssumeCapacity(content);
     }
 
-    h.appendSliceAssumeCapacity("\r\n");
-
-    // Calculate total size needed
-    const header_size = h.items.len;
-    const body_size = if (req_method != .HEAD) content.len else 0;
-    const total_size = header_size + body_size;
-
-    // Allocate response buffer directly
-    // Cannot use worker.write_buffer_pool here because sendAsync is called from Thread.Pool
-    // and BufferPool is not thread-safe (designed for single-threaded event loop)
-    const response_data = try engine.allocator.alloc(u8, total_size);
-    errdefer engine.allocator.free(response_data);
-
-    @memcpy(response_data[0..header_size], h.items);
-    if (body_size > 0) {
-        @memcpy(response_data[header_size..][0..body_size], content);
-    }
-
-    // Use AIO to send the response asynchronously
-    // queueWriteToWorker will copy the data, so we can free the original buffer here
-    // The copied buffer will be freed in handleWriteCompletionWorker after write completes
-    engine.startWrite(connection, response_data) catch |err| {
-        engine.allocator.free(response_data);
-        return err;
-    };
-
-    // Free the original buffer since queueWriteToWorker has copied it
-    // The copied buffer will be managed by the write queue and freed after completion
-    engine.allocator.free(response_data);
+    try engine.startWrite(connection, buf.items);
 }
 
 pub fn write(self: *Self, content: []const u8, options: RespondOptions) anyerror!void {

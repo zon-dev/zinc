@@ -40,7 +40,6 @@ const Catchers = zinc.Catchers;
 const aio = @import("aio");
 const IO = aio.IO;
 const Time = aio.Time;
-const QueueType = aio.QueueType;
 
 const server = @import("./server.zig");
 
@@ -70,18 +69,32 @@ pub const Connection = struct {
     read_completion: IO.Completion = undefined,
     write_completion: IO.Completion = undefined,
 
-    // Store write buffer for cleanup after async write completes
+    /// Non-null while a send is in flight. The bytes live in `arena`, so this is
+    /// an in-flight marker, not an owning pointer — never free it directly.
     write_buffer: ?[]u8 = null,
 
     // Each connection has its own read buffer from the pool
     read_buffer: ?[]u8 = null,
 
+    /// Per-connection scratch. The request/response objects, everything the
+    /// handler allocates, and the serialized response bytes all come from here.
+    /// Reset once the response has been written (`handleWriteCompletionWorker`),
+    /// which is the only point at which nothing from the exchange is still live:
+    /// the send is asynchronous, so the response bytes must outlive `handleConn`.
+    ///
+    /// Per-connection rather than per-worker precisely because of that overlap —
+    /// one connection's send can still be in flight while another connection on
+    /// the same worker is being handled, so a shared arena could not be reset
+    /// safely. `retain_with_limit` keeps the first chunk, so steady-state request
+    /// handling performs no allocator syscalls at all.
+    arena: std.heap.ArenaAllocator = undefined,
+
     // Store reference to worker for fast lookup (avoid scanning all workers)
     // This is set when connection is created and never changes
     worker: ?*Worker = null,
 
-    pub fn init() Connection {
-        return .{};
+    pub fn init(allocator: Allocator) Connection {
+        return .{ .arena = std.heap.ArenaAllocator.init(allocator) };
     }
 
     pub fn getSocket(self: Connection) posix.socket_t {
@@ -99,14 +112,6 @@ pub const Connection = struct {
     pub fn setWorker(self: *Connection, w: *Worker) void {
         self.worker = w;
     }
-};
-
-// Write operation for cross-thread writes
-// Must be defined after Connection
-const WriteOp = struct {
-    link: QueueType(@This()).Link = .{},
-    connection: *Connection,
-    data: []u8,
 };
 
 // Multi-threaded support: Each thread has its own resources
@@ -130,19 +135,10 @@ pub const Worker = struct {
     accept_completions: []IO.Completion = undefined,
     accept_index: std.atomic.Value(usize) = std.atomic.Value(usize).init(0),
 
-    // Each thread has its own arena for request processing
-    arena: std.heap.ArenaAllocator = undefined,
-    arena_request_count: usize = 0,
-
-    // Write operation queue for cross-thread writes (thread-safe)
-    // When Thread.Pool thread needs to write, it queues the operation here
-    // Worker thread processes this queue in its event loop
-    write_queue: QueueType(WriteOp) = undefined,
-
-    // Request queue for batching requests to reduce Thread.Pool spawn overhead
-    // Requests are batched before submitting to Thread.Pool
-    request_queue: QueueType(RequestContext) = undefined,
-    request_queue_size: std.atomic.Value(usize) = std.atomic.Value(usize).init(0),
+    /// Id of the thread running this worker's event loop. Requests are handled
+    /// inline on that thread, so every aio submission for a connection this
+    /// worker owns must come from it; `assertOnWorkerThread` checks that in Debug.
+    thread_id: std.Thread.Id = 0,
 
     // Reference to shared engine (read-only after init)
     engine: *Engine = undefined,
@@ -157,6 +153,7 @@ pub const Worker = struct {
                 if (connection.read_buffer) |buffer| {
                     self.read_buffer_pool.release(buffer);
                 }
+                connection.arena.deinit();
                 allocator.destroy(connection);
             }
         }
@@ -171,18 +168,6 @@ pub const Worker = struct {
         self.aio_io.deinit();
         self.read_buffer_pool.deinit();
         self.write_buffer_pool.deinit();
-        self.arena.deinit();
-
-        // Free any remaining queued writes
-        while (self.write_queue.pop()) |write_op| {
-            allocator.free(write_op.data);
-        }
-
-        // Free any remaining queued requests
-        while (self.request_queue.pop()) |ctx| {
-            allocator.free(ctx.data);
-            allocator.destroy(ctx);
-        }
 
         if (self.accept_completions.len > 0) {
             allocator.free(self.accept_completions);
@@ -285,14 +270,11 @@ fn create(conf: Config.Engine) anyerror!*Engine {
         .worker_threads = undefined,
     };
 
-    // Initialize the std.Io implementation used for request processing.
-    // Worker threads handle I/O events; this thread pool runs the handlers.
-    // Handler pool is independent of AIO worker count. Capping it at
-    // `num_threads` makes `Group.concurrent` return ConcurrencyUnavailable
-    // under a handful of simultaneous clients and the request is dropped.
+    // Handlers run inline on the AIO worker threads; this pool exists only
+    // because Engine still needs a `std.Io` for condition broadcast / sleep.
     engine.io_impl = std.Io.Threaded.init(allocator, .{
         .stack_size = conf.stack_size,
-        .concurrent_limit = .limited(@max(64, @as(usize, conf.num_threads) * 8)),
+        .concurrent_limit = .limited(1),
     });
     engine.task_group = .init;
 
@@ -328,10 +310,6 @@ fn create(conf: Config.Engine) anyerror!*Engine {
             .aio_io = aio_io,
             .aio_time = aio_time,
             .listener_socket = listener.socket_fd,
-            .arena = std.heap.ArenaAllocator.init(allocator),
-            .write_queue = QueueType(WriteOp).init(.{ .name = "write_queue" }),
-            .request_queue = QueueType(RequestContext).init(.{ .name = "request_queue" }),
-            .request_queue_size = std.atomic.Value(usize).init(0),
             .engine = engine,
         };
 
@@ -472,6 +450,8 @@ fn workerThread(worker: *Worker) void {
     const engine = worker.engine;
     const listener = worker.listener_socket;
 
+    worker.thread_id = std.Thread.getCurrentId();
+
     // Pre-start multiple accept operations for high concurrency
     for (0..engine.target_concurrent_accepts) |_| {
         startAcceptWorker(worker, listener) catch |err| {
@@ -481,47 +461,25 @@ fn workerThread(worker: *Worker) void {
         };
     }
 
-    // Event loop for this worker thread
-    // Process write queue first to minimize latency for queued writes
-    // Then run AIO event loop with reasonable timeout
+    // Event loop. Requests are handled inline in the read completion callback and
+    // the response is submitted to aio from this same thread, so there is nothing
+    // to drain between iterations — a completed read runs the handler and queues
+    // the send within one `run_for_ns` pass. `event_wait_timeout_ns` therefore only
+    // bounds how quickly the loop notices `stopping`; it is not in the request path.
     while (!engine.stopping.isSet()) {
-        // Process ALL queued write operations from Thread.Pool threads FIRST
-        // This minimizes latency - writes are processed immediately when available
-        // Process all available writes as fast as possible for maximum throughput
-        var writes_processed: usize = 0;
-        while (worker.write_queue.pop()) |write_op| {
-            startWriteWorker(worker, write_op.connection, write_op.data) catch |write_err| {
-                std.log.err("Failed to start queued write: {}", .{write_err});
-                engine.allocator.free(write_op.data);
-                engine.allocator.destroy(write_op);
-                continue;
-            };
-            // Free WriteOp structure after queuing the write operation
-            // The data buffer will be freed in handleWriteCompletionWorker after write completes
-            engine.allocator.destroy(write_op);
-            writes_processed += 1;
-        }
-
-        // Process request queue in batches to reduce Thread.Pool spawn overhead
-        // Process ALL available requests immediately, even if less than batch size
-        // This ensures requests don't wait for batch to fill
-        const queue_size_before = worker.request_queue_size.load(.monotonic);
-        if (queue_size_before > 0) {
-            submitRequestBatch(worker, engine) catch |err| {
-                std.log.err("Failed to submit request batch: {}", .{err});
-            };
-        }
-
-        // Run AIO event loop with balanced timeout
-        // Use reasonable timeout to balance latency and CPU usage
-        // Process writes immediately, but don't spin CPU with very short timeouts
-        const timeout = engine.event_wait_timeout_ns;
-
-        worker.aio_io.run_for_ns(timeout) catch |err| {
+        worker.aio_io.run_for_ns(engine.event_wait_timeout_ns) catch |err| {
             if (err != error.TimeoutTooBig and !engine.stopping.isSet()) {
                 std.log.err("AIO run_for_ns error: {}", .{err});
             }
         };
+    }
+}
+
+/// Requests run inline on the worker's event-loop thread, so aio submissions for
+/// a connection must happen there. Cheap enough to leave in Debug only.
+inline fn assertOnWorkerThread(worker: *Worker) void {
+    if (std.debug.runtime_safety and worker.thread_id != 0) {
+        std.debug.assert(std.Thread.getCurrentId() == worker.thread_id);
     }
 }
 
@@ -544,6 +502,8 @@ fn startAcceptWorker(worker: *Worker, socket: posix.socket_t) !void {
 
 /// Start reading from a connection (worker version)
 fn startReadWorker(worker: *Worker, connection: *Connection) !void {
+    assertOnWorkerThread(worker);
+
     // Ensure connection has a read buffer
     if (connection.read_buffer == null) {
         connection.read_buffer = try worker.read_buffer_pool.acquire();
@@ -559,9 +519,43 @@ fn startReadWorker(worker: *Worker, connection: *Connection) !void {
     );
 }
 
-/// Start writing to a connection (worker version)
+/// Start writing to a connection (worker version).
+///
+/// Small responses almost always fit in the TCP send buffer. A non-blocking
+/// `write` here completes the exchange without waiting for another kevent
+/// cycle — that extra wait was a ~100µs floor (~5–10k req/s per connection).
+///
+/// On a full send, `write_buffer` is cleared and the caller (`handleReadCompletionWorker`
+/// or `handleWriteCompletionWorker`) re-arms the read. Resetting the arena here
+/// would free memory `handleConn` is still using.
 fn startWriteWorker(worker: *Worker, connection: *Connection, data: []const u8) !void {
+    assertOnWorkerThread(worker);
+
     connection.write_buffer = @constCast(data);
+
+    if (compat.write(connection.fd, data)) |written| {
+        if (written >= data.len) {
+            connection.write_buffer = null;
+            return;
+        }
+        if (written > 0) {
+            const rest = data[written..];
+            connection.write_buffer = @constCast(rest);
+            worker.aio_io.send(
+                *Worker,
+                worker,
+                writeCallbackWorker,
+                &connection.write_completion,
+                connection.fd,
+                rest,
+            );
+            return;
+        }
+    } else |err| switch (err) {
+        error.WouldBlock => {},
+        else => return err,
+    }
+
     worker.aio_io.send(
         *Worker,
         worker,
@@ -572,48 +566,24 @@ fn startWriteWorker(worker: *Worker, connection: *Connection, data: []const u8) 
     );
 }
 
-/// Start writing to a connection (public API - uses cached worker reference)
-/// Can be called from any thread - queues write operation to worker thread if needed
+/// Submit a response for an owned connection.
+///
+/// `data` must stay valid until the write completes; callers allocate it from
+/// `connection.arena`, which is reset once the send is done. Must be called on
+/// the connection's worker thread — which holds because handlers run inline
+/// in the read completion callback.
 pub fn startWrite(self: *Engine, connection: *Connection, data: []const u8) !void {
-    // Use cached worker reference for O(1) lookup instead of O(n) scan
     const worker = connection.worker orelse {
-        // Fallback: scan all workers (should rarely happen)
         for (self.workers) |*w| {
             if (w.connections.get(connection.fd)) |_| {
-                connection.setWorker(w); // Cache for next time
-                return queueWriteToWorker(w, connection, data);
+                connection.setWorker(w);
+                return startWriteWorker(w, connection, data);
             }
         }
         return error.ConnectionNotFound;
     };
 
-    return queueWriteToWorker(worker, connection, data);
-}
-
-/// Queue write operation to worker thread (thread-safe)
-/// This allows Thread.Pool threads to submit writes without directly accessing aio_io
-/// Optimized for performance: minimal allocations and fast queue operations
-fn queueWriteToWorker(worker: *Worker, connection: *Connection, data: []const u8) !void {
-    // Copy data since it may be freed before worker thread processes it
-    // Use try/catch for fast path - allocation should rarely fail
-    const data_copy = worker.engine.allocator.alloc(u8, data.len) catch |err| {
-        return err; // Fast failure path
-    };
-    @memcpy(data_copy, data);
-
-    // Create write operation - use single allocation for WriteOp
-    const write_op = worker.engine.allocator.create(WriteOp) catch |err| {
-        worker.engine.allocator.free(data_copy); // Cleanup on failure
-        return err;
-    };
-    write_op.* = .{
-        .connection = connection,
-        .data = data_copy,
-    };
-
-    // Queue write operation (worker thread will process it in event loop)
-    // QueueType.push is lock-free and very fast
-    worker.write_queue.push(write_op);
+    return startWriteWorker(worker, connection, data);
 }
 
 /// Handle accepted connection (worker version)
@@ -636,21 +606,25 @@ fn handleAcceptedConnectionWorker(worker: *Worker, client_fd: posix.socket_t) vo
         return;
     }
 
+    // Darwin `accept()` does not inherit O_NONBLOCK; Nagle delays tiny responses.
+    compat.setNonblock(client_fd);
+    compat.setTcpNoDelay(client_fd);
+
     // Create new connection
     const connection = allocator.create(Connection) catch |err| {
         std.log.warn("Failed to allocate connection: {}", .{err});
         compat.close(client_fd);
         return;
     };
-    connection.* = Connection.init();
+    connection.* = Connection.init(allocator);
     connection.setSocket(client_fd);
     connection.state = .connected;
 
     // Acquire read buffer from pool
     // acquire() always succeeds now (allows dynamic growth)
     connection.read_buffer = worker.read_buffer_pool.acquire() catch |err| {
-        // This should never happen now, but keep error handling for safety
         std.log.err("Critical: Failed to allocate read buffer: {}", .{err});
+        connection.arena.deinit();
         allocator.destroy(connection);
         compat.close(client_fd);
         return;
@@ -665,6 +639,7 @@ fn handleAcceptedConnectionWorker(worker: *Worker, client_fd: posix.socket_t) vo
         if (connection.read_buffer) |buffer| {
             worker.read_buffer_pool.release(buffer);
         }
+        connection.arena.deinit();
         allocator.destroy(connection);
         compat.close(client_fd);
         return;
@@ -692,77 +667,20 @@ fn handleAcceptedConnectionWorker(worker: *Worker, client_fd: posix.socket_t) vo
 
 /// Handle accepted connection (legacy)
 fn handleAcceptedConnection(self: *Engine, client_fd: posix.socket_t) void {
-    // Check connection limit before accepting (lock-free atomic check)
-    // This prevents resource exhaustion and improves error handling
-    const current_connections = self.connection_count.load(.monotonic);
-    if (current_connections >= self.max_conn) {
-        // Connection limit reached, close immediately
-        // This is better than accepting and then closing, which causes errors on client side
-        compat.close(client_fd);
-        return;
-    }
-
-    // Create new connection - no mutex needed, single-threaded event loop
-    // Direct allocation is faster than memory pool for single-threaded use
-    const connection = self.allocator.create(Connection) catch |err| {
-        // Allocation failed - close the socket to avoid client errors
-        std.log.warn("Failed to allocate connection: {}", .{err});
-        compat.close(client_fd);
-        return;
-    };
-    // Initialize connection with default values
-    connection.* = Connection.init();
-    connection.setSocket(client_fd);
-    connection.state = .connected;
-
-    // Acquire read buffer from pool
-    connection.read_buffer = self.read_buffer_pool.acquire() catch |err| {
-        // Buffer pool exhausted - clean up and close
-        std.log.warn("Read buffer pool exhausted, rejecting new connection: {}", .{err});
-        // No mutex needed - single-threaded
-        self.allocator.destroy(connection);
-        compat.close(client_fd);
-        return;
-    };
-
-    // Add to managed connections and increment counter
-    // Check again after acquiring resources to avoid race conditions
-    self.connections.put(self.allocator, client_fd, connection) catch |err| {
-        std.log.warn("Failed to add connection to map: {}", .{err});
-
-        // Return read buffer to pool before destroying connection
-        if (connection.read_buffer) |buffer| {
-            self.read_buffer_pool.release(buffer);
-            connection.read_buffer = null;
-        }
-
-        // Destroy connection - no mutex needed, single-threaded
-        self.allocator.destroy(connection);
-
-        compat.close(client_fd);
-        return;
-    };
-
-    // Increment connection count (lock-free)
-    _ = self.connection_count.fetchAdd(1, .monotonic);
-
-    // Start reading from the connection
-    self.startRead(connection) catch |err| {
-        std.log.warn("Failed to start reading from connection: {}", .{err});
-        self.closeConnection(connection);
-    };
+    _ = self;
+    _ = client_fd;
+    @compileError("handleAcceptedConnection should not be called in multi-threaded mode");
 }
 
-/// Request context for async processing
-const RequestContext = struct {
-    link: QueueType(@This()).Link = .{},
-    worker: *Worker,
-    connection: *Connection,
-    data: []u8,
-};
-
-/// Handle read completion (worker version)
-/// Submit request to thread pool for async processing to avoid blocking event loop
+/// Handle read completion: run the request inline on this worker thread.
+///
+/// `data` points straight into `connection.read_buffer`, which stays valid for
+/// the whole call — the next `recv` is only armed after the response has been
+/// written. So the request is parsed in place with no copy.
+///
+/// Everything the exchange allocates comes from `connection.arena`, including the
+/// serialized response, which must outlive this function if the send is
+/// asynchronous. The arena is reset once the write completes.
 fn handleReadCompletionWorker(worker: *Worker, connection: *Connection, data: []u8) void {
     const engine = worker.engine;
     if (data.len == 0) {
@@ -770,153 +688,54 @@ fn handleReadCompletionWorker(worker: *Worker, connection: *Connection, data: []
         return;
     }
 
-    // Copy data to owned buffer for async processing
-    // This allows the read buffer to be reused immediately
-    const data_copy = engine.allocator.alloc(u8, data.len) catch |err| {
-        std.log.err("Failed to allocate data copy: {}", .{err});
-        closeConnectionWorker(worker, connection);
-        return;
-    };
-    @memcpy(data_copy, data);
-
-    // Create request context
-    const ctx = engine.allocator.create(RequestContext) catch |err| {
-        std.log.err("Failed to allocate request context: {}", .{err});
-        engine.allocator.free(data_copy);
-        closeConnectionWorker(worker, connection);
-        return;
-    };
-    ctx.* = .{
-        .worker = worker,
-        .connection = connection,
-        .data = data_copy,
-    };
-
-    // Queue request for batch processing to reduce Thread.Pool spawn overhead
-    // Worker thread will batch requests and submit them together
-    worker.request_queue.push(ctx);
-    const queue_size = worker.request_queue_size.fetchAdd(1, .monotonic) + 1;
-
-    // Submit batch if queue reaches batch size OR if this is the first request in queue
-    // This ensures requests are processed immediately even if batch doesn't fill
-    const batch_size = 20;
-    if (queue_size >= batch_size or queue_size == 1) {
-        // Queue reached batch size OR first request - submit batch immediately
-        // This ensures low latency: first request doesn't wait, and batches are processed promptly
-        submitRequestBatch(worker, engine) catch |err| {
-            std.log.err("Failed to submit request batch: {}", .{err});
-        };
-    }
-
-    // Event loop continues immediately - request will be processed in batch by thread pool
-    // The read buffer can be reused for the next read operation
-}
-
-/// Submit queued requests to Thread.Pool in batches
-/// Reduces spawn overhead by batching multiple requests
-/// Processes ALL available requests immediately, even if less than batch size
-fn submitRequestBatch(worker: *Worker, engine: *Engine) !void {
-    const batch_size = 20; // Optimal batch size for reducing spawn overhead
-    var batch: [batch_size]*RequestContext = undefined;
-    var batch_count: usize = 0;
-
-    // Collect up to batch_size requests, but process whatever is available
-    // This ensures requests don't wait for batch to fill
-    while (batch_count < batch_size) {
-        if (worker.request_queue.pop()) |ctx| {
-            batch[batch_count] = ctx;
-            batch_count += 1;
-            _ = worker.request_queue_size.fetchSub(1, .monotonic);
-        } else {
-            break; // No more requests
-        }
-    }
-
-    // Submit batch if we have requests (even if less than batch_size)
-    // This ensures requests are processed immediately, not waiting for batch to fill
-    if (batch_count > 0) {
-        if (batch_count == 1) {
-            // Single request - submit directly for minimal latency
-            engine.task_group.concurrent(engine.io_impl.io(), processRequestAsync, .{batch[0]}) catch {
-                processRequestAsync(batch[0]);
-            };
-        } else {
-            // Multiple requests - submit as batch to reduce spawn overhead
-            const batch_copy = try engine.allocator.alloc(*RequestContext, batch_count);
-            @memcpy(batch_copy, batch[0..batch_count]);
-            engine.task_group.concurrent(engine.io_impl.io(), processRequestBatch, .{batch_copy}) catch {
-                // Fallback: process individually
-                for (batch[0..batch_count]) |ctx| {
-                    engine.task_group.concurrent(engine.io_impl.io(), processRequestAsync, .{ctx}) catch {
-                        processRequestAsync(ctx);
-                    };
-                }
-                engine.allocator.free(batch_copy);
-            };
-        }
-    }
-}
-
-/// Process a batch of requests in thread pool
-/// Reduces spawn overhead by processing multiple requests together
-fn processRequestBatch(batch: []*RequestContext) void {
-    if (batch.len == 0) {
-        return;
-    }
-
-    // Process all requests in batch
-    for (batch) |ctx| {
-        processRequestAsync(ctx);
-    }
-
-    // Free batch array
-    const engine = batch[0].worker.engine;
-    engine.allocator.free(batch);
-}
-
-/// Process HTTP request asynchronously in thread pool
-fn processRequestAsync(ctx: *RequestContext) void {
-    const worker = ctx.worker;
-    const engine = worker.engine;
-    const connection = ctx.connection;
-    const data = ctx.data;
-
-    // Ensure cleanup
-    defer {
-        engine.allocator.free(data);
-        engine.allocator.destroy(ctx);
-    }
-
-    // Create a temporary arena allocator for this request
-    // This is thread-safe and provides fast allocation/deallocation
-    var request_arena = std.heap.ArenaAllocator.init(engine.allocator);
-    defer request_arena.deinit();
-
-    // Process HTTP request in thread pool
-    // Response will be sent asynchronously via sendAsync -> startWrite
-    // After write completes, handleWriteCompletionWorker will continue reading for keep-alive
-    engine.router.handleConn(request_arena.allocator(), connection.getSocket(), data, engine, connection) catch |err| {
+    engine.router.handleConn(
+        connection.arena.allocator(),
+        connection.getSocket(),
+        data,
+        engine,
+        connection,
+    ) catch |err| {
         catchRouteError(err, connection.getSocket()) catch |err2| {
             std.log.err("Failed to handle route error: {}", .{err2});
         };
         closeConnectionWorker(worker, connection);
         return;
     };
+
+    // Inline send completed inside `handleConn`. Re-arm here so the arena is
+    // not reset while request/response objects on that arena are still live.
+    if (connection.write_buffer == null) {
+        _ = connection.arena.reset(.{ .retain_with_limit = engine.arena_retain_limit });
+        startReadWorker(worker, connection) catch |err| {
+            std.log.err("Failed to continue reading: {}", .{err});
+            closeConnectionWorker(worker, connection);
+        };
+    }
 }
 
-/// Handle write completion (worker version)
+/// Handle write completion: release the exchange's memory and re-arm the read.
+///
+/// This is the one point where nothing from the request/response is still live
+/// for an async send, so it is where `connection.arena` is reset.
 fn handleWriteCompletionWorker(worker: *Worker, connection: *Connection, bytes_written: usize) void {
-    _ = bytes_written;
     const engine = worker.engine;
 
-    // Free write buffer (allocated in sendAsync from Thread.Pool thread)
-    // Cannot use buffer pool here because buffer was allocated in Thread.Pool thread
     if (connection.write_buffer) |buffer| {
-        // Check if buffer is from pool by checking if it's in the pool's size range
-        // For now, always free - buffer pool is not thread-safe for cross-thread access
-        engine.allocator.free(buffer);
+        // Short write: submit the remainder before touching the arena — `buffer`
+        // still points into it. aio's send maps to a single syscall, so a partial
+        // write is possible for a large response even on loopback.
+        if (bytes_written < buffer.len) {
+            const rest = buffer[bytes_written..];
+            startWriteWorker(worker, connection, rest) catch |err| {
+                std.log.err("Failed to continue partial write: {}", .{err});
+                closeConnectionWorker(worker, connection);
+            };
+            return;
+        }
         connection.write_buffer = null;
     }
+
+    _ = connection.arena.reset(.{ .retain_with_limit = engine.arena_retain_limit });
 
     // Continue reading for keep-alive
     startReadWorker(worker, connection) catch |err| {
@@ -945,11 +764,11 @@ fn closeConnectionWorker(worker: *Worker, connection: *Connection) void {
             connection.read_buffer = null;
         }
 
-        // Return write buffer to pool if any
-        if (connection.write_buffer) |buffer| {
-            worker.write_buffer_pool.release(buffer);
-            connection.write_buffer = null;
-        }
+        // `write_buffer` is arena memory, not a pooled buffer — it used to be
+        // released to `write_buffer_pool`, which never owned it. Dropping the
+        // marker is enough; `arena.deinit()` below frees the bytes.
+        connection.write_buffer = null;
+        connection.arena.deinit();
 
         // Destroy connection
         engine.allocator.destroy(connection);
@@ -976,7 +795,8 @@ fn getConnection(self: *Engine, fd: posix.socket_t) ?*Connection {
 }
 
 pub fn requestDone(self: *Engine, retain_size: usize) void {
-    _ = self.arena.reset(.{ .retain_with_limit = retain_size });
+    _ = self;
+    _ = retain_size;
 }
 
 fn catchRouteError(err: anyerror, stream: std.posix.socket_t) anyerror!void {
@@ -1197,15 +1017,9 @@ fn writeCallbackWorker(
     }
 
     const bytes_written = result catch {
-        // Handle write error
         const connection = getConnectionWorker(worker, completion.operation.send.socket);
         if (connection) |conn| {
-            if (conn.write_buffer) |buffer| {
-                // Free buffer allocated in queueWriteToWorker (not from pool)
-                // Buffer was allocated with engine.allocator, not from write_buffer_pool
-                worker.engine.allocator.free(buffer);
-                conn.write_buffer = null;
-            }
+            conn.write_buffer = null;
             closeConnectionWorker(worker, conn);
         }
         return;

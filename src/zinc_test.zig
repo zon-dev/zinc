@@ -15,4 +15,5 @@ test {
     _ = @import("test/static_files_test.zig");
     _ = @import("test/engine_test.zig");
     _ = @import("test/performance_test.zig");
+    _ = @import("test/throughput_test.zig");
 }

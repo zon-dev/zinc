@@ -320,6 +320,17 @@ pub fn getsockname(sock: socket_t, addr: *sockaddr, addrlen: *socklen_t) GetSock
     };
 }
 
+/// Darwin's `accept()` does not set `O_NONBLOCK` on the new fd (no `accept4`).
+pub fn setNonblock(fd: socket_t) void {
+    applyDescriptorFlags(fd, posix.SOCK.NONBLOCK);
+}
+
+/// Disable Nagle so small HTTP responses are flushed immediately.
+pub fn setTcpNoDelay(fd: socket_t) void {
+    const one: c_int = 1;
+    posix.setsockopt(fd, posix.IPPROTO.TCP, posix.TCP.NODELAY, std.mem.asBytes(&one)) catch {};
+}
+
 /// Applies `SOCK.CLOEXEC`/`SOCK.NONBLOCK` to an existing descriptor, for platforms
 /// that accept neither `accept4()` nor those bits in `socket()`'s type argument.
 /// Failures leave the descriptor usable with default flags, so they are ignored

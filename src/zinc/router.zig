@@ -16,9 +16,10 @@ const Engine = zinc.Engine;
 const RouteTree = zinc.RouteTree;
 
 const Catchers = zinc.Catchers;
+const Param = zinc.Param;
 
-// Global static variable to store the current router instance
-var current_router: ?*Router = null;
+// Per-worker (the handler runs on the connection's event-loop thread).
+threadlocal var current_router: ?*Router = null;
 
 pub const Router = @This();
 const Self = @This();
@@ -110,37 +111,64 @@ pub fn handleContext(self: *Self, ctx: *Context) anyerror!void {
 }
 // pub fn handleConn(self: *Self, allocator: std.mem.Allocator, conn: std.net.Stream, read_buffer: []const u8) anyerror!void {
 pub fn handleConn(self: *Self, allocator: std.mem.Allocator, conn: std.posix.socket_t, read_buffer: []u8, engine: ?*anyopaque, connection: ?*anyopaque) anyerror!void {
-    // Set global router variable for handler use
     current_router = self;
     defer current_router = null;
 
     var parser = Router.Parser.init(read_buffer);
     if (!try parser.parse()) return error.InvalidRequestTarget;
-    const req_method = parser.method;
-    const req_target = parser.target;
 
-    const req = try Request.init(.{ .target = req_target, .method = req_method, .allocator = allocator });
-    const res = try Response.init(.{ .conn = conn, .allocator = allocator });
-    res.req_method = req_method;
-    res.engine = engine;
-    res.connection = connection;
+    // Stack-allocated: the serialized response is copied into `connection.arena`
+    // before this function returns, so these objects need not outlive the send.
+    var req = Request{
+        .allocator = allocator,
+        .conn = conn,
+        .target = parser.target,
+        .method = parser.method,
+        .head = .{
+            .method = parser.method,
+            .target = parser.target,
+            .version = .@"HTTP/1.1",
+            .expect = null,
+            .content_type = null,
+            .content_length = null,
+            .transfer_encoding = .none,
+            .transfer_compression = .identity,
+            .keep_alive = parser.keep_alive,
+        },
+    };
 
-    const ctx = try Context.init(.{ .request = req, .response = res, .allocator = allocator, .data = self.data });
-    // Note: When using arena allocator, objects are automatically freed when arena is reset.
-    // We still need to call destroy to clean up HashMap/ArrayList internal state,
-    // but the actual memory will be freed by arena reset.
-    defer ctx.destroy();
+    var res = Response{
+        .allocator = allocator,
+        .conn = conn,
+        .req_method = parser.method,
+        .engine = engine,
+        .connection = connection,
+        .header = std.array_list.Managed(std.http.Header).init(allocator),
+    };
+    defer res.header.deinit();
 
-    const match_route = self.getRoute(req_method, req_target) catch |err| {
-        try self.handleError(err, ctx);
+    var ctx = Context{
+        .allocator = allocator,
+        .request = &req,
+        .response = &res,
+        .params = std.StringHashMap(Param).init(allocator),
+        .handlers = std.array_list.Managed(HandlerFn).init(allocator),
+        .data = self.data,
+        .conn = conn,
+        .recv_buf = read_buffer,
+    };
+    defer {
+        ctx.params.deinit();
+        if (ctx.query_map) |*qm| qm.deinit();
+    }
+
+    const match_route = self.getRoute(parser.method, parser.target) catch |err| {
+        try self.handleError(err, &ctx);
         try ctx.doRequest();
         return;
     };
 
-    try match_route.handle(ctx);
-
-    // Do not close connection here, let AIO handle it
-    // The connection will be closed in handleReadCompletion based on keep-alive status
+    try match_route.handle(&ctx);
 }
 
 pub const Parser = struct {
@@ -157,6 +185,9 @@ pub const Parser = struct {
 
     target: []const u8 = undefined,
 
+    /// HTTP/1.1 default. Cleared for HTTP/1.0 or an explicit `Connection: close`.
+    keep_alive: bool = true,
+
     pub fn init(buf: []u8) Parser {
         return Parser{ .buf = buf, .pos = 0, .len = buf.len };
     }
@@ -164,7 +195,28 @@ pub const Parser = struct {
     pub fn parse(self: *Parser) !bool {
         if (!try self.parseMethod(self.buf)) return false;
         if (!try self.parseTarget(self.buf)) return false;
+        self.parseVersionAndConnection();
         return true;
+    }
+
+    fn parseVersionAndConnection(self: *Parser) void {
+        const rest = self.buf[self.pos..];
+        if (rest.len >= 8 and std.mem.startsWith(u8, rest, "HTTP/1.0")) {
+            self.keep_alive = false;
+        }
+        var lines = std.mem.splitSequence(u8, rest, "\r\n");
+        _ = lines.next();
+        while (lines.next()) |line| {
+            if (line.len == 0) break;
+            if (line.len < 12) continue;
+            if (!std.ascii.startsWithIgnoreCase(line, "connection:")) continue;
+            const raw = std.mem.trim(u8, line["connection:".len..], " \t");
+            if (std.ascii.eqlIgnoreCase(raw, "close")) {
+                self.keep_alive = false;
+            } else if (std.ascii.eqlIgnoreCase(raw, "keep-alive")) {
+                self.keep_alive = true;
+            }
+        }
     }
 
     fn parseMethod(self: *Parser, buffer: []u8) !bool {

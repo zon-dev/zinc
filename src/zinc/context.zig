@@ -154,7 +154,7 @@ pub fn json(self: *Self, value: anytype, conf: Config.Context) anyerror!void {
     }
 
     var out: std.Io.Writer.Allocating = .init(self.allocator);
-    defer out.deinit();
+    errdefer out.deinit();
 
     var stringify = Stringify{
         .writer = &out.writer,
@@ -163,7 +163,11 @@ pub fn json(self: *Self, value: anytype, conf: Config.Context) anyerror!void {
     try writeJson(&stringify, value);
 
     try self.setHeader("Content-Type", "application/json");
-    try self.setBody(out.written());
+    const slice = try out.toOwnedSlice();
+    if (self.response.body) |old_body| {
+        self.allocator.free(old_body);
+    }
+    self.response.body = slice;
     try self.setStatus(conf.status);
 }
 
