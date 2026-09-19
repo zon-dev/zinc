@@ -1,14 +1,14 @@
-//! Shared test harness for the Zinc test suite.
+//! Shared test kit for Zinc.
 //!
-//! Goals:
-//!   * One well-defined way to build a `Context` so no test reads `undefined`
-//!     memory (`Request.head`, `Request.method` and `Context.recv_buf` all
-//!     default to `undefined` in the framework and are read by production code).
-//!   * Ownership is explicit: every builder returns a value with a `deinit()`
-//!     that releases exactly what it allocated, so `std.testing.allocator`
-//!     leak detection is meaningful.
-//!   * Assertion helpers that produce useful failures instead of bare
-//!     `expect(false)`.
+//! Layout:
+//!   * **fixtures** — fully-initialized Request / Response / Context / Router /
+//!     RouteTree, so tests never read `undefined` (`Request.head`, `Request.method`,
+//!     `Context.recv_buf` default to `undefined` in production).
+//!   * **App** — in-process client: register routes, `dispatch` a request, assert
+//!     the exchange. No sockets. Same ownership story as production (`testing.allocator`
+//!     leak detection is meaningful).
+//!   * **stubs** — `text` / tracing / failing handlers. `HandlerFn` cannot capture
+//!     state, so `Trace` is process-global scratch space for chain-order tests.
 
 const std = @import("std");
 
@@ -19,14 +19,29 @@ pub const Request = zinc.Request;
 pub const Response = zinc.Response;
 pub const Route = zinc.Route;
 pub const Router = zinc.Router;
+pub const RouteTree = zinc.RouteTree;
 pub const HandlerFn = zinc.HandlerFn;
+pub const RouteError = Route.RouteError;
 
 const Head = std.http.Server.Request.Head;
 
-/// A fully-initialized `Head`. The framework declares `Request.head` as
-/// `undefined`, but `Context.getPostFormMap` reads `content_type` and
-/// `content_length`, and `Context.doRequest` reads `keep_alive`. Tests must
-/// therefore always supply a real value.
+/// Every HTTP method the framework registers via `any()`.
+pub const methods = [_]std.http.Method{
+    .GET, .POST, .PUT, .DELETE, .PATCH, .OPTIONS, .HEAD, .CONNECT, .TRACE,
+};
+
+pub const assets = struct {
+    pub const dir = "src/test/assets";
+    pub const style_css = dir ++ "/style.css";
+    pub const style_css_body = "/* style.css */";
+    pub const script_js = dir ++ "/js/script.js";
+    pub const script_js_body = "// script.js";
+};
+
+// ---------------------------------------------------------------------------
+// Fixtures
+// ---------------------------------------------------------------------------
+
 pub fn head(options: struct {
     method: std.http.Method = .GET,
     target: []const u8 = "/",
@@ -51,26 +66,15 @@ pub fn head(options: struct {
     };
 }
 
-/// Options for `newContext`.
 pub const ContextOptions = struct {
     method: std.http.Method = .GET,
     target: []const u8 = "/",
-    /// Bytes that would have been read off the socket. `getPostFormMap` reads
-    /// the request body from here.
     recv_buf: []u8 = &.{},
-    /// Content-Type reported by the request head.
     content_type: ?[]const u8 = null,
-    /// Content-Length reported by the request head. When null and a body is
-    /// supplied via `recv_buf`, it defaults to `recv_buf.len`.
     content_length: ?u64 = null,
     keep_alive: bool = false,
 };
 
-/// A `Context` plus the ownership bookkeeping needed to tear it down.
-///
-/// `Context.destroy` already frees the request and response, so `deinit` only
-/// has to call it. Kept as a distinct type so tests never have to remember
-/// which of `destroy` / `destroyWithoutRequestResponse` applies.
 pub const TestContext = struct {
     ctx: *Context,
 
@@ -79,7 +83,6 @@ pub const TestContext = struct {
     }
 };
 
-/// Build a `Context` with every field the framework reads initialized.
 pub fn newContext(allocator: std.mem.Allocator, options: ContextOptions) !TestContext {
     const req = try Request.init(.{
         .allocator = allocator,
@@ -111,8 +114,6 @@ pub fn newContext(allocator: std.mem.Allocator, options: ContextOptions) !TestCo
     return .{ .ctx = ctx };
 }
 
-/// Build a context carrying a `application/x-www-form-urlencoded` body.
-/// `body` must outlive the returned context (string literals are ideal).
 pub fn newFormContext(
     allocator: std.mem.Allocator,
     method: std.http.Method,
@@ -127,89 +128,240 @@ pub fn newFormContext(
     });
 }
 
+pub fn newRequest(allocator: std.mem.Allocator, method: std.http.Method, target: []const u8) !*Request {
+    return Request.init(.{
+        .allocator = allocator,
+        .method = method,
+        .target = target,
+        .head = head(.{ .method = method, .target = target }),
+    });
+}
+
+pub fn newResponse(allocator: std.mem.Allocator) !*Response {
+    return Response.init(.{ .allocator = allocator });
+}
+
+pub fn newRouter(allocator: std.mem.Allocator) !*Router {
+    return Router.init(.{ .allocator = allocator });
+}
+
+pub fn newTree(allocator: std.mem.Allocator) !*RouteTree {
+    return RouteTree.init(.{
+        .value = "/",
+        .full_path = "/",
+        .allocator = allocator,
+        .children = std.StringHashMap(*RouteTree).init(allocator),
+        .routes = std.array_list.Managed(*Route).init(allocator),
+    });
+}
+
+pub fn borrowedRoute(allocator: std.mem.Allocator, method: std.http.Method, path: []const u8) !*Route {
+    return Route.init(.{
+        .method = method,
+        .path = path,
+        .allocator = allocator,
+        .handlers = std.array_list.Managed(HandlerFn).init(allocator),
+    });
+}
+
+pub fn routeCount(router: *Router) usize {
+    const routes = router.getRoutes();
+    defer routes.deinit();
+    return routes.items.len;
+}
+
+/// Run a route's handler chain without writing to a socket.
+/// `Route.handle` also calls `ctx.doRequest`, which needs a live connection.
+pub fn runChain(ctx: *Context, route: *Route) !void {
+    ctx.handlers = route.handlers;
+    try ctx.handlersProcess();
+}
+
 // ---------------------------------------------------------------------------
-// Assertions
+// App — in-process request/response
+// ---------------------------------------------------------------------------
+
+pub const RequestSpec = struct {
+    method: std.http.Method = .GET,
+    target: []const u8 = "/",
+    recv_buf: []u8 = &.{},
+    content_type: ?[]const u8 = null,
+    content_length: ?u64 = null,
+    keep_alive: bool = false,
+    /// Request headers applied after the context is built (`Request.setHeader`).
+    req_headers: []const std.http.Header = &.{},
+};
+
+/// One in-process request/response. Owns the `Context` (and therefore the
+/// request and response). Assertions live here so tests read as
+/// `try res.expectBody("ok")` rather than reaching into internals.
+pub const Exchange = struct {
+    ctx: *Context,
+
+    pub fn deinit(self: Exchange) void {
+        self.ctx.destroy();
+    }
+
+    pub fn expectStatus(self: Exchange, expected: std.http.Status) !void {
+        try std.testing.expectEqual(expected, self.ctx.response.status);
+    }
+
+    pub fn expectBody(self: Exchange, expected: []const u8) !void {
+        const body = self.ctx.response.body orelse {
+            std.debug.print("expected body \"{s}\", but response body was null\n", .{expected});
+            return error.TestExpectedBody;
+        };
+        try std.testing.expectEqualStrings(expected, body);
+    }
+
+    pub fn expectNoBody(self: Exchange) !void {
+        if (self.ctx.response.body) |body| {
+            std.debug.print("expected no body, found \"{s}\"\n", .{body});
+            return error.TestUnexpectedBody;
+        }
+    }
+
+    pub fn expectBodyContains(self: Exchange, needle: []const u8) !void {
+        const body = self.ctx.response.body orelse {
+            std.debug.print("expected body containing \"{s}\", but body was null\n", .{needle});
+            return error.TestExpectedBody;
+        };
+        if (std.mem.indexOf(u8, body, needle) == null) {
+            std.debug.print("expected body to contain \"{s}\", got \"{s}\"\n", .{ needle, body });
+            return error.TestExpectedBodySubstring;
+        }
+    }
+
+    pub fn expectBodyNotContains(self: Exchange, needle: []const u8) !void {
+        const body = self.ctx.response.body orelse return;
+        if (std.mem.indexOf(u8, body, needle) != null) {
+            std.debug.print("expected body not to contain \"{s}\", got \"{s}\"\n", .{ needle, body });
+            return error.TestUnexpectedBodySubstring;
+        }
+    }
+
+    pub fn findHeader(self: Exchange, name: []const u8) ?std.http.Header {
+        for (self.ctx.response.getHeaders()) |h| {
+            if (std.ascii.eqlIgnoreCase(h.name, name)) return h;
+        }
+        return null;
+    }
+
+    pub fn expectHeader(self: Exchange, name: []const u8, expected: []const u8) !void {
+        const h = self.findHeader(name) orelse {
+            std.debug.print("expected header \"{s}\" to be present\n", .{name});
+            return error.TestExpectedHeader;
+        };
+        try std.testing.expectEqualStrings(expected, h.value);
+    }
+
+    pub fn expectNoHeader(self: Exchange, name: []const u8) !void {
+        if (self.findHeader(name)) |h| {
+            std.debug.print("expected no \"{s}\" header, found value \"{s}\"\n", .{ name, h.value });
+            return error.TestUnexpectedHeader;
+        }
+    }
+
+    pub fn headerCount(self: Exchange, name: []const u8) usize {
+        var count: usize = 0;
+        for (self.ctx.response.getHeaders()) |h| {
+            if (std.ascii.eqlIgnoreCase(h.name, name)) count += 1;
+        }
+        return count;
+    }
+};
+
+/// In-process application: a router plus a dispatcher that never opens a socket.
+pub const App = struct {
+    allocator: std.mem.Allocator,
+    router: *Router,
+
+    pub fn init(allocator: std.mem.Allocator) !App {
+        return .{
+            .allocator = allocator,
+            .router = try Router.init(.{ .allocator = allocator }),
+        };
+    }
+
+    pub fn deinit(self: *App) void {
+        self.router.deinit();
+    }
+
+    /// Look up the route and run its chain. Lookup errors (`NotFound`,
+    /// `MethodNotAllowed`) propagate so tests can `expectError` them.
+    pub fn dispatch(self: *App, spec: RequestSpec) !Exchange {
+        const tc = try newContext(self.allocator, .{
+            .method = spec.method,
+            .target = spec.target,
+            .recv_buf = spec.recv_buf,
+            .content_type = spec.content_type,
+            .content_length = spec.content_length,
+            .keep_alive = spec.keep_alive,
+        });
+        errdefer tc.deinit();
+
+        for (spec.req_headers) |h| {
+            try tc.ctx.request.setHeader(h.name, h.value);
+        }
+
+        const route = try self.router.getRoute(spec.method, spec.target);
+        try runChain(tc.ctx, route);
+        return .{ .ctx = tc.ctx };
+    }
+
+    pub fn get(self: *App, target: []const u8) !Exchange {
+        return self.dispatch(.{ .method = .GET, .target = target });
+    }
+
+    pub fn post(self: *App, target: []const u8, body: []u8) !Exchange {
+        return self.dispatch(.{
+            .method = .POST,
+            .target = target,
+            .recv_buf = body,
+        });
+    }
+};
+
+// ---------------------------------------------------------------------------
+// Assertions on a raw Context (unit tests that never go through a router)
 // ---------------------------------------------------------------------------
 
 pub fn expectStatus(ctx: *Context, expected: std.http.Status) !void {
-    try std.testing.expectEqual(expected, ctx.response.status);
+    try Exchange.expectStatus(.{ .ctx = ctx }, expected);
 }
 
-/// Assert the response body matches exactly. Fails with a clear message when
-/// no body was ever set, instead of panicking on `.?`.
 pub fn expectBody(ctx: *Context, expected: []const u8) !void {
-    const body = ctx.response.body orelse {
-        std.debug.print("expected body \"{s}\", but response body was null\n", .{expected});
-        return error.TestExpectedBody;
-    };
-    try std.testing.expectEqualStrings(expected, body);
+    try Exchange.expectBody(.{ .ctx = ctx }, expected);
 }
 
 pub fn expectNoBody(ctx: *Context) !void {
-    if (ctx.response.body) |body| {
-        std.debug.print("expected no body, found \"{s}\"\n", .{body});
-        return error.TestUnexpectedBody;
-    }
+    try Exchange.expectNoBody(.{ .ctx = ctx });
 }
 
-/// Assert the body contains `needle`. Useful for JSON, where field order is
-/// an implementation detail.
 pub fn expectBodyContains(ctx: *Context, needle: []const u8) !void {
-    const body = ctx.response.body orelse {
-        std.debug.print("expected body containing \"{s}\", but body was null\n", .{needle});
-        return error.TestExpectedBody;
-    };
-    if (std.mem.indexOf(u8, body, needle) == null) {
-        std.debug.print("expected body to contain \"{s}\", got \"{s}\"\n", .{ needle, body });
-        return error.TestExpectedBodySubstring;
-    }
-}
-
-/// Find a response header by name (case-insensitive), returning the first match.
-/// `Response.setHeader` appends rather than replacing, so callers that care
-/// about duplicates should use `headerValues`.
-pub fn findHeader(ctx: *Context, name: []const u8) ?std.http.Header {
-    for (ctx.response.getHeaders()) |h| {
-        if (std.ascii.eqlIgnoreCase(h.name, name)) return h;
-    }
-    return null;
+    try Exchange.expectBodyContains(.{ .ctx = ctx }, needle);
 }
 
 pub fn expectHeader(ctx: *Context, name: []const u8, expected: []const u8) !void {
-    const h = findHeader(ctx, name) orelse {
-        std.debug.print("expected header \"{s}\" to be present\n", .{name});
-        return error.TestExpectedHeader;
-    };
-    try std.testing.expectEqualStrings(expected, h.value);
+    try Exchange.expectHeader(.{ .ctx = ctx }, name, expected);
 }
 
 pub fn expectNoHeader(ctx: *Context, name: []const u8) !void {
-    if (findHeader(ctx, name)) |h| {
-        std.debug.print("expected no \"{s}\" header, found value \"{s}\"\n", .{ name, h.value });
-        return error.TestUnexpectedHeader;
-    }
+    try Exchange.expectNoHeader(.{ .ctx = ctx }, name);
 }
 
-/// Count how many times a header name appears.
+pub fn findHeader(ctx: *Context, name: []const u8) ?std.http.Header {
+    return Exchange.findHeader(.{ .ctx = ctx }, name);
+}
+
 pub fn countHeader(ctx: *Context, name: []const u8) usize {
-    var count: usize = 0;
-    for (ctx.response.getHeaders()) |h| {
-        if (std.ascii.eqlIgnoreCase(h.name, name)) count += 1;
-    }
-    return count;
+    return Exchange.headerCount(.{ .ctx = ctx }, name);
 }
 
 // ---------------------------------------------------------------------------
-// Handler execution tracing
+// Handler stubs
 // ---------------------------------------------------------------------------
 
-/// `HandlerFn` is a bare function pointer, so a handler cannot capture state.
-/// `Trace` is process-global scratch space that named handlers append to,
-/// letting a test assert the exact order in which a middleware chain ran.
-///
-/// Tests using it must call `Trace.reset()` first and must not run in
-/// parallel with each other. Zig runs the tests in a single test binary
-/// sequentially, so that holds by default.
 pub const Trace = struct {
     var entries: [64][]const u8 = undefined;
     var count: usize = 0;
@@ -220,7 +372,6 @@ pub const Trace = struct {
         overflowed = false;
     }
 
-    /// Record that `label` executed. Safe to call from a handler.
     pub fn record(label: []const u8) void {
         if (count >= entries.len) {
             overflowed = true;
@@ -243,7 +394,6 @@ pub const Trace = struct {
         std.debug.print("]\n", .{});
     }
 
-    /// Assert the recorded labels match `expected` exactly, in order.
     pub fn expectOrder(expected: []const []const u8) !void {
         if (overflowed) return error.TestTraceOverflow;
         const actual = items();
@@ -264,8 +414,6 @@ pub const Trace = struct {
     }
 };
 
-/// Build a handler that records `label` and then continues the chain.
-/// Because the label must be comptime-known, this is a generic factory.
 pub fn tracingMiddleware(comptime label: []const u8) HandlerFn {
     return struct {
         fn handle(ctx: *Context) anyerror!void {
@@ -276,7 +424,6 @@ pub fn tracingMiddleware(comptime label: []const u8) HandlerFn {
     }.handle;
 }
 
-/// Build a terminal handler that records `label` and writes `body`.
 pub fn tracingHandler(comptime label: []const u8, comptime body: []const u8) HandlerFn {
     return struct {
         fn handle(ctx: *Context) anyerror!void {
@@ -286,8 +433,7 @@ pub fn tracingHandler(comptime label: []const u8, comptime body: []const u8) Han
     }.handle;
 }
 
-/// A handler that writes a fixed plain-text body. The most common stub.
-pub fn textHandler(comptime body: []const u8) HandlerFn {
+pub fn text(comptime body: []const u8) HandlerFn {
     return struct {
         fn handle(ctx: *Context) anyerror!void {
             try ctx.text(body, .{});
@@ -295,7 +441,10 @@ pub fn textHandler(comptime body: []const u8) HandlerFn {
     }.handle;
 }
 
-/// A handler that always fails, to exercise error propagation.
+/// Alias kept so existing test files that still say `textHandler` compile
+/// during the migration. Prefer `text`.
+pub const textHandler = text;
+
 pub fn failingHandler(comptime err: anyerror) HandlerFn {
     return struct {
         fn handle(ctx: *Context) anyerror!void {
@@ -305,15 +454,12 @@ pub fn failingHandler(comptime err: anyerror) HandlerFn {
     }.handle;
 }
 
-/// A handler that does nothing at all.
-pub fn noopHandler(ctx: *Context) anyerror!void {
-    _ = ctx;
-}
+pub fn noopHandler(_: *Context) anyerror!void {}
 
-/// Run a route's handler chain against `ctx` the way the server would,
-/// without touching a socket. `Route.handle` calls `ctx.handle`, which also
-/// tries to write the response, so tests drive the chain directly instead.
-pub fn runChain(ctx: *Context, route: *Route) !void {
-    ctx.handlers = route.handlers;
-    try ctx.handlersProcess();
+/// Parse `buf` as a request line. `buf` must outlive the returned parser
+/// (`target` is a slice into it).
+pub fn parseInto(buf: []u8) !Router.Parser {
+    var parser = Router.Parser.init(buf);
+    _ = try parser.parse();
+    return parser;
 }

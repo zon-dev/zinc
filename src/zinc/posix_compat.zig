@@ -229,6 +229,35 @@ pub const WriteError = error{
     AccessDenied,
 } || posix.UnexpectedError;
 
+pub const ReadError = error{
+    WouldBlock,
+    NotOpenForReading,
+    ConnectionResetByPeer,
+    ConnectionTimedOut,
+    InputOutput,
+    SystemResources,
+    BrokenPipe,
+} || posix.UnexpectedError;
+
+pub fn read(fd: fd_t, buffer: []u8) ReadError!usize {
+    while (true) {
+        const rc = system.read(fd, buffer.ptr, buffer.len);
+        if (rc >= 0) return @intCast(rc);
+        return switch (errno(rc)) {
+            .INTR => continue,
+            .INVAL, .FAULT => unreachable,
+            .AGAIN => error.WouldBlock,
+            .BADF => error.NotOpenForReading,
+            .CONNRESET => error.ConnectionResetByPeer,
+            .TIMEDOUT => error.ConnectionTimedOut,
+            .IO => error.InputOutput,
+            .NOBUFS, .NOMEM => error.SystemResources,
+            .PIPE => error.BrokenPipe,
+            else => |err| unexpectedErrno(err),
+        };
+    }
+}
+
 pub fn write(fd: fd_t, bytes: []const u8) WriteError!usize {
     while (true) {
         const rc = system.write(fd, bytes.ptr, bytes.len);

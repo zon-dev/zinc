@@ -1,318 +1,119 @@
-//! Tests for static file and directory registration on the router.
+//! Static file and directory registration on the router.
 //!
-//! `staticFile` and `staticDir` record a URL-to-path mapping and register GET
-//! and HEAD routes that consult it. `static` dispatches between the two based
-//! on whether the target path has a basename.
-//!
-//! Both reject URLs containing `*` or `:` with `error.Unreachable`, since those
-//! would collide with the trie's wildcard and parameter segments.
+//! `staticFile` / `staticDir` record a URL-to-path mapping and register GET
+//! and HEAD routes. `static` dispatches between them based on basename.
+//! URLs containing `*` or `:` are rejected (`error.Unreachable`).
 
 const std = @import("std");
 const testing = std.testing;
 
 const zinc = @import("../zinc.zig");
-const Router = zinc.Router;
-
+const RouteError = zinc.Route.RouteError;
 const harness = @import("harness.zig");
 
-fn newRouter() !*Router {
-    return Router.init(.{ .allocator = testing.allocator });
-}
-
-fn routeCount(router: *Router) usize {
-    const routes = router.getRoutes();
-    defer routes.deinit();
-    return routes.items.len;
-}
-
-// ---------------------------------------------------------------------------
-// staticFile
-// ---------------------------------------------------------------------------
-
-test "staticFile: records the URL-to-path mapping" {
-    var router = try newRouter();
-    defer router.deinit();
-
-    try router.staticFile("/index.html", "test_files/index.html");
-    try router.staticFile("/logo.png", "test_files/logo.png");
-
-    try testing.expect(router.static_files != null);
-    try testing.expect(router.static_files.?.contains("/index.html"));
-    try testing.expect(router.static_files.?.contains("/logo.png"));
-    try testing.expectEqualStrings("test_files/index.html", router.static_files.?.get("/index.html").?);
-    try testing.expectEqualStrings("test_files/logo.png", router.static_files.?.get("/logo.png").?);
-}
-
-test "staticFile: registers GET and HEAD routes" {
-    var router = try newRouter();
-    defer router.deinit();
-
-    try router.staticFile("/index.html", "test_files/index.html");
-
-    try testing.expectEqual(std.http.Method.GET, (try router.getRoute(.GET, "/index.html")).method);
-    try testing.expectEqual(std.http.Method.HEAD, (try router.getRoute(.HEAD, "/index.html")).method);
-    try testing.expectError(
-        zinc.Route.RouteError.MethodNotAllowed,
-        router.getRoute(.POST, "/index.html"),
-    );
-}
-
-test "staticFile: stores an owned copy of the path" {
-    var router = try newRouter();
-    defer router.deinit();
+test "staticFile: records mapping, owns the path, registers GET and HEAD" {
+    var app = try harness.App.init(testing.allocator);
+    defer app.deinit();
 
     var path = "test_files/index.html".*;
-    try router.staticFile("/index.html", &path);
-
+    try app.router.staticFile("/index.html", &path);
     path[0] = 'X';
+    try app.router.staticFile("/logo.png", "test_files/logo.png");
+    try app.router.staticFile("/index.html", "test_files/new.html");
 
-    try testing.expectEqualStrings("test_files/index.html", router.static_files.?.get("/index.html").?);
+    try testing.expectEqualStrings("test_files/new.html", app.router.static_files.?.get("/index.html").?);
+    try testing.expectEqualStrings("test_files/logo.png", app.router.static_files.?.get("/logo.png").?);
+    try testing.expectEqual(std.http.Method.GET, (try app.router.getRoute(.GET, "/index.html")).method);
+    try testing.expectEqual(std.http.Method.HEAD, (try app.router.getRoute(.HEAD, "/index.html")).method);
+    try testing.expectError(RouteError.MethodNotAllowed, app.router.getRoute(.POST, "/index.html"));
+
+    try testing.expectError(error.Unreachable, app.router.staticFile("/file*", "test_files/file.txt"));
+    try testing.expectError(error.Unreachable, app.router.staticFile("/file:name", "test_files/file.txt"));
+    try app.router.staticFile("/valid-file", "test_files/valid-file.txt");
+    try testing.expect(app.router.static_files.?.contains("/valid-file"));
+
+    try app.router.staticFile("/file1", "test_files/file1.txt");
+    try app.router.staticFile("/file2", "test_files/file2.txt");
+    try app.router.staticFile("/file3", "test_files/file3.txt");
+    try testing.expectEqual(@as(u32, 6), app.router.static_files.?.count());
 }
 
-test "staticFile: re-registering the same URL replaces the path" {
-    var router = try newRouter();
-    defer router.deinit();
-
-    try router.staticFile("/index.html", "test_files/old.html");
-    try router.staticFile("/index.html", "test_files/new.html");
-
-    // The old path must be freed, which the testing allocator verifies.
-    try testing.expectEqualStrings("test_files/new.html", router.static_files.?.get("/index.html").?);
-}
-
-test "staticFile: rejects a URL containing a wildcard or parameter" {
-    var router = try newRouter();
-    defer router.deinit();
-
-    try testing.expectError(error.Unreachable, router.staticFile("/file*", "test_files/file.txt"));
-    try testing.expectError(error.Unreachable, router.staticFile("/file:name", "test_files/file.txt"));
-
-    try router.staticFile("/valid-file", "test_files/valid-file.txt");
-    try testing.expect(router.static_files.?.contains("/valid-file"));
-}
-
-test "staticFile: several files can be registered" {
-    var router = try newRouter();
-    defer router.deinit();
-
-    try router.staticFile("/file1", "test_files/file1.txt");
-    try router.staticFile("/file2", "test_files/file2.txt");
-    try router.staticFile("/file3", "test_files/file3.txt");
-
-    try testing.expect(router.static_files.?.contains("/file1"));
-    try testing.expect(router.static_files.?.contains("/file2"));
-    try testing.expect(router.static_files.?.contains("/file3"));
-    try testing.expectEqual(@as(u32, 3), router.static_files.?.count());
-}
-
-// ---------------------------------------------------------------------------
-// staticDir
-// ---------------------------------------------------------------------------
-
-test "staticDir: records the URL-to-directory mapping" {
-    var router = try newRouter();
-    defer router.deinit();
-
-    try router.staticDir("/assets", "test_files/assets");
-    try router.staticDir("/images", "test_files/images");
-
-    try testing.expect(router.static_dirs != null);
-    try testing.expect(router.static_dirs.?.contains("/assets"));
-    try testing.expect(router.static_dirs.?.contains("/images"));
-    try testing.expectEqualStrings("test_files/assets", router.static_dirs.?.get("/assets").?);
-    try testing.expectEqualStrings("test_files/images", router.static_dirs.?.get("/images").?);
-}
-
-test "staticDir: registers GET and HEAD routes" {
-    var router = try newRouter();
-    defer router.deinit();
-
-    try router.staticDir("/assets", "test_files/assets");
-
-    try testing.expectEqual(std.http.Method.GET, (try router.getRoute(.GET, "/assets")).method);
-    try testing.expectEqual(std.http.Method.HEAD, (try router.getRoute(.HEAD, "/assets")).method);
-}
-
-test "staticDir: stores an owned copy of the directory path" {
-    var router = try newRouter();
-    defer router.deinit();
+test "staticDir: records mapping, owns the path, registers GET and HEAD" {
+    var app = try harness.App.init(testing.allocator);
+    defer app.deinit();
 
     var path = "test_files/assets".*;
-    try router.staticDir("/assets", &path);
-
+    try app.router.staticDir("/assets", &path);
     path[0] = 'X';
+    try app.router.staticDir("/images", "test_files/images");
+    try app.router.staticDir("/assets", "test_files/new");
 
-    try testing.expectEqualStrings("test_files/assets", router.static_dirs.?.get("/assets").?);
+    try testing.expectEqualStrings("test_files/new", app.router.static_dirs.?.get("/assets").?);
+    try testing.expectEqualStrings("test_files/images", app.router.static_dirs.?.get("/images").?);
+    try testing.expectEqual(std.http.Method.GET, (try app.router.getRoute(.GET, "/assets")).method);
+    try testing.expectEqual(std.http.Method.HEAD, (try app.router.getRoute(.HEAD, "/assets")).method);
+
+    try testing.expectError(error.Unreachable, app.router.staticDir("/dir*", "test_files/dir"));
+    try testing.expectError(error.Unreachable, app.router.staticDir("/dir:name", "test_files/dir"));
+    try app.router.staticDir("/valid-dir", "test_files/valid-dir");
+
+    try app.router.staticDir("/dir1", "test_files/dir1");
+    try app.router.staticDir("/dir2", "test_files/dir2");
+    try app.router.staticDir("/dir3", "test_files/dir3");
+    try testing.expectEqual(@as(u32, 6), app.router.static_dirs.?.count());
 }
 
-test "staticDir: re-registering the same URL replaces the path" {
-    var router = try newRouter();
-    defer router.deinit();
+test "static registration: files and directories coexist in separate maps" {
+    var app = try harness.App.init(testing.allocator);
+    defer app.deinit();
 
-    try router.staticDir("/assets", "test_files/old");
-    try router.staticDir("/assets", "test_files/new");
+    try app.router.staticFile("/", "test_files/index.html");
+    try app.router.staticDir("/assets", "test_files/assets");
+    try app.router.staticFile("/favicon.ico", "test_files/favicon.ico");
+    try app.router.staticDir("/images", "test_files/images");
+    try app.router.staticFile("/same", "test_files/file.txt");
+    try app.router.staticDir("/same-dir", "test_files/dir");
 
-    try testing.expectEqualStrings("test_files/new", router.static_dirs.?.get("/assets").?);
+    try testing.expect(app.router.static_files.?.contains("/"));
+    try testing.expect(app.router.static_files.?.contains("/favicon.ico"));
+    try testing.expect(!app.router.static_files.?.contains("/same-dir"));
+    try testing.expect(app.router.static_dirs.?.contains("/assets"));
+    try testing.expect(app.router.static_dirs.?.contains("/same-dir"));
+    try testing.expect(!app.router.static_dirs.?.contains("/same"));
 }
 
-test "staticDir: rejects a URL containing a wildcard or parameter" {
-    var router = try newRouter();
-    defer router.deinit();
+test "static: dispatch, empty path, filesystem root, wildcards" {
+    var app = try harness.App.init(testing.allocator);
+    defer app.deinit();
 
-    try testing.expectError(error.Unreachable, router.staticDir("/dir*", "test_files/dir"));
-    try testing.expectError(error.Unreachable, router.staticDir("/dir:name", "test_files/dir"));
+    try app.router.static("/index.html", "test_files/index.html");
+    try testing.expect(app.router.static_files.?.contains("/index.html"));
+    try testing.expect(!app.router.static_dirs.?.contains("/index.html"));
 
-    try router.staticDir("/valid-dir", "test_files/valid-dir");
-    try testing.expect(router.static_dirs.?.contains("/valid-dir"));
+    // KNOWN ISSUE: `basename` strips trailing slashes, so a trailing `/` still
+    // takes the file branch. Callers that want a directory must call `staticDir`.
+    try app.router.static("/assets", "test_files/assets/");
+    try testing.expect(app.router.static_files.?.contains("/assets"));
+
+    try testing.expectError(error.Empty, app.router.static("", "test_files/index.html"));
+    try testing.expectError(error.AccessDenied, app.router.static("/root", "/"));
+    try testing.expectError(error.AccessDenied, app.router.static("/empty", ""));
+    try testing.expectError(error.Unreachable, app.router.static("/ok", "test_files/*"));
+    try testing.expectError(error.Unreachable, app.router.static("/ok", "test_files/:name"));
 }
 
-test "staticDir: several directories can be registered" {
-    var router = try newRouter();
-    defer router.deinit();
+test "static file serving: router global is unset outside handleConn" {
+    var app = try harness.App.init(testing.allocator);
+    defer app.deinit();
+    try app.router.staticFile("/style.css", harness.assets.style_css);
 
-    try router.staticDir("/dir1", "test_files/dir1");
-    try router.staticDir("/dir2", "test_files/dir2");
-    try router.staticDir("/dir3", "test_files/dir3");
-
-    try testing.expect(router.static_dirs.?.contains("/dir1"));
-    try testing.expect(router.static_dirs.?.contains("/dir2"));
-    try testing.expect(router.static_dirs.?.contains("/dir3"));
-    try testing.expectEqual(@as(u32, 3), router.static_dirs.?.count());
-}
-
-// ---------------------------------------------------------------------------
-// Files and directories together
-// ---------------------------------------------------------------------------
-
-test "static registration: files and directories coexist" {
-    var router = try newRouter();
-    defer router.deinit();
-
-    try router.staticFile("/", "test_files/index.html");
-    try router.staticDir("/assets", "test_files/assets");
-    try router.staticFile("/favicon.ico", "test_files/favicon.ico");
-    try router.staticDir("/images", "test_files/images");
-
-    try testing.expect(router.static_files != null);
-    try testing.expect(router.static_dirs != null);
-
-    try testing.expect(router.static_files.?.contains("/"));
-    try testing.expect(router.static_files.?.contains("/favicon.ico"));
-    try testing.expectEqualStrings("test_files/index.html", router.static_files.?.get("/").?);
-    try testing.expectEqualStrings("test_files/favicon.ico", router.static_files.?.get("/favicon.ico").?);
-
-    try testing.expect(router.static_dirs.?.contains("/assets"));
-    try testing.expect(router.static_dirs.?.contains("/images"));
-    try testing.expectEqualStrings("test_files/assets", router.static_dirs.?.get("/assets").?);
-    try testing.expectEqualStrings("test_files/images", router.static_dirs.?.get("/images").?);
-}
-
-test "static registration: files and directories use separate maps" {
-    var router = try newRouter();
-    defer router.deinit();
-
-    try router.staticFile("/same", "test_files/file.txt");
-    try router.staticDir("/same-dir", "test_files/dir");
-
-    try testing.expect(router.static_files.?.contains("/same"));
-    try testing.expect(!router.static_files.?.contains("/same-dir"));
-    try testing.expect(router.static_dirs.?.contains("/same-dir"));
-    try testing.expect(!router.static_dirs.?.contains("/same"));
-}
-
-// ---------------------------------------------------------------------------
-// static() dispatch
-// ---------------------------------------------------------------------------
-
-test "static: a path with a basename registers a file" {
-    var router = try newRouter();
-    defer router.deinit();
-
-    try router.static("/index.html", "test_files/index.html");
-
-    try testing.expect(router.static_files.?.contains("/index.html"));
-    try testing.expect(!router.static_dirs.?.contains("/index.html"));
-}
-
-test "static: a trailing slash still registers a file, not a directory" {
-    var router = try newRouter();
-    defer router.deinit();
-
-    // KNOWN ISSUE: `static` picks the directory branch only when
-    // `std.fs.path.basename(path).len == 0`, but `basename` strips trailing
-    // slashes, so "test_files/assets/" yields "assets" and takes the file
-    // branch. Combined with the earlier `""` and `"/"` rejections, the
-    // `staticDir` branch is effectively unreachable through `static`.
-    // Callers that want a directory must call `staticDir` directly.
-    try router.static("/assets", "test_files/assets/");
-
-    try testing.expect(router.static_files.?.contains("/assets"));
-    try testing.expect(!router.static_dirs.?.contains("/assets"));
-}
-
-test "static: rejects an empty relative path" {
-    var router = try newRouter();
-    defer router.deinit();
-
-    try testing.expectError(error.Empty, router.static("", "test_files/index.html"));
-}
-
-test "static: refuses to serve the filesystem root" {
-    var router = try newRouter();
-    defer router.deinit();
-
-    try testing.expectError(error.AccessDenied, router.static("/root", "/"));
-    try testing.expectError(error.AccessDenied, router.static("/empty", ""));
-}
-
-test "static: rejects a target path containing a wildcard or parameter" {
-    var router = try newRouter();
-    defer router.deinit();
-
-    try testing.expectError(error.Unreachable, router.static("/ok", "test_files/*"));
-    try testing.expectError(error.Unreachable, router.static("/ok", "test_files/:name"));
-}
-
-// ---------------------------------------------------------------------------
-// Serving
-// ---------------------------------------------------------------------------
-
-test "static file serving: fails outside a connection because the router is global" {
-    var router = try newRouter();
-    defer router.deinit();
-
-    try router.staticFile("/style.css", "src/test/assets/style.css");
+    try testing.expectError(error.RouterNotSet, app.get("/style.css"));
 
     var tc = try harness.newContext(testing.allocator, .{ .target = "/style.css" });
     defer tc.deinit();
+    try tc.ctx.file(harness.assets.style_css, .{});
+    try harness.expectBody(tc.ctx, harness.assets.style_css_body);
 
-    // KNOWN LIMITATION: the static handlers resolve their path through a
-    // file-scope `current_router` global that only `handleConn` assigns, so a
-    // static route cannot be exercised through `handleContext` or by calling
-    // the handler directly. This test pins the current behaviour; if the
-    // handlers are changed to resolve the path from the context or route
-    // instead, it should become an assertion that the file is served.
-    const route = try router.getRoute(.GET, "/style.css");
-    try testing.expectError(error.RouterNotSet, harness.runChain(tc.ctx, route));
-}
-
-test "static file serving: ctx.file serves the same asset directly" {
-    // The end-to-end equivalent of the test above, bypassing the global.
-    var tc = try harness.newContext(testing.allocator, .{ .target = "/style.css" });
-    defer tc.deinit();
-
-    try tc.ctx.file("src/test/assets/style.css", .{});
-
-    try harness.expectBody(tc.ctx, "/* style.css */");
-}
-
-test "static registration: routes are counted alongside normal routes" {
-    var router = try newRouter();
-    defer router.deinit();
-
-    try router.get("/api", harness.textHandler("api"));
-    try router.staticFile("/style.css", "src/test/assets/style.css");
-
-    // One GET for /api, plus GET and HEAD for the static file.
-    try testing.expectEqual(@as(usize, 3), routeCount(router));
+    try app.router.get("/api", harness.text("api"));
+    try testing.expectEqual(@as(usize, 3), harness.routeCount(app.router));
 }

@@ -1,331 +1,164 @@
-//! Tests for `zinc.Response`.
+//! `zinc.Response`.
 //!
-//! Key behaviours pinned down here:
-//!   * `setBody` replaces (and frees) any previous body; `appendBody` concatenates
-//!   * `setHeader` *appends*, so it can produce duplicates — unlike `Headers.set`
-//!   * `isKeepAlive` is false only when an explicit `Connection: close` is present
-//!   * `reset` (object-pool path) frees the body but retains headers
+//! `setBody` replaces (and frees); `appendBody` concatenates.
+//! `setHeader` *appends* (unlike `Headers.set`).
+//! `isKeepAlive` is false only when an explicit `Connection: close` is present.
+//! `reset` frees the body but retains headers for the object pool.
 
 const std = @import("std");
 const testing = std.testing;
 
-const zinc = @import("../zinc.zig");
-const Response = zinc.Response;
+const harness = @import("harness.zig");
 
-fn newResponse() !*Response {
-    return Response.init(.{ .allocator = testing.allocator });
+fn res() !*harness.Response {
+    return harness.newResponse(testing.allocator);
 }
 
 test "Response: initial state" {
-    const res = try newResponse();
-    defer res.deinit();
+    const r = try res();
+    defer r.deinit();
 
-    try testing.expectEqual(std.http.Status.ok, res.status);
-    try testing.expect(res.body == null);
-    try testing.expectEqual(@as(usize, 0), res.getHeaders().len);
-    try testing.expectEqualStrings("HTTP/1.1", res.version);
-}
-
-test "Response: init uses the supplied allocator" {
-    const res = try newResponse();
-    defer res.deinit();
-
-    try testing.expectEqual(testing.allocator.ptr, res.allocator.ptr);
+    try testing.expectEqual(std.http.Status.ok, r.status);
+    try testing.expect(r.body == null);
+    try testing.expectEqual(@as(usize, 0), r.getHeaders().len);
+    try testing.expectEqualStrings("HTTP/1.1", r.version);
+    try testing.expectEqual(testing.allocator.ptr, r.allocator.ptr);
 }
 
 test "Response: setStatus" {
-    const res = try newResponse();
-    defer res.deinit();
-
-    res.setStatus(.not_found);
-    try testing.expectEqual(std.http.Status.not_found, res.status);
-
-    res.setStatus(.created);
-    try testing.expectEqual(std.http.Status.created, res.status);
+    const r = try res();
+    defer r.deinit();
+    r.setStatus(.not_found);
+    try testing.expectEqual(std.http.Status.not_found, r.status);
+    r.setStatus(.created);
+    try testing.expectEqual(std.http.Status.created, r.status);
 }
 
-// ---------------------------------------------------------------------------
-// Body
-// ---------------------------------------------------------------------------
-
-test "Response: setBody stores an owned copy" {
-    const res = try newResponse();
-    defer res.deinit();
+test "Response: setBody stores an owned copy and replaces" {
+    const r = try res();
+    defer r.deinit();
 
     var scratch = [_]u8{ 'h', 'i' };
-    try res.setBody(&scratch);
-
-    // Mutating the caller's buffer must not affect the stored body.
+    try r.setBody(&scratch);
     scratch[0] = 'H';
-    try testing.expectEqualStrings("hi", res.body.?);
+    try testing.expectEqualStrings("hi", r.body.?);
+
+    try r.setBody("second");
+    try testing.expectEqualStrings("second", r.body.?);
+
+    try r.setBody("");
+    try testing.expectEqualStrings("", r.body.?);
 }
 
-test "Response: setBody replaces a previous body" {
-    const res = try newResponse();
-    defer res.deinit();
+test "Response: appendBody concatenates; setBody discards prior appends" {
+    const r = try res();
+    defer r.deinit();
 
-    try res.setBody("first");
-    try res.setBody("second");
+    try r.appendBody("Hello");
+    try r.appendBody(", ");
+    try r.appendBody("world!");
+    try testing.expectEqualStrings("Hello, world!", r.body.?);
 
-    // A leak here would be caught by the testing allocator.
-    try testing.expectEqualStrings("second", res.body.?);
-}
+    try r.appendBody("");
+    try testing.expectEqualStrings("Hello, world!", r.body.?);
 
-test "Response: setBody accepts an empty body" {
-    const res = try newResponse();
-    defer res.deinit();
+    try r.setBody("final");
+    try testing.expectEqualStrings("final", r.body.?);
 
-    try res.setBody("");
-
-    try testing.expect(res.body != null);
-    try testing.expectEqualStrings("", res.body.?);
-}
-
-test "Response: appendBody sets the body when none exists" {
-    const res = try newResponse();
-    defer res.deinit();
-
-    try res.appendBody("hello");
-
-    try testing.expectEqualStrings("hello", res.body.?);
-}
-
-test "Response: appendBody concatenates onto an existing body" {
-    const res = try newResponse();
-    defer res.deinit();
-
-    try res.appendBody("Hello");
-    try res.appendBody(", ");
-    try res.appendBody("world!");
-
-    try testing.expectEqualStrings("Hello, world!", res.body.?);
-}
-
-test "Response: appendBody after setBody" {
-    const res = try newResponse();
-    defer res.deinit();
-
-    try res.setBody("base");
-    try res.appendBody("-more");
-
-    try testing.expectEqualStrings("base-more", res.body.?);
-}
-
-test "Response: setBody discards anything appended earlier" {
-    const res = try newResponse();
-    defer res.deinit();
-
-    try res.appendBody("throwaway");
-    try res.setBody("final");
-
-    try testing.expectEqualStrings("final", res.body.?);
-}
-
-test "Response: appending an empty string is a no-op in content" {
-    const res = try newResponse();
-    defer res.deinit();
-
-    try res.appendBody("body");
-    try res.appendBody("");
-
-    try testing.expectEqualStrings("body", res.body.?);
+    try r.appendBody("-more");
+    try testing.expectEqualStrings("final-more", r.body.?);
 }
 
 test "Response: body handles binary data including NUL bytes" {
-    const res = try newResponse();
-    defer res.deinit();
-
+    const r = try res();
+    defer r.deinit();
     const payload = [_]u8{ 0x00, 0xFF, 0x10, 0x00, 0x7F };
-    try res.setBody(&payload);
-
-    try testing.expectEqualSlices(u8, &payload, res.body.?);
+    try r.setBody(&payload);
+    try testing.expectEqualSlices(u8, &payload, r.body.?);
 }
 
 test "Response: repeated appends do not leak" {
-    const res = try newResponse();
-    defer res.deinit();
-
-    for (0..32) |_| try res.appendBody("x");
-
-    try testing.expectEqual(@as(usize, 32), res.body.?.len);
+    const r = try res();
+    defer r.deinit();
+    for (0..32) |_| try r.appendBody("x");
+    try testing.expectEqual(@as(usize, 32), r.body.?.len);
 }
 
-// ---------------------------------------------------------------------------
-// Headers
-// ---------------------------------------------------------------------------
+test "Response: setHeader records in order and appends duplicates" {
+    const r = try res();
+    defer r.deinit();
 
-test "Response: setHeader records name and value in order" {
-    const res = try newResponse();
-    defer res.deinit();
+    try r.setHeader("Content-Type", "text/plain");
+    try r.setHeader("Cache-Control", "no-cache");
+    try r.setHeader("Content-Type", "application/json");
+    try r.setHeader("X-Empty", "");
 
-    try res.setHeader("Content-Type", "application/json");
-    try res.setHeader("Cache-Control", "no-cache");
-
-    const headers = res.getHeaders();
-    try testing.expectEqual(@as(usize, 2), headers.len);
+    const headers = r.getHeaders();
+    try testing.expectEqual(@as(usize, 4), headers.len);
     try testing.expectEqualStrings("Content-Type", headers[0].name);
-    try testing.expectEqualStrings("application/json", headers[0].value);
-    try testing.expectEqualStrings("Cache-Control", headers[1].name);
-    try testing.expectEqualStrings("no-cache", headers[1].value);
-}
-
-test "Response: setHeader appends rather than replacing" {
-    const res = try newResponse();
-    defer res.deinit();
-
-    try res.setHeader("Content-Type", "text/plain");
-    try res.setHeader("Content-Type", "application/json");
-
-    // Documents current behaviour: unlike `Headers.set`, this duplicates.
-    // Callers that need replace-semantics must go through `Headers`.
-    const headers = res.getHeaders();
-    try testing.expectEqual(@as(usize, 2), headers.len);
     try testing.expectEqualStrings("text/plain", headers[0].value);
-    try testing.expectEqualStrings("application/json", headers[1].value);
-}
-
-test "Response: setHeader accepts an empty value" {
-    const res = try newResponse();
-    defer res.deinit();
-
-    try res.setHeader("X-Empty", "");
-
-    try testing.expectEqual(@as(usize, 1), res.getHeaders().len);
-    try testing.expectEqualStrings("", res.getHeaders()[0].value);
+    try testing.expectEqualStrings("Cache-Control", headers[1].name);
+    try testing.expectEqualStrings("application/json", headers[2].value);
+    try testing.expectEqualStrings("", headers[3].value);
 }
 
 test "Response: many headers are all retained" {
-    const res = try newResponse();
-    defer res.deinit();
-
+    const r = try res();
+    defer r.deinit();
     const names = [_][]const u8{ "H0", "H1", "H2", "H3", "H4", "H5", "H6", "H7" };
-    for (names) |name| try res.setHeader(name, "v");
-
-    try testing.expectEqual(@as(usize, names.len), res.getHeaders().len);
+    for (names) |name| try r.setHeader(name, "v");
+    try testing.expectEqual(@as(usize, names.len), r.getHeaders().len);
 }
 
-// ---------------------------------------------------------------------------
-// Keep-alive
-// ---------------------------------------------------------------------------
+test "Response: isKeepAlive" {
+    const Case = struct { headers: []const [2][]const u8, keep: bool };
+    const cases = [_]Case{
+        .{ .headers = &.{}, .keep = true },
+        .{ .headers = &.{.{ "Connection", "close" }}, .keep = false },
+        .{ .headers = &.{.{ "Connection", "keep-alive" }}, .keep = true },
+        .{ .headers = &.{.{ "connection", "CLOSE" }}, .keep = false },
+        .{ .headers = &.{ .{ "Content-Type", "text/plain" }, .{ "X-Closed", "close" } }, .keep = true },
+        .{ .headers = &.{ .{ "Connection", "keep-alive" }, .{ "Connection", "close" } }, .keep = false },
+    };
 
-test "Response: isKeepAlive defaults to true with no headers" {
-    const res = try newResponse();
-    defer res.deinit();
-
-    try testing.expect(res.isKeepAlive());
+    for (cases) |c| {
+        const r = try res();
+        defer r.deinit();
+        for (c.headers) |h| try r.setHeader(h[0], h[1]);
+        try testing.expectEqual(c.keep, r.isKeepAlive());
+    }
 }
 
-test "Response: isKeepAlive is false with Connection: close" {
-    const res = try newResponse();
-    defer res.deinit();
+test "Response: reset clears body, status and async pointers; retains headers" {
+    const r = try res();
+    defer r.deinit();
 
-    try res.setHeader("Connection", "close");
-
-    try testing.expect(!res.isKeepAlive());
-}
-
-test "Response: isKeepAlive is true with Connection: keep-alive" {
-    const res = try newResponse();
-    defer res.deinit();
-
-    try res.setHeader("Connection", "keep-alive");
-
-    try testing.expect(res.isKeepAlive());
-}
-
-test "Response: isKeepAlive matches Connection: close case-insensitively" {
-    const res = try newResponse();
-    defer res.deinit();
-
-    try res.setHeader("connection", "CLOSE");
-
-    try testing.expect(!res.isKeepAlive());
-}
-
-test "Response: unrelated headers do not affect keep-alive" {
-    const res = try newResponse();
-    defer res.deinit();
-
-    try res.setHeader("Content-Type", "text/plain");
-    try res.setHeader("X-Closed", "close");
-
-    try testing.expect(res.isKeepAlive());
-}
-
-test "Response: a later Connection: close wins over keep-alive" {
-    const res = try newResponse();
-    defer res.deinit();
-
-    try res.setHeader("Connection", "keep-alive");
-    try res.setHeader("Connection", "close");
-
-    // Any `close` entry disables keep-alive regardless of position.
-    try testing.expect(!res.isKeepAlive());
-}
-
-// ---------------------------------------------------------------------------
-// Object-pool reset
-// ---------------------------------------------------------------------------
-
-test "Response: reset clears the body and status" {
-    const res = try newResponse();
-    defer res.deinit();
-
-    try res.setBody("payload");
-    res.setStatus(.internal_server_error);
-
-    res.reset();
-
-    try testing.expect(res.body == null);
-    try testing.expectEqual(std.http.Status.ok, res.status);
-}
-
-test "Response: reset clears async engine and connection pointers" {
-    const res = try newResponse();
-    defer res.deinit();
-
+    try r.setBody("payload");
+    r.setStatus(.internal_server_error);
+    try r.setHeader("X-Pooled", "yes");
     var engine_marker: usize = 1;
     var conn_marker: usize = 2;
-    res.engine = &engine_marker;
-    res.connection = &conn_marker;
+    r.engine = &engine_marker;
+    r.connection = &conn_marker;
 
-    res.reset();
+    r.reset();
 
-    try testing.expect(res.engine == null);
-    try testing.expect(res.connection == null);
-}
+    try testing.expect(r.body == null);
+    try testing.expectEqual(std.http.Status.ok, r.status);
+    try testing.expect(r.engine == null);
+    try testing.expect(r.connection == null);
+    try testing.expectEqual(@as(usize, 1), r.getHeaders().len);
 
-test "Response: reset retains headers for pool reuse" {
-    const res = try newResponse();
-    defer res.deinit();
-
-    try res.setHeader("X-Pooled", "yes");
-    res.reset();
-
-    // Documented behaviour: headers are overwritten on next use rather than
-    // cleared, to keep the hot path allocation-free.
-    try testing.expectEqual(@as(usize, 1), res.getHeaders().len);
-}
-
-test "Response: reusable after reset" {
-    const res = try newResponse();
-    defer res.deinit();
-
-    try res.setBody("first");
-    res.reset();
-    try res.setBody("second");
-
-    try testing.expectEqualStrings("second", res.body.?);
+    try r.setBody("second");
+    try testing.expectEqualStrings("second", r.body.?);
 }
 
 test "Response: repeated reset cycles do not leak" {
-    const res = try newResponse();
-    defer res.deinit();
-
+    const r = try res();
+    defer r.deinit();
     for (0..16) |_| {
-        try res.setBody("cycle");
-        res.reset();
+        try r.setBody("cycle");
+        r.reset();
     }
-
-    try testing.expect(res.body == null);
+    try testing.expect(r.body == null);
 }

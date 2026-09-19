@@ -1,10 +1,7 @@
-//! Tests for `zinc.Headers`, the ordered header collection.
+//! `zinc.Headers`: ordered, case-insensitive collection.
 //!
-//! Behaviour being pinned down:
-//!   * lookups are case-insensitive (`get`, `remove`)
-//!   * `add` appends and permits duplicates; `set` replaces
-//!   * `set` removes the old entry first, so it moves the header to the end
-//!   * `remove` of an absent name is a no-op, not an error
+//! `add` appends (duplicates allowed); `set` replaces the first match and
+//! moves it to the end; `remove` of an absent name is a no-op.
 
 const std = @import("std");
 const testing = std.testing;
@@ -38,32 +35,17 @@ test "Headers: add then get" {
     try testing.expectEqualStrings("100", headers.get("Content-Length").?.value);
 }
 
-test "Headers: get is case-insensitive" {
+test "Headers: get is case-insensitive and preserves stored casing" {
     var headers = newHeaders();
     defer headers.deinit();
+    try headers.add("X-Custom-Header", "application/json");
 
-    try headers.add("Content-Type", "application/json");
-
-    try testing.expectEqualStrings("application/json", headers.get("content-type").?.value);
-    try testing.expectEqualStrings("application/json", headers.get("CONTENT-TYPE").?.value);
-    try testing.expectEqualStrings("application/json", headers.get("cOnTeNt-TyPe").?.value);
-}
-
-test "Headers: get returns the original casing of the stored name" {
-    var headers = newHeaders();
-    defer headers.deinit();
-
-    try headers.add("X-Custom-Header", "value");
-
-    // Lookup normalizes, storage does not.
-    try testing.expectEqualStrings("X-Custom-Header", headers.get("x-custom-header").?.name);
-}
-
-test "Headers: get returns null for an absent name" {
-    var headers = newHeaders();
-    defer headers.deinit();
-
-    try headers.add("Accept", "*/*");
+    const lookups = [_][]const u8{ "x-custom-header", "X-CUSTOM-HEADER", "X-Custom-Header", "x-CuStOm-HeAdEr" };
+    for (lookups) |name| {
+        const h = headers.get(name) orelse return error.TestExpectedHeader;
+        try testing.expectEqualStrings("application/json", h.value);
+        try testing.expectEqualStrings("X-Custom-Header", h.name);
+    }
 
     try testing.expect(headers.get("Accept-Encoding") == null);
     try testing.expect(headers.get("") == null);
@@ -80,25 +62,28 @@ test "Headers: add permits duplicates and get returns the first" {
     try testing.expectEqualStrings("a=1", headers.get("Set-Cookie").?.value);
 }
 
-test "Headers: set replaces an existing value" {
-    var headers = newHeaders();
-    defer headers.deinit();
-
-    try headers.add("Content-Length", "100");
-    try headers.set("Content-Length", "200");
-
-    try testing.expectEqual(@as(usize, 1), headers.len());
-    try testing.expectEqualStrings("200", headers.get("Content-Length").?.value);
-}
-
-test "Headers: set on an absent name inserts it" {
+test "Headers: set replaces, inserts, and moves to the end" {
     var headers = newHeaders();
     defer headers.deinit();
 
     try headers.set("X-Request-Id", "abc123");
-
-    try testing.expectEqual(@as(usize, 1), headers.len());
     try testing.expectEqualStrings("abc123", headers.get("X-Request-Id").?.value);
+
+    try headers.add("Content-Length", "100");
+    try headers.set("Content-Length", "200");
+    try testing.expectEqual(@as(usize, 2), headers.len());
+    try testing.expectEqualStrings("200", headers.get("Content-Length").?.value);
+
+    var ordered = newHeaders();
+    defer ordered.deinit();
+    try ordered.add("A", "1");
+    try ordered.add("B", "2");
+    try ordered.add("C", "3");
+    try ordered.set("A", "updated");
+    try testing.expectEqualStrings("B", ordered.items()[0].name);
+    try testing.expectEqualStrings("C", ordered.items()[1].name);
+    try testing.expectEqualStrings("A", ordered.items()[2].name);
+    try testing.expectEqualStrings("updated", ordered.items()[2].value);
 }
 
 test "Headers: set matches case-insensitively but stores the new casing" {
@@ -113,25 +98,6 @@ test "Headers: set matches case-insensitively but stores the new casing" {
     try testing.expectEqualStrings("text/html", headers.items()[0].value);
 }
 
-test "Headers: set moves the header to the end" {
-    var headers = newHeaders();
-    defer headers.deinit();
-
-    try headers.add("A", "1");
-    try headers.add("B", "2");
-    try headers.add("C", "3");
-
-    // `set` removes then appends, so ordering shifts. Documenting the real
-    // behaviour so a future ordering-preserving change is a deliberate one.
-    try headers.set("A", "updated");
-
-    try testing.expectEqual(@as(usize, 3), headers.len());
-    try testing.expectEqualStrings("B", headers.items()[0].name);
-    try testing.expectEqualStrings("C", headers.items()[1].name);
-    try testing.expectEqualStrings("A", headers.items()[2].name);
-    try testing.expectEqualStrings("updated", headers.items()[2].value);
-}
-
 test "Headers: set only replaces the first of several duplicates" {
     var headers = newHeaders();
     defer headers.deinit();
@@ -140,57 +106,25 @@ test "Headers: set only replaces the first of several duplicates" {
     try headers.add("Set-Cookie", "b=2");
     try headers.set("Set-Cookie", "c=3");
 
-    // One duplicate was dropped, one remains, plus the new value.
     try testing.expectEqual(@as(usize, 2), headers.len());
     try testing.expectEqualStrings("b=2", headers.items()[0].value);
     try testing.expectEqualStrings("c=3", headers.items()[1].value);
 }
 
-test "Headers: remove deletes the header" {
-    var headers = newHeaders();
-    defer headers.deinit();
-
-    try headers.add("Content-Type", "text/html");
-    try headers.add("Content-Length", "100");
-    try headers.remove("Content-Length");
-
-    try testing.expectEqual(@as(usize, 1), headers.len());
-    try testing.expect(headers.get("Content-Length") == null);
-    try testing.expect(headers.get("Content-Type") != null);
-}
-
-test "Headers: remove is case-insensitive" {
-    var headers = newHeaders();
-    defer headers.deinit();
-
-    try headers.add("X-Trace-Id", "t-1");
-    try headers.remove("x-trace-id");
-
-    try testing.expectEqual(@as(usize, 0), headers.len());
-}
-
-test "Headers: remove of an absent name is a no-op" {
-    var headers = newHeaders();
-    defer headers.deinit();
-
-    try headers.add("Accept", "*/*");
-    try headers.remove("Nope");
-
-    try testing.expectEqual(@as(usize, 1), headers.len());
-}
-
-test "Headers: remove preserves the order of the rest" {
+test "Headers: remove is case-insensitive, a no-op when absent, and order-preserving" {
     var headers = newHeaders();
     defer headers.deinit();
 
     try headers.add("A", "1");
     try headers.add("B", "2");
     try headers.add("C", "3");
-    try headers.remove("B");
+    try headers.remove("b");
+    try headers.remove("Nope");
 
     try testing.expectEqual(@as(usize, 2), headers.len());
     try testing.expectEqualStrings("A", headers.items()[0].name);
     try testing.expectEqualStrings("C", headers.items()[1].name);
+    try testing.expect(headers.get("Content-Length") == null);
 }
 
 test "Headers: remove drops only the first duplicate" {
@@ -205,26 +139,17 @@ test "Headers: remove drops only the first duplicate" {
     try testing.expectEqualStrings("b=2", headers.get("Set-Cookie").?.value);
 }
 
-test "Headers: clear empties the collection" {
+test "Headers: clear empties the collection and leaves it reusable" {
     var headers = newHeaders();
     defer headers.deinit();
 
     try headers.add("A", "1");
     try headers.add("B", "2");
     headers.clear();
-
     try testing.expectEqual(@as(usize, 0), headers.len());
     try testing.expect(headers.get("A") == null);
-}
 
-test "Headers: usable again after clear" {
-    var headers = newHeaders();
-    defer headers.deinit();
-
-    try headers.add("A", "1");
-    headers.clear();
     try headers.add("B", "2");
-
     try testing.expectEqual(@as(usize, 1), headers.len());
     try testing.expectEqualStrings("2", headers.get("B").?.value);
 }
@@ -232,23 +157,18 @@ test "Headers: usable again after clear" {
 test "Headers: empty values are preserved" {
     var headers = newHeaders();
     defer headers.deinit();
-
     try headers.add("X-Empty", "");
-
-    try testing.expectEqual(@as(usize, 1), headers.len());
     try testing.expectEqualStrings("", headers.get("X-Empty").?.value);
 }
 
 test "Headers: getHeaders and items expose the same backing slice" {
     var headers = newHeaders();
     defer headers.deinit();
-
     try headers.add("A", "1");
     try headers.add("B", "2");
 
     const via_get = headers.getHeaders();
     const via_items = headers.items();
-
     try testing.expectEqual(via_get.len, via_items.len);
     try testing.expectEqual(via_get.ptr, via_items.ptr);
 }
@@ -257,7 +177,6 @@ test "Headers: capacity grows to hold many headers" {
     var headers = newHeaders();
     defer headers.deinit();
 
-    // Names must outlive the collection, so use a fixed set of literals.
     const names = [_][]const u8{ "H0", "H1", "H2", "H3", "H4", "H5", "H6", "H7", "H8", "H9" };
     for (names) |name| try headers.add(name, "v");
 

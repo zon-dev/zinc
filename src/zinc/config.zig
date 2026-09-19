@@ -75,11 +75,11 @@ pub const Engine = struct {
     /// Resetting arena periodically helps prevent memory growth.
     arena_reset_interval: usize = 100,
 
-    /// Event loop wait timeout in nanoseconds. Default is 1ms.
-    /// Too short timeout causes excessive CPU usage and system calls.
-    /// Too long timeout causes high latency.
-    /// Balanced for performance and CPU efficiency.
-    event_wait_timeout_ns: u63 = 1 * std.time.ns_per_ms,
+    /// Event loop wait timeout in nanoseconds. Default is 100µs.
+    /// 1ms capped sequential requests at ~1000 rps (the wait is the floor
+    /// when the loop has no already-ready events between accept/read/write).
+    /// Too short a timeout increases idle CPU; too long adds latency.
+    event_wait_timeout_ns: u63 = 100 * std.time.ns_per_us,
 
     // Removed request_batch_size - requests processed directly in worker threads
 

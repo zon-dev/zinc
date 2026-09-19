@@ -287,9 +287,12 @@ fn create(conf: Config.Engine) anyerror!*Engine {
 
     // Initialize the std.Io implementation used for request processing.
     // Worker threads handle I/O events; this thread pool runs the handlers.
+    // Handler pool is independent of AIO worker count. Capping it at
+    // `num_threads` makes `Group.concurrent` return ConcurrencyUnavailable
+    // under a handful of simultaneous clients and the request is dropped.
     engine.io_impl = std.Io.Threaded.init(allocator, .{
         .stack_size = conf.stack_size,
-        .concurrent_limit = .limited(conf.num_threads),
+        .concurrent_limit = .limited(@max(64, @as(usize, conf.num_threads) * 8)),
     });
     engine.task_group = .init;
 
@@ -834,10 +837,8 @@ fn submitRequestBatch(worker: *Worker, engine: *Engine) !void {
     if (batch_count > 0) {
         if (batch_count == 1) {
             // Single request - submit directly for minimal latency
-            engine.task_group.concurrent(engine.io_impl.io(), processRequestAsync, .{batch[0]}) catch |spawn_err| {
-                std.log.err("Failed to spawn request: {}", .{spawn_err});
-                engine.allocator.free(batch[0].data);
-                engine.allocator.destroy(batch[0]);
+            engine.task_group.concurrent(engine.io_impl.io(), processRequestAsync, .{batch[0]}) catch {
+                processRequestAsync(batch[0]);
             };
         } else {
             // Multiple requests - submit as batch to reduce spawn overhead
@@ -846,10 +847,8 @@ fn submitRequestBatch(worker: *Worker, engine: *Engine) !void {
             engine.task_group.concurrent(engine.io_impl.io(), processRequestBatch, .{batch_copy}) catch {
                 // Fallback: process individually
                 for (batch[0..batch_count]) |ctx| {
-                    engine.task_group.concurrent(engine.io_impl.io(), processRequestAsync, .{ctx}) catch |spawn_err2| {
-                        std.log.err("Failed to spawn request: {}", .{spawn_err2});
-                        engine.allocator.free(ctx.data);
-                        engine.allocator.destroy(ctx);
+                    engine.task_group.concurrent(engine.io_impl.io(), processRequestAsync, .{ctx}) catch {
+                        processRequestAsync(ctx);
                     };
                 }
                 engine.allocator.free(batch_copy);
