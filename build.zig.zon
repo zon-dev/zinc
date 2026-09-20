@@ -5,10 +5,12 @@
     .minimum_zig_version = "0.16.0",
     .dependencies = .{
         .url = .{
-            .path = "https://github.com/zon-dev/url/archive/refs/tags/0.2.0-alpha.2.zip",
+            .url = "https://github.com/zon-dev/url/archive/refs/tags/0.2.0-alpha.2.zip",
+            .hash = "url-0.2.0-alpha.2-niLQwoI-AADA6XdKvS8vhlzPEKkMyY4sm9JkVYX3_Qxp",
         },
         .aio = .{
-            .path = "https://github.com/zon-dev/aio/archive/refs/tags/0.2.0-alpha.2.zip",
+            .url = "https://github.com/zon-dev/aio/archive/refs/tags/0.2.0-alpha.2.zip",
+            .hash = "aio-0.2.0-alpha.2-dzJt5DUyBQAlmsvSovROJ7Ml4o05MzczVkWvpsAgLncM",
         },
     },
     .paths = .{
